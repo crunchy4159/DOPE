@@ -1,0 +1,10 @@
+{
+    "name": "bce",
+    "version": "1.3.0",
+    "description": "Ballistic Core Engine — trajectory computation library",
+    "keywords": "ballistics, trajectory, esp32",
+    "build": {
+        "flags": "-std=gnu++17",
+        "srcFilter": ["+<*>", "+<ahrs/>", "+<atmo/>", "+<drag/>", "+<solver/>", "+<corrections/>", "+<mag/>", "+<engine/>"]
+    }
+}

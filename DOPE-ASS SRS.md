@@ -1,9 +1,8 @@
-
 # Software Requirements Specification
 
-# Ballistic Core Engine (BCE)
+# DOPE — Digital Optical Performance Engine
 
-## Version 1.3 — DRAFT
+## Version 1.31 — DRAFT
 
 **Date:** 2026-02-25  
 **Language Target:** C++17  
@@ -15,9 +14,9 @@
 
 ## 1.1 Purpose
 
-This document defines the requirements for the **Ballistic Core Engine (BCE)**, a C++ library targeting the ESP32-P4 microcontroller.
+This document defines the requirements for **DOPE** (Digital Optical Performance Engine), a C++ library targeting the ESP32-P4 microcontroller.
 
-The BCE:
+DOPE:
 
 - Ingests normalized sensor data
     
@@ -28,7 +27,7 @@ The BCE:
 - Produces a structured `FiringSolution`
     
 
-The BCE is:
+DOPE is:
 
 - Platform-agnostic
     
@@ -45,14 +44,14 @@ It does not render graphics, manage modes, process images, or select targets.
 
 ## 1.2 Architectural Boundary
 
-The BCE:
+DOPE:
 
 - Consumes scalar numeric inputs
     
 - Produces scalar numeric outputs
     
 
-The BCE does **not**:
+DOPE does **not**:
 
 - Process camera frames
     
@@ -67,9 +66,11 @@ The BCE does **not**:
 - Handle rendering
     
 
-If LiDAR mapping or vision processing exists, it is handled by the Application layer. The Application selects one target point and passes a single range and orientation into the BCE.
+If LiDAR mapping or vision processing exists, it is handled by the Application layer. The Application selects one target point and passes a single range and orientation into DOPE.
 
-The BCE computes one firing solution at a time.
+DOPE computes one firing solution at a time.
+
+For this repository, the production DOPE engine scope is `lib/bce/`; desktop GUI harness code (`src/gui_main.cpp`, `src/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
 
 ---
 
@@ -83,7 +84,7 @@ The BCE computes one firing solution at a time.
 │  - Target selection           │
 │  - Rendering                  │
 ├───────────────────────────────┤
-│   Ballistic Core Engine       │
+│   DOPE (Ballistic Engine)     │
 │  - AHRS                       │
 │  - Atmosphere                 │
 │  - Drag integration           │
@@ -163,7 +164,7 @@ Defaults never trigger FAULT.
 ## 5.2 Default Override Mechanism
 
 ```cpp
-struct BCE_DefaultOverrides {
+struct DOPE_DefaultOverrides {
     bool use_altitude;
     float altitude_m;
 
@@ -186,7 +187,7 @@ struct BCE_DefaultOverrides {
 ```
 
 ```cpp
-void BCE_SetDefaultOverrides(const BCE_DefaultOverrides& defaults);
+void DOPE_SetDefaultOverrides(const DOPE_DefaultOverrides& defaults);
 ```
 
 Application may load user profile defaults at startup.
@@ -198,7 +199,7 @@ Application may load user profile defaults at startup.
 Compile-time constant:
 
 ```cpp
-#define BCE_MAX_RANGE_M 2500
+#define DOPE_MAX_RANGE_M 2500
 ```
 
 - Supports current 2km LRF
@@ -219,7 +220,7 @@ Application may configure a lower operational limit.
 All inputs enter through:
 
 ```cpp
-void BCE_Update(const SensorFrame& frame);
+void DOPE_Update(const SensorFrame& frame);
 ```
 
 ---
@@ -276,7 +277,7 @@ Computes:
 Supports:
 
 ```cpp
-void BCE_CalibrateBaro();
+void DOPE_CalibrateBaro();
 ```
 
 ---
@@ -365,12 +366,12 @@ Manual zero recompute API removed.
 # 10. Calibration APIs
 
 ```cpp
-void BCE_SetIMUBias(float accel_bias[3], float gyro_bias[3]);
-void BCE_SetMagCalibration(float hard_iron[3], float soft_iron[3]);
-void BCE_SetBoresightOffset(float vertical_moa, float horizontal_moa);
-void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
-void BCE_CalibrateBaro();
-void BCE_CalibrateGyro();
+void DOPE_SetIMUBias(float accel_bias[3], float gyro_bias[3]);
+void DOPE_SetMagCalibration(float hard_iron[3], float soft_iron[3]);
+void DOPE_SetBoresightOffset(float vertical_moa, float horizontal_moa);
+void DOPE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
+void DOPE_CalibrateBaro();
+void DOPE_CalibrateGyro();
 ```
 
 These correct physical alignment errors.
@@ -555,7 +556,7 @@ Reference build:
 - I2C rotary encoder
     
 
-BCE remains hardware-agnostic.
+DOPE remains hardware-agnostic.
 
 ---
 
@@ -580,7 +581,7 @@ BCE remains hardware-agnostic.
 
 # 17. Summary
 
-The BCE v1.3 is:
+DOPE v1.3 is:
 
 - Deterministic
     
@@ -602,4 +603,4 @@ All intelligence above trajectory math lives outside it.
 ---
 
 End of Document  
-BCE SRS v1.3
+DOPE SRS v1.3
