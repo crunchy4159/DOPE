@@ -20,7 +20,7 @@ It does not render graphics, process camera/LiDAR data, or select targets.
 │  - AHRS (Madgwick / Mahony)   │
 │  - Atmosphere (4-factor BC)   │
 │  - Drag (G1–G8 tables)        │
-│  - Solver (RK2 adaptive)      │
+│  - Solver (RK4 adaptive)      │
 │  - Coriolis / Eötvös          │
 │  - Spin drift / Cant          │
 ├───────────────────────────────┤
@@ -68,8 +68,8 @@ Treat `lib/bce/` as the actual DOPE ballistic engine. Everything outside that fo
 
 **Not engine logic (test/harness/support code):**
 - `test/` — GoogleTest validation suites and reference-envelope checks
-- `src/gui_main.cpp` and `src/imgui_*` — desktop GUI harness for manual experiments
-- `src/main.cpp` — thin app entry point/integration harness
+- `tools/native_gui/gui_main.cpp` and `tools/native_gui/imgui_*` — desktop GUI harness for manual experiments
+- `src/main.cpp` — thin firmware/native entry point
 - `third_party/` — vendored dependencies (e.g., Dear ImGui)
 - `scripts/`, `run_native_gui.bat` — developer launch helpers
 
@@ -181,9 +181,9 @@ if (BCE_GetMode() == BCE_Mode::SOLUTION_READY) {
 Use this quick map when tuning behavior:
 
 - GUI startup defaults and synthetic desktop sensor feed:
-    - `src/gui_main.cpp` (`ResetStateDefaults`, `BuildFrame`)
+    - `tools/native_gui/gui_main.cpp` (`ResetStateDefaults`, `BuildFrame`)
 - GUI button actions and update cadence:
-    - `src/gui_main.cpp` (`Apply Config`, `Step Update`, `Run 100` handlers)
+    - `tools/native_gui/gui_main.cpp` (`Apply Config`, `Step Update`, `Run 100` handlers)
 - Public BCE entry points used by app code:
     - `lib/bce/include/bce/bce_api.h`
     - `lib/bce/src/bce_api.cpp`
@@ -195,7 +195,7 @@ Use this quick map when tuning behavior:
     - `lib/bce/src/drag/drag_model.cpp`
 
 Suggested order for safe tuning:
-1. Adjust GUI/input defaults in `src/gui_main.cpp`.
+1. Adjust GUI/input defaults in `tools/native_gui/gui_main.cpp`.
 2. Validate with `pio test -e native`.
 3. Then tune solver/atmo/drag internals and rerun tests.
 
@@ -204,7 +204,7 @@ Suggested order for safe tuning:
 - Cartridge tables/presets are for validation and harness convenience only.
 - BCE engine internals do not look up named cartridge tables; they solve from the active `BulletProfile`, `ZeroConfig`, and sensor inputs.
 - Current table-like cartridge presets live in:
-    - GUI harness: `src/gui_main.cpp` (input prefill only)
+    - GUI harness: `tools/native_gui/gui_main.cpp` (input prefill only)
     - Tests: `test/test_cartridges.cpp` and reference-envelope integration tests
 - Keep this boundary intact: if cartridge presets are updated, use them to verify outputs, not as embedded runtime engine data.
 - For crowd testing, share GUI profile-library JSON files and compare solver outputs under known conditions.

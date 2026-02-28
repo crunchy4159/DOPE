@@ -51,6 +51,15 @@ public:
     uint32_t getFaultFlags() const { return fault_flags_; }
     uint32_t getDiagFlags() const { return diag_flags_; }
 
+    // --- Uncertainty / error propagation --- SRS §14
+    void setUncertaintyConfig(const UncertaintyConfig* config);
+    static void getDefaultUncertaintyConfig(UncertaintyConfig* out);
+
+    // --- FOV (set by encoder / optical zoom) ---
+    void setFOV(float h_deg, float v_deg) { fov_h_deg_ = h_deg; fov_v_deg_ = v_deg; }
+    float getHFOV() const { return fov_h_deg_; }
+    float getVFOV() const { return fov_v_deg_; }
+
 private:
     // Subsystem instances (all static, no heap)
     AHRSManager ahrs_;
@@ -109,9 +118,17 @@ private:
     // Optional solver calibration mode for external-reference alignment
     bool external_reference_mode_ = false;
 
+    // Uncertainty / error propagation config — SRS §14
+    UncertaintyConfig uncertainty_config_;
+
+    // FOV from zoom encoder (degrees; 0 = unknown)
+    float fov_h_deg_ = 0.0f;
+    float fov_v_deg_ = 0.0f;
+
     // --- Internal methods ---
     void evaluateState(uint64_t now_us);
     void computeSolution();
+    void computeUncertainty();
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
 };

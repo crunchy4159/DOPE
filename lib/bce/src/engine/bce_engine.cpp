@@ -56,6 +56,10 @@ void BCE_Engine::init() {
     had_invalid_sensor_input_ = false;
     external_reference_mode_ = false;
 
+    getDefaultUncertaintyConfig(&uncertainty_config_);
+    fov_h_deg_ = 0.0f;
+    fov_v_deg_ = 0.0f;
+
     solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::IDLE);
 }
 
@@ -155,7 +159,15 @@ void BCE_Engine::update(const SensorFrame* frame) {
         }
     }
 
-    // --- 4. Evaluate state and compute solution ---
+    // --- 4. Zoom encoder → FOV computation — SRS §7.5
+    if (frame->encoder_valid &&
+        frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
+        float f = frame->encoder_focal_length_mm;
+        fov_h_deg_ = 2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM  / f) * BCE_RAD_TO_DEG;
+        fov_v_deg_ = 2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * BCE_RAD_TO_DEG;
+    }
+
+    // --- 5. Evaluate state and compute solution ---
     evaluateState(now_us);
 }
 
@@ -451,6 +463,8 @@ void BCE_Engine::computeSolution() {
     solution_.cant_angle_deg = roll * BCE_RAD_TO_DEG;
     solution_.heading_deg_true = heading_true;
     solution_.air_density_kgm3 = atmo_.getAirDensity();
+
+    computeUncertainty();
 }
 
 // ---------------------------------------------------------------------------
@@ -494,9 +508,13 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
     p.bc = atmo_.correctBC(bullet_.bc);
     p.drag_model = bullet_.drag_model;
 
-    // Muzzle velocity adjusted for barrel length
+    // Muzzle velocity adjusted for barrel length (relative to SAAMI reference barrel).
+    // If reference_barrel_length_in is unset (0), default to 24" (standard rifle barrel).
+    float ref_barrel_in = (bullet_.reference_barrel_length_in > 0.0f)
+                              ? bullet_.reference_barrel_length_in
+                              : 24.0f;
     float base_mv_fps = bullet_.muzzle_velocity_ms * 3.28084f;
-    float barrel_length_delta_in = bullet_.barrel_length_in - 24.0f;
+    float barrel_length_delta_in = bullet_.barrel_length_in - ref_barrel_in;
     float mv_adjustment_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
     float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjustment_fps_per_in);
     p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;
@@ -535,4 +553,276 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
     }
 
     return p;
+}
+
+// ---------------------------------------------------------------------------
+// Uncertainty / error propagation — SRS §14
+// ---------------------------------------------------------------------------
+
+void BCE_Engine::setUncertaintyConfig(const UncertaintyConfig* config) {
+    if (config) {
+        uncertainty_config_ = *config;
+    }
+}
+
+void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
+    if (!out) return;
+    out->enabled                = true;
+    out->sigma_muzzle_velocity_ms = 1.5f;   // ~5 fps standard deviation
+    out->sigma_bc_fraction      = 0.02f;    // 2 % BC uncertainty
+    out->sigma_range_m          = 1.0f;     // 1 m range uncertainty
+    out->sigma_wind_speed_ms    = 1.0f;     // 1 m/s wind speed
+    out->sigma_wind_heading_deg = 10.0f;    // 10 ° wind direction
+    out->sigma_temperature_c    = 2.0f;     // 2 °C temperature
+    out->sigma_pressure_pa      = 150.0f;   // 150 Pa pressure (~4 mmHg)
+    out->sigma_humidity         = 0.05f;    // 5 % relative humidity
+    out->sigma_sight_height_mm  = 0.5f;     // 0.5 mm sight-height mounting error
+    out->sigma_cant_deg         = 1.5f;     // 1.5 ° cant / roll — RM3100 magnetometer default
+}
+
+/**
+ * @brief Gaussian error propagation via central finite differences.
+ *
+ * For each uncertain input X with 1-sigma value σ_X, perturbs X by ±σ_X,
+ * re-evaluates the firing solution, and accumulates:
+ *
+ *   var_e  += ((elev_plus - elev_minus) / 2)²
+ *   var_w  += ((wind_plus - wind_minus) / 2)²
+ *   cov_ew += ((elev_plus - elev_minus) / 2) × ((wind_plus - wind_minus) / 2)
+ *
+ * This is the standard first-order propagation identity
+ *   σ_y² = (∂y/∂x)² σ_x²
+ * where ∂y/∂x ≈ Δy / (2σ_x), so σ_y² ≈ (Δy/2)² (the σ_x terms cancel).
+ */
+void BCE_Engine::computeUncertainty() {
+    solution_.uncertainty_valid    = false;
+    solution_.sigma_elevation_moa  = 0.0f;
+    solution_.sigma_windage_moa    = 0.0f;
+    solution_.covariance_elev_wind = 0.0f;
+
+    if (!uncertainty_config_.enabled) return;
+
+    // Must have a ready solution to propagate through
+    if (solution_.solution_mode != static_cast<uint32_t>(BCE_Mode::SOLUTION_READY)) return;
+
+    const float range = lrf_range_m_;
+    if (range < 1.0f) return;
+
+    const float roll         = ahrs_.getRoll();
+    const float launch_angle = zero_angle_rad_ + ahrs_.getPitch();
+    const float sight_h      = has_zero_ ? zero_.sight_height_mm * BCE_MM_TO_M : 0.0f;
+    const float zero_r       = (has_zero_ && zero_.zero_range_m > 0.0f)
+                                   ? zero_.zero_range_m : range;
+
+    // Pre-build the nominal SolverParams once
+    SolverParams base = buildSolverParams(range);
+    base.launch_angle_rad = launch_angle;
+
+    // Evaluate (elevation_moa, windage_moa) for arbitrary SolverParams + roll
+    auto evalMOA = [&](const SolverParams& p, float roll_rad,
+                       float& elev_moa, float& wind_moa) -> bool {
+        SolverResult r = solver_.integrate(p);
+        if (!r.valid) { elev_moa = 0.0f; wind_moa = 0.0f; return false; }
+
+        float sl_drop    = sight_h - (sight_h / zero_r) * range;
+        float rel_drop   = r.drop_at_target_m - sl_drop;
+
+        float em = -(rel_drop / range)               * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
+        float wm = -(r.windage_at_target_m / range)  * BCE_RAD_TO_MOA
+                   + r.coriolis_wind_moa + r.spin_drift_moa;
+
+        float ce, cw;
+        CantCorrection::apply(roll_rad, em, ce, cw);
+        elev_moa = ce;
+        wind_moa = wm + cw;
+        return true;
+    };
+
+    float var_e  = 0.0f;
+    float var_w  = 0.0f;
+    float cov_ew = 0.0f;
+
+    // Accumulate variance from a symmetric perturbation pair
+    auto accumulate = [&](const SolverParams& pp, const SolverParams& pm) {
+        float ep, wp, em, wm;
+        if (!evalMOA(pp, roll, ep, wp)) return;
+        if (!evalMOA(pm, roll, em, wm)) return;
+        float de = (ep - em) * 0.5f;
+        float dw = (wp - wm) * 0.5f;
+        var_e  += de * de;
+        var_w  += dw * dw;
+        cov_ew += de * dw;
+    };
+
+    // 1. Muzzle velocity
+    {
+        SolverParams pp = base, pm = base;
+        float h = uncertainty_config_.sigma_muzzle_velocity_ms;
+        pp.muzzle_velocity_ms += h;
+        pm.muzzle_velocity_ms = std::fmax(1.0f, pm.muzzle_velocity_ms - h);
+        accumulate(pp, pm);
+    }
+
+    // 2. Ballistic coefficient (as absolute BC units = fraction × base BC)
+    {
+        SolverParams pp = base, pm = base;
+        float h = uncertainty_config_.sigma_bc_fraction * base.bc;
+        pp.bc += h;
+        pm.bc = std::fmax(0.01f, pm.bc - h);
+        accumulate(pp, pm);
+    }
+
+    // 3. Range (re-evaluate with different target distances + matching sight-line geometry)
+    {
+        float h   = uncertainty_config_.sigma_range_m;
+        float rp  = range + h;
+        float rm  = std::fmax(1.0f, range - h);
+
+        SolverParams pp = buildSolverParams(rp);
+        SolverParams pm = buildSolverParams(rm);
+        pp.launch_angle_rad = launch_angle;
+        pm.launch_angle_rad = launch_angle;
+
+        auto evalRange = [&](const SolverParams& p, float rng,
+                             float& elev_moa, float& wind_moa) -> bool {
+            SolverResult r = solver_.integrate(p);
+            if (!r.valid) { elev_moa = 0.0f; wind_moa = 0.0f; return false; }
+            float zr      = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : rng;
+            float sl_drop = sight_h - (sight_h / zr) * rng;
+            float rel_drop = r.drop_at_target_m - sl_drop;
+            float em = -(rel_drop / rng)              * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
+            float wm = -(r.windage_at_target_m / rng) * BCE_RAD_TO_MOA
+                       + r.coriolis_wind_moa + r.spin_drift_moa;
+            float ce, cw2;
+            CantCorrection::apply(roll, em, ce, cw2);
+            elev_moa = ce; wind_moa = wm + cw2;
+            return true;
+        };
+
+        float ep, wp, em, wm;
+        if (evalRange(pp, rp, ep, wp) && evalRange(pm, rm, em, wm)) {
+            float de = (ep - em) * 0.5f;
+            float dw = (wp - wm) * 0.5f;
+            var_e  += de * de;
+            var_w  += dw * dw;
+            cov_ew += de * dw;
+        }
+    }
+
+    // 4. Wind speed (scale existing headwind/crosswind proportionally)
+    {
+        SolverParams pp = base, pm = base;
+        float h     = uncertainty_config_.sigma_wind_speed_ms;
+        float total = std::sqrt(base.headwind_ms * base.headwind_ms
+                                + base.crosswind_ms * base.crosswind_ms);
+        if (total > 0.01f) {
+            float scale_p = (total + h) / total;
+            float scale_m = (total - h) / total;
+            pp.headwind_ms  = base.headwind_ms  * scale_p;
+            pp.crosswind_ms = base.crosswind_ms * scale_p;
+            pm.headwind_ms  = base.headwind_ms  * scale_m;
+            pm.crosswind_ms = base.crosswind_ms * scale_m;
+        } else {
+            // No current wind — apply a pure crosswind perturbation
+            pp.crosswind_ms = h;
+            pm.crosswind_ms = -h;
+        }
+        accumulate(pp, pm);
+    }
+
+    // 5. Wind heading (rotate wind vector by ±sigma degrees)
+    {
+        float h_rad = uncertainty_config_.sigma_wind_heading_deg * BCE_DEG_TO_RAD;
+        float hw    = base.headwind_ms;
+        float xw    = base.crosswind_ms;
+        float total = std::sqrt(hw * hw + xw * xw);
+        if (total > 0.01f) {
+            float base_angle = std::atan2(xw, hw);
+            SolverParams pp = base, pm = base;
+            pp.headwind_ms  = total * std::cos(base_angle + h_rad);
+            pp.crosswind_ms = total * std::sin(base_angle + h_rad);
+            pm.headwind_ms  = total * std::cos(base_angle - h_rad);
+            pm.crosswind_ms = total * std::sin(base_angle - h_rad);
+            accumulate(pp, pm);
+        }
+        // Zero wind → heading uncertainty has no effect
+    }
+
+    // 6–8. Atmospheric parameters (temperature, pressure, humidity).
+    // Use a temporary copy of the Atmosphere to avoid mutating engine state.
+    {
+        auto evalAtmo = [&](float dt, float dp, float dh,
+                            float& elev_moa, float& wind_moa) -> bool {
+            Atmosphere tmp = atmo_;
+            tmp.updateFromBaro(atmo_.getPressure()    + dp,
+                               atmo_.getTemperature() + dt,
+                               atmo_.getHumidity()    + dh);
+            SolverParams p   = base;
+            p.bc             = tmp.correctBC(bullet_.bc);
+            p.air_density    = tmp.getAirDensity();
+            p.speed_of_sound = tmp.getSpeedOfSound();
+            return evalMOA(p, roll, elev_moa, wind_moa);
+        };
+
+        // 6. Temperature
+        {
+            float h = uncertainty_config_.sigma_temperature_c;
+            float ep, wp, em, wm;
+            if (evalAtmo(+h, 0.0f, 0.0f, ep, wp) &&
+                evalAtmo(-h, 0.0f, 0.0f, em, wm)) {
+                float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
+                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+            }
+        }
+
+        // 7. Pressure
+        {
+            float h = uncertainty_config_.sigma_pressure_pa;
+            float ep, wp, em, wm;
+            if (evalAtmo(0.0f, +h, 0.0f, ep, wp) &&
+                evalAtmo(0.0f, -h, 0.0f, em, wm)) {
+                float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
+                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+            }
+        }
+
+        // 8. Humidity (clamped to [0, 1])
+        {
+            float cur = atmo_.getHumidity();
+            float h   = uncertainty_config_.sigma_humidity;
+            float hp  = std::fmin(cur + h, 1.0f) - cur;
+            float hm  = cur - std::fmax(cur - h, 0.0f);
+            float ep, wp, em, wm;
+            if (evalAtmo(0.0f, 0.0f, +hp, ep, wp) &&
+                evalAtmo(0.0f, 0.0f, -hm, em, wm)) {
+                float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
+                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+            }
+        }
+    }
+
+    // 9. Sight height
+    {
+        SolverParams pp = base, pm = base;
+        float h_m = uncertainty_config_.sigma_sight_height_mm * BCE_MM_TO_M;
+        pp.sight_height_m += h_m;
+        pm.sight_height_m = std::fmax(0.0f, pm.sight_height_m - h_m);
+        accumulate(pp, pm);
+    }
+
+    // 10. Cant angle (perturb roll without changing trajectory calculation)
+    {
+        float h_rad = uncertainty_config_.sigma_cant_deg * BCE_DEG_TO_RAD;
+        float ep, wp, em, wm;
+        if (evalMOA(base, roll + h_rad, ep, wp) &&
+            evalMOA(base, roll - h_rad, em, wm)) {
+            float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
+            var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+        }
+    }
+
+    solution_.sigma_elevation_moa  = std::sqrt(var_e);
+    solution_.sigma_windage_moa    = std::sqrt(var_w);
+    solution_.covariance_elev_wind = cov_ew;
+    solution_.uncertainty_valid    = true;
 }

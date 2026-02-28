@@ -148,3 +148,17 @@ constexpr float BCE_ZERO_RECOMPUTE_SOS_DELTA = 0.75f;
 // Expected Earth field magnitude range (µT)
 constexpr float BCE_MAG_MIN_FIELD_UT = 20.0f;
 constexpr float BCE_MAG_MAX_FIELD_UT = 70.0f;
+
+// ---------------------------------------------------------------------------
+// Zoom Encoder / Optical FOV — SRS §7.5
+// ---------------------------------------------------------------------------
+
+// Minimum valid focal length from the encoder (mm). Readings at or below
+// this threshold are treated as invalid and the stored FOV is retained.
+constexpr float BCE_ENCODER_MIN_FOCAL_LENGTH_MM = 0.1f;
+
+// Sensor half-dimensions for the target imaging sensor (IMX477, 1/2.3").
+// Full sensor: 6.287 mm × 4.712 mm  →  half: 3.1435 mm × 2.356 mm.
+// FOV formula: FOV = 2 · atan(half_dimension / focal_length_mm)  (in radians).
+constexpr float BCE_SENSOR_HALF_WIDTH_MM  = 3.1435f;
+constexpr float BCE_SENSOR_HALF_HEIGHT_MM = 2.3560f;

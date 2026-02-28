@@ -57,13 +57,14 @@ void BCE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]) {
                                soft_iron ? soft_iron : identity_si);
 }
 
-void DOPE_CalibrateGyro(void) {
+void BCE_CalibrateGyro(void) {
     s_engine.calibrateGyro();
 }
 
 void BCE_SetBoresightOffset(const BoresightOffset* offset) {
-    if (!offset) return;
-    s_engine.setBoresightOffset(offset->vertical_moa, offset->horizontal_moa);
+    if (offset) {
+        s_engine.setBoresightOffset(offset->vertical_moa, offset->horizontal_moa);
+    }
 }
 
 void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa) {
@@ -72,11 +73,6 @@ void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa) {
 
 void BCE_CalibrateBaro(void) {
     s_engine.calibrateBaro();
-}
-
-void BCE_CalibrateGyro(void) {
-    // Compatibility alias for legacy integrations.
-    s_engine.calibrateGyro();
 }
 
 void BCE_SetAHRSAlgorithm(AHRS_Algorithm algo) {
@@ -89,6 +85,14 @@ void BCE_SetMagDeclination(float declination_deg) {
 
 void BCE_SetExternalReferenceMode(bool enabled) {
     s_engine.setExternalReferenceMode(enabled);
+}
+
+void BCE_SetUncertaintyConfig(const UncertaintyConfig* config) {
+    s_engine.setUncertaintyConfig(config);
+}
+
+void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out) {
+    BCE_Engine::getDefaultUncertaintyConfig(out);
 }
 
 void BCE_GetSolution(FiringSolution* out) {
@@ -105,6 +109,14 @@ uint32_t BCE_GetFaultFlags(void) {
 
 uint32_t BCE_GetDiagFlags(void) {
     return s_engine.getDiagFlags();
+}
+
+float BCE_GetHFOV(void) {
+    return s_engine.getHFOV();
+}
+
+float BCE_GetVFOV(void) {
+    return s_engine.getVFOV();
 }
 
 } // extern "C"

@@ -96,12 +96,6 @@ void BCE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
  * Capture current gyroscope readings to establish a bias offset.
  * The rifle must be held perfectly still for ~1 second.
  */
-void DOPE_CalibrateGyro(void);
-
-/**
- * Legacy alias for DOPE_CalibrateGyro().
- * Kept for compatibility with older application integrations.
- */
 void BCE_CalibrateGyro(void);
 
 /**
@@ -143,6 +137,23 @@ void BCE_SetMagDeclination(float declination_deg);
 void BCE_SetExternalReferenceMode(bool enabled);
 
 // ---------------------------------------------------------------------------
+// Uncertainty Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the uncertainty (1σ) configuration for Gaussian error propagation.
+ * When enabled, the engine runs perturbed solver passes and computes a
+ * 2×2 covariance matrix (elevation × windage) on the firing solution.
+ */
+void BCE_SetUncertaintyConfig(const UncertaintyConfig* config);
+
+/**
+ * Retrieve the default uncertainty configuration with sensible hardware
+ * defaults pre-populated. Caller can adjust and pass to BCE_SetUncertaintyConfig.
+ */
+void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
+
+// ---------------------------------------------------------------------------
 // Output — SRS §12
 // ---------------------------------------------------------------------------
 
@@ -166,6 +177,18 @@ uint32_t BCE_GetFaultFlags(void);
  * Get current diagnostic flags (defaults active, etc.).
  */
 uint32_t BCE_GetDiagFlags(void);
+
+/**
+ * Get the horizontal field-of-view (degrees) computed from the latest valid
+ * zoom encoder reading.  Returns 0 if no valid encoder frame has been received.
+ */
+float BCE_GetHFOV(void);
+
+/**
+ * Get the vertical field-of-view (degrees) computed from the latest valid
+ * zoom encoder reading.  Returns 0 if no valid encoder frame has been received.
+ */
+float BCE_GetVFOV(void);
 
 #ifdef __cplusplus
 } // extern "C"

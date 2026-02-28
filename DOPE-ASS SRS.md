@@ -70,7 +70,7 @@ If LiDAR mapping or vision processing exists, it is handled by the Application l
 
 DOPE computes one firing solution at a time.
 
-For this repository, the production DOPE engine scope is `lib/bce/`; desktop GUI harness code (`src/gui_main.cpp`, `src/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
+For this repository, the production DOPE engine scope is `lib/bce/`; desktop GUI harness code (`tools/native_gui/gui_main.cpp`, `tools/native_gui/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
 
 ---
 
@@ -164,7 +164,7 @@ Defaults never trigger FAULT.
 ## 5.2 Default Override Mechanism
 
 ```cpp
-struct DOPE_DefaultOverrides {
+struct BCE_DefaultOverrides {
     bool use_altitude;
     float altitude_m;
 
@@ -187,7 +187,7 @@ struct DOPE_DefaultOverrides {
 ```
 
 ```cpp
-void DOPE_SetDefaultOverrides(const DOPE_DefaultOverrides& defaults);
+void BCE_SetDefaultOverrides(const BCE_DefaultOverrides* defaults);
 ```
 
 Application may load user profile defaults at startup.
@@ -199,7 +199,7 @@ Application may load user profile defaults at startup.
 Compile-time constant:
 
 ```cpp
-#define DOPE_MAX_RANGE_M 2500
+constexpr uint32_t BCE_MAX_RANGE_M = 2500;
 ```
 
 - Supports current 2km LRF
@@ -220,7 +220,7 @@ Application may configure a lower operational limit.
 All inputs enter through:
 
 ```cpp
-void DOPE_Update(const SensorFrame& frame);
+void BCE_Update(const SensorFrame* frame);
 ```
 
 ---
@@ -277,7 +277,7 @@ Computes:
 Supports:
 
 ```cpp
-void DOPE_CalibrateBaro();
+void BCE_CalibrateBaro(void);
 ```
 
 ---
@@ -366,12 +366,12 @@ Manual zero recompute API removed.
 # 10. Calibration APIs
 
 ```cpp
-void DOPE_SetIMUBias(float accel_bias[3], float gyro_bias[3]);
-void DOPE_SetMagCalibration(float hard_iron[3], float soft_iron[3]);
-void DOPE_SetBoresightOffset(float vertical_moa, float horizontal_moa);
-void DOPE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
-void DOPE_CalibrateBaro();
-void DOPE_CalibrateGyro();
+void BCE_SetIMUBias(const float accel_bias[3], const float gyro_bias[3]);
+void BCE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
+void BCE_SetBoresightOffset(const BoresightOffset* offset);
+void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
+void BCE_CalibrateBaro(void);
+void BCE_CalibrateGyro(void);
 ```
 
 These correct physical alignment errors.

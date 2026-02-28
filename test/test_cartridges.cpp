@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include "../lib/bce/src/solver/solver.h"
 #include "bce/bce_config.h"
+#include "bce/bce_math_utils.h"
 #include <cmath>
 
 class CartridgeTest : public ::testing::Test {
@@ -19,19 +20,18 @@ protected:
         solver.init();
     }
 
-    SolverParams makeCartridgeParams(float range_m, float bc, DragModel model, float mv_ms, float mass_gr, float barrel_in, float mv_adjust) {
+    // ref_barrel_in: the barrel length (inches) at which mv_ms was measured.
+    // For SAAMI rifle calibers this is typically 24". For 9mm it is 4".
+    SolverParams makeCartridgeParams(float range_m, float bc, DragModel model, float mv_ms, float mass_gr, float barrel_in, float mv_adjust, float ref_barrel_in = 24.0f) {
         SolverParams p = {};
         p.bc = bc;
         p.drag_model = model;
-        
-        // Adjust MV
-        float base_mv_fps = mv_ms * 3.28084f;
-        float barrel_length_delta_in = barrel_in - 24.0f;
-        float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjust);
-        p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;
 
-        p.bullet_mass_kg = mass_gr * BCE_GRAINS_TO_KG;
-        p.sight_height_m = 0.0381f; // 1.5 inches
+        // Adjust MV from reference barrel to actual barrel
+        float base_mv_fps = mv_ms * bce::math::MPS_TO_FPS;
+        float barrel_length_delta_in = barrel_in - ref_barrel_in;
+        float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjust);
+        p.muzzle_velocity_ms = adjusted_mv_fps * bce::math::FPS_TO_MPS;
         p.air_density = BCE_STD_AIR_DENSITY;
         p.speed_of_sound = BCE_SPEED_OF_SOUND_15C;
         p.target_range_m = range_m;
@@ -94,8 +94,9 @@ TEST_F(CartridgeTest, 300WinMag190gr) {
 }
 
 // Test 9mm 124gr FMJ from compact handgun barrel
+// 365 m/s is the SAAMI reference MV measured from a 4" test barrel.
 TEST_F(CartridgeTest, NineMm124grHandgun) {
-    SolverParams p = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 365.0f, 124.0f, 4.0f, 12.0f); // ~1200 fps nominal from 4"
+    SolverParams p = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 365.0f, 124.0f, 4.0f, 12.0f, 4.0f); // 1197 fps from 4" (delta=0)
 
     float zero_angle = solver.solveZeroAngle(p, 25.0f);
     EXPECT_FALSE(std::isnan(zero_angle));
@@ -104,15 +105,17 @@ TEST_F(CartridgeTest, NineMm124grHandgun) {
     SolverResult result = solver.integrate(p);
     EXPECT_TRUE(result.valid);
 
-    // Rough sanity check for 9mm handgun at 100m
-    EXPECT_GT(result.velocity_at_target_ms, 150.0f);
+    // Rough sanity check for 9mm handgun at 100m — starting at ~365 m/s (1197 fps)
+    EXPECT_GT(result.velocity_at_target_ms, 270.0f);
     EXPECT_LT(result.tof_s, 1.2f);
 }
 
-// Test 9mm 124gr FMJ from PDW barrel and compare to handgun profile
+// Test 9mm 124gr FMJ from PDW barrel and compare to handgun profile.
+// Both profiles share the same SAAMI base MV (365 m/s at 4" reference).
+// The PDW (8") should gain ~48 fps over the handgun (4") via barrel length alone.
 TEST_F(CartridgeTest, NineMm124grPdwVsHandgun) {
-    SolverParams handgun = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 365.0f, 124.0f, 4.0f, 12.0f);
-    SolverParams pdw = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 410.0f, 124.0f, 8.0f, 12.0f);
+    SolverParams handgun = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 365.0f, 124.0f, 4.0f, 12.0f, 4.0f);
+    SolverParams pdw     = makeCartridgeParams(100.0f, 0.150f, DragModel::G1, 365.0f, 124.0f, 8.0f, 12.0f, 4.0f);
 
     float handgun_zero = solver.solveZeroAngle(handgun, 25.0f);
     float pdw_zero = solver.solveZeroAngle(pdw, 25.0f);

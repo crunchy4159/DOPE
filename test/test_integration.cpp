@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include "bce/bce_api.h"
 #include "bce/bce_config.h"
+#include "bce/bce_math_utils.h"
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -118,13 +119,11 @@ TEST_F(IntegrationTest, FullConfigProducesSolution) {
 
 // .308 Win 150gr Federal Fusion reference-style scenario at 500 yd
 TEST_F(IntegrationTest, FederalFusion150gr500ydReferenceEnvelope) {
-    constexpr float kFpsToMps = 0.3048f;
-    constexpr float kMpsToFps = 3.280839895f;
 
     BulletProfile bullet = {};
     bullet.bc = 0.414f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2820.0f * kFpsToMps;
+    bullet.muzzle_velocity_ms = 2820.0f * bce::math::FPS_TO_MPS;
     bullet.mass_grains = 150.0f;
     bullet.length_mm = 28.0f;
     bullet.caliber_inches = 0.308f;
@@ -152,7 +151,7 @@ TEST_F(IntegrationTest, FederalFusion150gr500ydReferenceEnvelope) {
     FiringSolution sol;
     BCE_GetSolution(&sol);
 
-    const float velocity_fps = sol.velocity_at_target_ms * kMpsToFps;
+    const float velocity_fps = sol.velocity_at_target_ms * bce::math::MPS_TO_FPS;
 
     // Published calculators vary with exact drag fit and implementation details.
     // Keep this as a realistic envelope centered near ~1821 fps.
@@ -194,6 +193,7 @@ TEST_F(IntegrationTest, PresetPair223Vs308HoldOrderingAt500Yd) {
     p308.drag_model = DragModel::G1;
     p308.muzzle_velocity_ms = 792.0f;
     p308.barrel_length_in = 24.0f;
+    p308.reference_barrel_length_in = 24.0f; // .308 Win SAAMI reference
     p308.mv_adjustment_factor = 25.0f;
     p308.mass_grains = 175.0f;
     p308.length_mm = 31.2f;
@@ -203,8 +203,9 @@ TEST_F(IntegrationTest, PresetPair223Vs308HoldOrderingAt500Yd) {
     BulletProfile p223 = {};
     p223.bc = 0.245f;
     p223.drag_model = DragModel::G1;
-    p223.muzzle_velocity_ms = 990.0f;
+    p223.muzzle_velocity_ms = 990.0f;   // measured from 24" SAAMI test barrel
     p223.barrel_length_in = 20.0f;
+    p223.reference_barrel_length_in = 24.0f; // .223 Rem SAAMI reference
     p223.mv_adjustment_factor = 25.0f;
     p223.mass_grains = 55.0f;
     p223.length_mm = 19.0f;
@@ -778,12 +779,11 @@ TEST_F(IntegrationTest, RapidRangeValidityTransitionsRecover) {
 
 // Atmospheric changes should trigger zero recomputation when deltas are significant
 TEST_F(IntegrationTest, AtmosphericDeltaTriggersZeroRecompute) {
-    constexpr float kFpsToMps = 0.3048f;
 
     BulletProfile bullet = {};
     bullet.bc = 0.462f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2650.0f * kFpsToMps;
+    bullet.muzzle_velocity_ms = 2650.0f * bce::math::FPS_TO_MPS;
     bullet.mass_grains = 168.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
@@ -884,12 +884,11 @@ TEST_F(IntegrationTest, Reference308168gr600mAnd800mTightEnvelope) {
 
 // External-reference mode should be opt-in and reduce modeled drag effects
 TEST_F(IntegrationTest, ExternalReferenceModeReducesDropAndTof) {
-    constexpr float kFpsToMps = 0.3048f;
 
     BulletProfile bullet = {};
     bullet.bc = 0.462f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2650.0f * kFpsToMps;
+    bullet.muzzle_velocity_ms = 2650.0f * bce::math::FPS_TO_MPS;
     bullet.mass_grains = 168.0f;
     bullet.length_mm = 31.0f;
     bullet.caliber_inches = 0.308f;
@@ -931,4 +930,112 @@ TEST_F(IntegrationTest, ExternalReferenceModeReducesDropAndTof) {
     EXPECT_LT(std::fabs(external_mode.hold_elevation_moa), std::fabs(legacy.hold_elevation_moa));
     EXPECT_LT(external_mode.tof_ms, legacy.tof_ms);
     EXPECT_GT(external_mode.velocity_at_target_ms, legacy.velocity_at_target_ms);
+}
+
+// ---------------------------------------------------------------------------
+// Zoom encoder / FOV tests — SRS §7.5
+// ---------------------------------------------------------------------------
+
+// After init, with no encoder frame received, both FOV values must be zero.
+TEST_F(IntegrationTest, EncoderNoReadingDefaultsToZeroFOV) {
+    EXPECT_FLOAT_EQ(BCE_GetHFOV(), 0.0f);
+    EXPECT_FLOAT_EQ(BCE_GetVFOV(), 0.0f);
+}
+
+// A valid encoder reading at 8 mm focal length should produce the expected
+// horizontal and vertical FOV for the IMX477 (1/2.3" sensor).
+//   HFOV = 2 * atan(6.287 / 16) ≈ 42.92°
+//   VFOV = 2 * atan(4.712 / 16) ≈ 32.80°
+TEST_F(IntegrationTest, EncoderAt8mmProducesExpectedFOV) {
+    SensorFrame f = makeDefaultFrame(10000);
+    f.encoder_focal_length_mm = 8.0f;
+    f.encoder_valid = true;
+    BCE_Update(&f);
+
+    EXPECT_NEAR(BCE_GetHFOV(), 42.92f, 0.1f);
+    EXPECT_NEAR(BCE_GetVFOV(), 32.80f, 0.1f);
+}
+
+// At maximum zoom (50 mm) the FOV should be much narrower.
+//   HFOV = 2 * atan(6.287 / 100) ≈ 7.19°
+//   VFOV = 2 * atan(4.712 / 100) ≈ 5.39°
+TEST_F(IntegrationTest, EncoderAt50mmProducesNarrowFOV) {
+    SensorFrame f = makeDefaultFrame(20000);
+    f.encoder_focal_length_mm = 50.0f;
+    f.encoder_valid = true;
+    BCE_Update(&f);
+
+    EXPECT_NEAR(BCE_GetHFOV(), 7.19f, 0.1f);
+    EXPECT_NEAR(BCE_GetVFOV(), 5.39f, 0.1f);
+}
+
+// Longer focal length must yield smaller FOV (monotone relationship).
+TEST_F(IntegrationTest, EncoderFOVDecreasesWithLongerFocalLength) {
+    SensorFrame f8 = makeDefaultFrame(10000);
+    f8.encoder_focal_length_mm = 8.0f;
+    f8.encoder_valid = true;
+    BCE_Update(&f8);
+    float hfov_8mm = BCE_GetHFOV();
+    float vfov_8mm = BCE_GetVFOV();
+
+    SensorFrame f50 = makeDefaultFrame(20000);
+    f50.encoder_focal_length_mm = 50.0f;
+    f50.encoder_valid = true;
+    BCE_Update(&f50);
+    float hfov_50mm = BCE_GetHFOV();
+    float vfov_50mm = BCE_GetVFOV();
+
+    EXPECT_GT(hfov_8mm, hfov_50mm);
+    EXPECT_GT(vfov_8mm, vfov_50mm);
+}
+
+// An encoder frame with encoder_valid = false must NOT change the stored FOV.
+TEST_F(IntegrationTest, EncoderNotValidDoesNotChangeFOV) {
+    // First establish a valid reading
+    SensorFrame fValid = makeDefaultFrame(10000);
+    fValid.encoder_focal_length_mm = 25.0f;
+    fValid.encoder_valid = true;
+    BCE_Update(&fValid);
+    float hfov_after_valid = BCE_GetHFOV();
+    EXPECT_GT(hfov_after_valid, 0.0f);
+
+    // Now send a frame with encoder_valid = false — FOV must be unchanged
+    SensorFrame fInvalid = makeDefaultFrame(20000);
+    fInvalid.encoder_valid = false;
+    fInvalid.encoder_focal_length_mm = 8.0f; // different value, should be ignored
+    BCE_Update(&fInvalid);
+
+    EXPECT_FLOAT_EQ(BCE_GetHFOV(), hfov_after_valid);
+}
+
+// A focal length below the minimum threshold with encoder_valid = true must
+// retain the previously computed FOV.
+TEST_F(IntegrationTest, EncoderInvalidFocalLengthRetainsPreviousFOV) {
+    SensorFrame fValid = makeDefaultFrame(10000);
+    fValid.encoder_focal_length_mm = 16.0f;
+    fValid.encoder_valid = true;
+    BCE_Update(&fValid);
+    float prev_hfov = BCE_GetHFOV();
+    EXPECT_GT(prev_hfov, 0.0f);
+
+    // Sub-minimum focal length (< BCE_ENCODER_MIN_FOCAL_LENGTH_MM)
+    SensorFrame fBad = makeDefaultFrame(20000);
+    fBad.encoder_focal_length_mm = 0.0f;
+    fBad.encoder_valid = true;
+    BCE_Update(&fBad);
+
+    EXPECT_FLOAT_EQ(BCE_GetHFOV(), prev_hfov);
+}
+
+// BCE_Init() must reset FOV to zero even after valid readings have been stored.
+TEST_F(IntegrationTest, EncoderFOVResetOnInit) {
+    SensorFrame f = makeDefaultFrame(10000);
+    f.encoder_focal_length_mm = 20.0f;
+    f.encoder_valid = true;
+    BCE_Update(&f);
+    EXPECT_GT(BCE_GetHFOV(), 0.0f);
+
+    BCE_Init();
+    EXPECT_FLOAT_EQ(BCE_GetHFOV(), 0.0f);
+    EXPECT_FLOAT_EQ(BCE_GetVFOV(), 0.0f);
 }

@@ -25,6 +25,7 @@
 #include "backends/imgui_impl_win32.h"
 
 #include "bce/bce_api.h"
+#include "bce/bce_math_utils.h"
 #include "nlohmann/json.hpp"
 
 #ifdef _MSC_VER
@@ -46,16 +47,8 @@ static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-constexpr float MPS_TO_FPS = 3.280839895f;
-constexpr float FPS_TO_MPS = 0.3048f;
-constexpr float MPS_TO_MPH = 2.23693629f;
-constexpr float MPH_TO_MPS = 0.44704f;
-constexpr float M_TO_YD = 1.093613298f;
-constexpr float YD_TO_M = 0.9144f;
-constexpr float MM_TO_IN = 0.0393700787f;
-constexpr float IN_TO_MM = 25.4f;
-constexpr float J_TO_FTLB = 0.737562149f;
-constexpr float MOA_TO_RAD = 0.000290888209f;
+using namespace bce::math;
+
 constexpr uint64_t FRAME_STEP_US = 10000;
 constexpr int TARGET_RING_COUNT = 4;
 constexpr float TARGET_CANVAS_MIN = 160.0f;
@@ -146,6 +139,10 @@ struct GuiState {
     bool top_down_show_required_angle = false;
     std::string output_text;
     std::string last_action;
+
+    // Uncertainty / error-margin config (initialized from BCE_GetDefaultUncertaintyConfig).
+    // sigma_cant_deg uses the RM3100 magnetometer default (1.5 deg).
+    UncertaintyConfig uc_config = {};
 };
 
 GuiState g_state;
@@ -558,6 +555,7 @@ void ResetStateDefaults() {
     g_state.drag_model_index = 0;
     g_state.now_us = 0;
     g_state.last_action = "Startup";
+    BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
     std::snprintf(g_state.preset_path, sizeof(g_state.preset_path), "%s", "bce_gui_preset.json");
     std::snprintf(g_state.profile_library_path, sizeof(g_state.profile_library_path), "%s", "bce_gui_profile_library.json");
     std::snprintf(g_state.new_cartridge_preset_name, sizeof(g_state.new_cartridge_preset_name), "%s", "New Cartridge Preset");
@@ -580,6 +578,7 @@ void ApplyConfig() {
     BCE_SetZeroConfig(&g_state.zero);
     BCE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
     BCE_SetLatitude(g_state.latitude);
+    BCE_SetUncertaintyConfig(&g_state.uc_config);
 }
 
 SensorFrame BuildFrame() {
@@ -758,6 +757,22 @@ void RefreshOutput() {
      ss << "  Offsets total:    " << sol.offsets_windage_moa << " [" << direction_label(sol.offsets_windage_moa) << "]\n";
      ss << "  Cant added:       " << sol.cant_windage_moa << " [" << direction_label(sol.cant_windage_moa) << "]\n";
      ss << "  Total windage:    " << sol.hold_windage_moa << " [" << direction_label(sol.hold_windage_moa) << "]\n";
+
+    if (sol.uncertainty_valid) {
+        const float rms_sigma = std::sqrt((sol.sigma_elevation_moa * sol.sigma_elevation_moa +
+                                           sol.sigma_windage_moa   * sol.sigma_windage_moa) * 0.5f);
+        const float cep50 = 1.1774f * rms_sigma;
+        const float cep95 = 2.4477f * rms_sigma;
+        ss << "\nUncertainty (1-sigma propagation):\n";
+        ss << "  Elevation: " << sol.sigma_elevation_moa << " MOA\n";
+        ss << "  Windage:   " << sol.sigma_windage_moa   << " MOA\n";
+        ss << "  50% CEP:   " << cep50 << " MOA\n";
+        ss << "  95% CEP:   " << cep95 << " MOA\n";
+    } else if (g_state.uc_config.enabled) {
+        ss << "\nUncertainty: enabled but not yet computed (need valid solution).\n";
+    } else {
+        ss << "\nUncertainty: disabled.\n";
+    }
 
     g_state.output_text = ss.str();
 }
@@ -960,6 +975,17 @@ void SavePreset() {
     j["baro_humidity"] = g_state.baro_humidity;
     j["lrf_range_m"] = g_state.lrf_range;
     j["lrf_confidence"] = g_state.lrf_conf;
+    j["uc_enabled"]               = g_state.uc_config.enabled;
+    j["uc_sigma_mv_ms"]           = g_state.uc_config.sigma_muzzle_velocity_ms;
+    j["uc_sigma_bc_fraction"]     = g_state.uc_config.sigma_bc_fraction;
+    j["uc_sigma_range_m"]         = g_state.uc_config.sigma_range_m;
+    j["uc_sigma_wind_speed_ms"]   = g_state.uc_config.sigma_wind_speed_ms;
+    j["uc_sigma_wind_heading_deg"]= g_state.uc_config.sigma_wind_heading_deg;
+    j["uc_sigma_temperature_c"]   = g_state.uc_config.sigma_temperature_c;
+    j["uc_sigma_pressure_pa"]     = g_state.uc_config.sigma_pressure_pa;
+    j["uc_sigma_humidity"]        = g_state.uc_config.sigma_humidity;
+    j["uc_sigma_sight_height_mm"] = g_state.uc_config.sigma_sight_height_mm;
+    j["uc_sigma_cant_deg"]        = g_state.uc_config.sigma_cant_deg;
     j["imu_valid"] = g_state.imu_valid;
     j["mag_valid"] = g_state.mag_valid;
     j["baro_valid"] = g_state.baro_valid;
@@ -1053,6 +1079,21 @@ void LoadPreset() {
         g_state.baro_humidity = j.value("baro_humidity", 0.5f);
         g_state.lrf_range = j.value("lrf_range_m", 500.0f);
         g_state.lrf_conf = j.value("lrf_confidence", 1.0f);
+
+        // Uncertainty config — load with per-field defaults matching BCE defaults
+        UncertaintyConfig uc_def = {};
+        BCE_GetDefaultUncertaintyConfig(&uc_def);
+        g_state.uc_config.enabled                  = j.value("uc_enabled",               uc_def.enabled);
+        g_state.uc_config.sigma_muzzle_velocity_ms  = j.value("uc_sigma_mv_ms",           uc_def.sigma_muzzle_velocity_ms);
+        g_state.uc_config.sigma_bc_fraction          = j.value("uc_sigma_bc_fraction",     uc_def.sigma_bc_fraction);
+        g_state.uc_config.sigma_range_m              = j.value("uc_sigma_range_m",         uc_def.sigma_range_m);
+        g_state.uc_config.sigma_wind_speed_ms        = j.value("uc_sigma_wind_speed_ms",   uc_def.sigma_wind_speed_ms);
+        g_state.uc_config.sigma_wind_heading_deg     = j.value("uc_sigma_wind_heading_deg",uc_def.sigma_wind_heading_deg);
+        g_state.uc_config.sigma_temperature_c        = j.value("uc_sigma_temperature_c",   uc_def.sigma_temperature_c);
+        g_state.uc_config.sigma_pressure_pa          = j.value("uc_sigma_pressure_pa",     uc_def.sigma_pressure_pa);
+        g_state.uc_config.sigma_humidity             = j.value("uc_sigma_humidity",        uc_def.sigma_humidity);
+        g_state.uc_config.sigma_sight_height_mm      = j.value("uc_sigma_sight_height_mm", uc_def.sigma_sight_height_mm);
+        g_state.uc_config.sigma_cant_deg             = j.value("uc_sigma_cant_deg",        uc_def.sigma_cant_deg);
 
         g_state.imu_valid = j.value("imu_valid", true);
         g_state.mag_valid = j.value("mag_valid", true);
@@ -1377,6 +1418,59 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::SameLine();
         ImGui::Checkbox("LRF Valid", &g_state.lrf_valid);
 
+        ImGui::Separator();
+        if (ImGui::CollapsingHeader("Error Margins (1-sigma)")) {
+            ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
+            if (g_state.uc_config.enabled) {
+                ImGui::Indent();
+                // Muzzle velocity — fps in imperial
+                float mv_sig = is_imperial ? (g_state.uc_config.sigma_muzzle_velocity_ms * MPS_TO_FPS) : g_state.uc_config.sigma_muzzle_velocity_ms;
+                if (ImGui::InputFloat(is_imperial ? "MV sigma (fps)" : "MV sigma (m/s)", &mv_sig, 0.5f, 5.0f, "%.1f"))
+                    g_state.uc_config.sigma_muzzle_velocity_ms = is_imperial ? (mv_sig * FPS_TO_MPS) : mv_sig;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma muzzle velocity spread (chrono SD)");
+
+                ImGui::InputFloat("BC sigma (fraction)", &g_state.uc_config.sigma_bc_fraction, 0.001f, 0.01f, "%.3f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma BC uncertainty as a fraction, e.g. 0.02 = 2%%");
+
+                // Range — yd in imperial
+                float rng_sig = is_imperial ? (g_state.uc_config.sigma_range_m * M_TO_YD) : g_state.uc_config.sigma_range_m;
+                if (ImGui::InputFloat(is_imperial ? "Range sigma (yd)" : "Range sigma (m)", &rng_sig, 0.1f, 1.0f, "%.2f"))
+                    g_state.uc_config.sigma_range_m = is_imperial ? (rng_sig * YD_TO_M) : rng_sig;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma LRF ranging uncertainty");
+
+                // Wind speed — mph in imperial
+                float wsp_sig = is_imperial ? (g_state.uc_config.sigma_wind_speed_ms * MPS_TO_MPH) : g_state.uc_config.sigma_wind_speed_ms;
+                if (ImGui::InputFloat(is_imperial ? "Wind speed sigma (mph)" : "Wind speed sigma (m/s)", &wsp_sig, 0.1f, 1.0f, "%.2f"))
+                    g_state.uc_config.sigma_wind_speed_ms = is_imperial ? (wsp_sig * MPH_TO_MPS) : wsp_sig;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma wind speed estimation error");
+
+                ImGui::InputFloat("Wind dir sigma (deg)", &g_state.uc_config.sigma_wind_heading_deg, 0.5f, 5.0f, "%.1f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma wind direction estimation error");
+
+                // Temperature — F in imperial (sigma scales by 9/5 just like absolute temp)
+                float tmp_sig = is_imperial ? (g_state.uc_config.sigma_temperature_c * 9.0f / 5.0f) : g_state.uc_config.sigma_temperature_c;
+                if (ImGui::InputFloat(is_imperial ? "Temp sigma (F)" : "Temp sigma (C)", &tmp_sig, 0.1f, 1.0f, "%.2f"))
+                    g_state.uc_config.sigma_temperature_c = is_imperial ? (tmp_sig * 5.0f / 9.0f) : tmp_sig;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma baro temperature sensor uncertainty");
+
+                ImGui::InputFloat("Pressure sigma (Pa)", &g_state.uc_config.sigma_pressure_pa, 10.0f, 100.0f, "%.0f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma baro pressure sensor uncertainty");
+
+                ImGui::InputFloat("Humidity sigma (frac)", &g_state.uc_config.sigma_humidity, 0.005f, 0.05f, "%.3f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma relative humidity uncertainty (0..1)");
+
+                // Sight height — inches in imperial
+                float sht_sig = is_imperial ? (g_state.uc_config.sigma_sight_height_mm * MM_TO_IN) : g_state.uc_config.sigma_sight_height_mm;
+                if (ImGui::InputFloat(is_imperial ? "Sight height sigma (in)" : "Sight height sigma (mm)", &sht_sig, 0.01f, 0.1f, "%.3f"))
+                    g_state.uc_config.sigma_sight_height_mm = is_imperial ? (sht_sig * IN_TO_MM) : sht_sig;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma sight height mounting uncertainty");
+
+                ImGui::InputFloat("Cant sigma (deg)", &g_state.uc_config.sigma_cant_deg, 0.1f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma cant/roll uncertainty from the RM3100 magnetometer");
+                ImGui::Unindent();
+            }
+        }
+
         if (ImGui::Button("Apply Config")) {
             g_state.last_action = "Apply Config";
             ApplyConfig();
@@ -1450,11 +1544,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float hold_elevation_moa = sol.hold_elevation_moa;
         const float impact_distance_moa = std::sqrt(
             hold_windage_moa * hold_windage_moa + hold_elevation_moa * hold_elevation_moa);
-        const float confidence_radius_moa = ClampValue((1.0f - g_state.lrf_conf) * 5.0f, 0.0f, 5.0f);
+        // Auto-scale: include 3-sigma uncertainty ellipse footprint when available.
+        const float sigma_span_moa = (sol.uncertainty_valid)
+            ? 3.0f * std::max(sol.sigma_elevation_moa, sol.sigma_windage_moa)
+            : 0.0f;
 
-        // Auto-scale the target so both hold offset and confidence circle fit.
         const float ring_count = static_cast<float>(TARGET_RING_COUNT);
-        const float required_span_moa = impact_distance_moa + confidence_radius_moa;
+        const float required_span_moa = impact_distance_moa + sigma_span_moa;
         float moa_per_ring = ClampValue(std::round(required_span_moa / ring_count), 1.0f, 30.0f);
         if ((moa_per_ring * ring_count) < required_span_moa) {
             moa_per_ring = ClampValue(moa_per_ring + 1.0f, 1.0f, 30.0f);
@@ -1467,7 +1563,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float impact_distance_in = impact_distance_moa * inches_per_moa;
         const float elev_offset_in = hold_elevation_moa * inches_per_moa;
         const float wind_offset_in = hold_windage_moa * inches_per_moa;
-        const float confidence_radius_in = confidence_radius_moa * inches_per_moa;
         const float wind_only_in = sol.wind_only_windage_moa * inches_per_moa;
         const float earth_spin_in = sol.earth_spin_windage_moa * inches_per_moa;
         const float offsets_in = sol.offsets_windage_moa * inches_per_moa;
@@ -1499,7 +1594,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::SameLine();
         ImGui::TextColored(direction_color(sol.cant_windage_moa), "[%s]", direction_label(sol.cant_windage_moa));
         ImGui::Text("Center->Impact: %.2f MOA (%.2f in)", impact_distance_moa, impact_distance_in);
-        ImGui::Text("Confidence Radius: %.2f MOA (%.2f in)", confidence_radius_moa, confidence_radius_in);
+        if (sol.uncertainty_valid) {
+            const float cep_radius_moa = 1.1774f * std::sqrt((sol.sigma_elevation_moa * sol.sigma_elevation_moa +
+                                                               sol.sigma_windage_moa  * sol.sigma_windage_moa) * 0.5f);
+            ImGui::Text("1-sigma: Elev %.2f MOA, Wind %.2f MOA  |  50%% CEP %.2f MOA",
+                        sol.sigma_elevation_moa, sol.sigma_windage_moa, cep_radius_moa);
+        } else {
+            ImGui::TextDisabled("Uncertainty propagation disabled or not yet computed.");
+        }
         ImGui::Separator();
 
         ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -1549,9 +1651,78 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             center.x + hold_windage_moa * moa_to_px,
             center.y - hold_elevation_moa * moa_to_px
         );
-        const float confidence_radius_px = confidence_radius_moa * moa_to_px;
 
-        draw_list->AddCircle(impact_point, confidence_radius_px, IM_COL32(255, 220, 64, 220), 0, 1.5f);
+        // Gaussian error ellipse — multi-shell gradient (center=red/opaque, outer=blue/transparent)
+        if (sol.uncertainty_valid && (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
+            const float se  = std::max(sol.sigma_elevation_moa, 0.001f);
+            const float sw  = std::max(sol.sigma_windage_moa,   0.001f);
+            const float cov = sol.covariance_elev_wind;
+
+            // Eigendecomposition of 2x2 covariance matrix
+            const float tr_half    = (se*se + sw*sw) * 0.5f;
+            const float disc       = std::sqrt(std::max(((se*se - sw*sw) * 0.5f) * ((se*se - sw*sw) * 0.5f) + cov*cov, 0.0f));
+            const float lambda1    = tr_half + disc;   // larger eigenvalue
+            const float lambda2    = std::max(tr_half - disc, 0.0f);
+            const float axis1_moa  = std::sqrt(lambda1); // major semi-axis (MOA)
+            const float axis2_moa  = std::sqrt(lambda2);
+            // Rotation: angle of eigenvector-1 from the elevation axis
+            const float rot_rad    = std::atan2(lambda1 - se*se, cov);
+            const float cos_r      = std::cos(rot_rad);
+            const float sin_r      = std::sin(rot_rad);
+
+            constexpr int kShells   = 24;
+            constexpr int kSegments = 48;
+            constexpr float kMaxSig = 3.0f;
+
+            // Draw filled shells from outermost -> innermost so center is brightest
+            for (int shell = kShells - 1; shell >= 0; --shell) {
+                const float k   = kMaxSig * (shell + 1.0f) / static_cast<float>(kShells);
+                const float t   = static_cast<float>(shell) / static_cast<float>(kShells - 1); // 0=inner, 1=outer
+                const uint8_t r = static_cast<uint8_t>(255.0f * (1.0f - t));
+                const uint8_t g = static_cast<uint8_t>(120.0f * (1.0f - t * 0.85f));
+                const uint8_t b = static_cast<uint8_t>(30.0f  + 200.0f * t);
+                const uint8_t a = static_cast<uint8_t>(160.0f * (1.0f - t * 0.80f) + 10.0f);
+                const ImU32 col = IM_COL32(r, g, b, a);
+
+                ImVec2 pts[kSegments];
+                for (int s = 0; s < kSegments; ++s) {
+                    const float ang      = 2.0f * 3.14159265f * s / static_cast<float>(kSegments);
+                    const float u        = k * axis1_moa * std::cos(ang);
+                    const float v        = k * axis2_moa * std::sin(ang);
+                    const float elev_moa = u * cos_r - v * sin_r;
+                    const float wind_moa = u * sin_r + v * cos_r;
+                    pts[s] = ImVec2(impact_point.x + wind_moa * moa_to_px,
+                                    impact_point.y - elev_moa * moa_to_px);
+                }
+                draw_list->AddConvexPolyFilled(pts, kSegments, col);
+            }
+
+            // Labeled contour outlines at 1σ / 2σ / 3σ
+            const float sigma_levels[]  = { 1.0f, 2.0f, 3.0f };
+            const ImU32 sigma_colors[]  = { IM_COL32(255, 200, 80, 230),
+                                             IM_COL32(180, 120, 255, 180),
+                                             IM_COL32(80,  160, 255, 140) };
+            const char* sigma_labels[]  = { "1\xcf\x83 39%", "2\xcf\x83 86%", "3\xcf\x83 99%" };
+            for (int si = 0; si < 3; ++si) {
+                const float k = sigma_levels[si];
+                ImVec2 pts[kSegments];
+                for (int s = 0; s < kSegments; ++s) {
+                    const float ang      = 2.0f * 3.14159265f * s / static_cast<float>(kSegments);
+                    const float u        = k * axis1_moa * std::cos(ang);
+                    const float v        = k * axis2_moa * std::sin(ang);
+                    const float elev_moa = u * cos_r - v * sin_r;
+                    const float wind_moa = u * sin_r + v * cos_r;
+                    pts[s] = ImVec2(impact_point.x + wind_moa * moa_to_px,
+                                    impact_point.y - elev_moa * moa_to_px);
+                }
+                draw_list->AddPolyline(pts, kSegments, sigma_colors[si], ImDrawFlags_Closed, 1.2f);
+                // Label near the topmost point of the contour (s=kSegments/4 → top)
+                const int label_seg = kSegments / 4;
+                draw_list->AddText(ImVec2(pts[label_seg].x + 2.0f, pts[label_seg].y - 12.0f),
+                                   sigma_colors[si], sigma_labels[si]);
+            }
+        }
+
         draw_list->AddCircleFilled(impact_point, 4.0f, IM_COL32(255, 70, 70, 255));
 
         ImGui::End();

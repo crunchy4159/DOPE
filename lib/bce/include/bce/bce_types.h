@@ -133,9 +133,10 @@ struct BCE_DefaultOverrides {
 struct BulletProfile {
     float     bc;                     // Ballistic coefficient
     DragModel drag_model;             // G1–G8
-    float     muzzle_velocity_ms;     // m/s
-    float     barrel_length_in;       // inches
-    float     mv_adjustment_factor;   // fps per inch deviation from 24"
+    float     muzzle_velocity_ms;     // m/s at reference_barrel_length_in
+    float     barrel_length_in;       // actual barrel length, inches
+    float     reference_barrel_length_in; // SAAMI reference barrel (rifle=24", 9mm=4"); 0 → default 24"
+    float     mv_adjustment_factor;   // fps per inch deviation from reference barrel
     float     mass_grains;            // grains (converted internally)
     float     length_mm;              // mm
     float     caliber_inches;         // inches
@@ -179,6 +180,38 @@ struct FiringSolution {
     float heading_deg_true;          // True heading from AHRS + mag
 
     float air_density_kgm3;          // Computed air density
+
+    // Gaussian error propagation — SRS §14
+    bool  uncertainty_valid;          // True when uncertainty fields are populated
+    float sigma_elevation_moa;        // 1-sigma elevation uncertainty (MOA)
+    float sigma_windage_moa;          // 1-sigma windage uncertainty (MOA)
+    float covariance_elev_wind;       // Elevation-windage covariance (MOA²)
+};
+
+// ---------------------------------------------------------------------------
+// Uncertainty / Error Propagation Config — SRS §14
+// ---------------------------------------------------------------------------
+/**
+ * @brief Per-input 1-sigma uncertainties for Gaussian error propagation.
+ *
+ * When enabled, BCE_Engine runs central finite differences over each input
+ * and accumulates the resulting MOA variance into sigma_elevation_moa,
+ * sigma_windage_moa, and covariance_elev_wind in the FiringSolution.
+ *
+ * Use BCE_GetDefaultUncertaintyConfig() to obtain sensible starting values.
+ */
+struct UncertaintyConfig {
+    bool  enabled;                    // Master enable
+    float sigma_muzzle_velocity_ms;   // 1-sigma MV uncertainty (m/s)
+    float sigma_bc_fraction;          // 1-sigma BC uncertainty as fraction (e.g. 0.02 = 2%)
+    float sigma_range_m;              // 1-sigma range uncertainty (m)
+    float sigma_wind_speed_ms;        // 1-sigma wind speed uncertainty (m/s)
+    float sigma_wind_heading_deg;     // 1-sigma wind direction uncertainty (degrees)
+    float sigma_temperature_c;        // 1-sigma temperature uncertainty (°C)
+    float sigma_pressure_pa;          // 1-sigma pressure uncertainty (Pa)
+    float sigma_humidity;             // 1-sigma humidity uncertainty (fraction 0–1)
+    float sigma_sight_height_mm;      // 1-sigma sight height uncertainty (mm)
+    float sigma_cant_deg;             // 1-sigma cant angle uncertainty (degrees)
 };
 
 // ---------------------------------------------------------------------------
