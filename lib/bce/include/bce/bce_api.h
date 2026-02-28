@@ -141,9 +141,32 @@ void BCE_SetExternalReferenceMode(bool enabled);
 // ---------------------------------------------------------------------------
 
 /**
+ * Interpolate a sensor accuracy table at a given x value.
+ *
+ * Returns the piecewise-linearly interpolated 1-sigma value from `table`
+ * at position `x`.  Below the first breakpoint the first sigma is returned;
+ * above the last breakpoint the last sigma is returned.  Returns 0.0f if
+ * `table` is null or empty ("Custom / manual" sentinel).
+ *
+ * This utility lives in the BCE library so that top-level deployment
+ * applications can use the same interpolation implementation as the GUI
+ * without carrying their own copy.
+ *
+ * @param table  Pointer to a populated BCE_ErrorTable (may be null/empty).
+ * @param x      Independent variable (e.g. range_m, temperature_c).
+ * @return       1-sigma estimate at x, or 0.0f for a null/empty table.
+ */
+float BCE_InterpolateSigma(const BCE_ErrorTable* table, float x);
+
+/**
  * Set the uncertainty (1σ) configuration for Gaussian error propagation.
  * When enabled, the engine runs perturbed solver passes and computes a
  * 2×2 covariance matrix (elevation × windage) on the firing solution.
+ *
+ * Application-layer sensor profiles (BCE_ErrorTable) can be supplied here
+ * so the engine derives sigma values from live sensor state (range, baro temp,
+ * pressure-vs-delta-temp calibration drift) rather than relying on GUI-side
+ * interpolation logic.
  */
 void BCE_SetUncertaintyConfig(const UncertaintyConfig* config);
 
@@ -162,6 +185,12 @@ void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
  * @param out  Pointer to caller-owned FiringSolution struct to fill.
  */
 void BCE_GetSolution(FiringSolution* out);
+
+/**
+ * Retrieve the latest minimal realtime solution payload.
+ * @param out  Pointer to caller-owned RealtimeSolution struct to fill.
+ */
+void BCE_GetRealtimeSolution(RealtimeSolution* out);
 
 /**
  * Get the current engine operating mode.

@@ -12,11 +12,11 @@ void MadgwickFilter::update(float ax, float ay, float az,
                             bool use_mag, float dt) {
     float q0 = q_.w, q1 = q_.x, q2 = q_.y, q3 = q_.z;
 
-    // Rate of change of quaternion from gyroscope
-    float qDot0 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
-    float qDot1 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy);
-    float qDot2 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx);
-    float qDot3 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx);
+    // Rate of change of quaternion from gyroscope    [MATH §6.1]
+    float qDot0 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz); // [MATH §6.1]
+    float qDot1 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy); // [MATH §6.1]
+    float qDot2 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx); // [MATH §6.1]
+    float qDot3 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx); // [MATH §6.1]
 
     // Normalize accelerometer
     float a_norm = std::sqrt(ax * ax + ay * ay + az * az);
@@ -51,19 +51,19 @@ void MadgwickFilter::update(float ax, float ay, float az,
                 float q2q3 = q2 * q3;
                 float q3q3 = q3 * q3;
 
-                // Reference direction of Earth's magnetic field
+                // Reference direction of Earth's magnetic field    [MATH §6.2]
                 float hx = mx * (q0q0 + q1q1 - q2q2 - q3q3) +
                            2.0f * my * (q1q2 - q0q3) +
-                           2.0f * mz * (q1q3 + q0q2);
+                           2.0f * mz * (q1q3 + q0q2); // [MATH §6.2]
                 float hy = 2.0f * mx * (q1q2 + q0q3) +
                            my * (q0q0 - q1q1 + q2q2 - q3q3) +
-                           2.0f * mz * (q2q3 - q0q1);
-                float _2bx = std::sqrt(hx * hx + hy * hy);
+                           2.0f * mz * (q2q3 - q0q1); // [MATH §6.2]
+                float _2bx = std::sqrt(hx * hx + hy * hy); // [MATH §6.2]
                 float _2bz = 2.0f * mx * (q1q3 - q0q2) +
                               2.0f * my * (q2q3 + q0q1) +
-                              mz * (q0q0 - q1q1 - q2q2 + q3q3);
+                              mz * (q0q0 - q1q1 - q2q2 + q3q3); // [MATH §6.2]
 
-                // Gradient descent corrective step (6-axis: accel + mag)
+                // Gradient descent corrective step (6-axis: accel + mag)    [MATH §6.3]
                 float s0 = -_2q2 * (2.0f * q1q3 - _2q0 * q2 - ax) +
                             _2q1 * (2.0f * q0q1 + _2q2 * q3 - ay) -
                             _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) +
@@ -97,14 +97,14 @@ void MadgwickFilter::update(float ax, float ay, float az,
                     s3 *= s_inv;
                 }
 
-                // Apply feedback
-                qDot0 -= beta_ * s0;
-                qDot1 -= beta_ * s1;
-                qDot2 -= beta_ * s2;
-                qDot3 -= beta_ * s3;
+                // Apply feedback    [MATH §6.4]
+                qDot0 -= beta_ * s0; // [MATH §6.4]
+                qDot1 -= beta_ * s1; // [MATH §6.4]
+                qDot2 -= beta_ * s2; // [MATH §6.4]
+                qDot3 -= beta_ * s3; // [MATH §6.4]
             }
         } else {
-            // IMU-only gradient descent (no magnetometer)
+            // IMU-only gradient descent (no magnetometer)    [MATH §6.3]
             float _2q0 = 2.0f * q0;
             float _2q1 = 2.0f * q1;
             float _2q2 = 2.0f * q2;
@@ -140,11 +140,11 @@ void MadgwickFilter::update(float ax, float ay, float az,
         }
     }
 
-    // Integrate rate of change
-    q0 += qDot0 * dt;
-    q1 += qDot1 * dt;
-    q2 += qDot2 * dt;
-    q3 += qDot3 * dt;
+    // Integrate rate of change    [MATH §6.5]
+    q0 += qDot0 * dt; // [MATH §6.5]
+    q1 += qDot1 * dt; // [MATH §6.5]
+    q2 += qDot2 * dt; // [MATH §6.5]
+    q3 += qDot3 * dt; // [MATH §6.5]
 
     // Normalize quaternion
     q_.w = q0;

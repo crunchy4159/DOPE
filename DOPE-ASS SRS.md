@@ -2,9 +2,9 @@
 
 # DOPE — Digital Optical Performance Engine
 
-## Version 1.31 — DRAFT
+## Version 1.33 — DRAFT
 
-**Date:** 2026-02-25  
+**Date:** 2026-02-27  
 **Language Target:** C++17  
 **Primary Platform:** ESP32-P4 @ 400MHz
 
@@ -152,7 +152,7 @@ If no overrides provided:
     
 - Wind: 0 m/s
     
-- Latitude: unset (Coriolis disabled)
+- Latitude: unset (GPS/GNSS used if fed by application; magnetometer-derived used if available; Coriolis disabled otherwise)
     
 
 These values are ISA-consistent.
@@ -256,6 +256,42 @@ void BCE_Update(const SensorFrame* frame);
     
 - Optional suppression if disturbed
     
+- **Magnetic dip angle (inclination) measurement**
+    
+- **Autonomous latitude estimation from dip angle** (see §7.2.1; lowest-priority source after GPS/GNSS and manual)
+    
+
+### 7.2.1 Latitude Estimation via Magnetic Dip
+
+The magnetic dip angle (inclination) ψ is related to geographic latitude φ by the dipole approximation:
+
+```
+tan(ψ) ≈ 2 × tan(φ)
+```
+
+DOPE computes the dip angle from the calibrated magnetometer vector (ratio of vertical to horizontal field components) and inverts this relation to produce an estimated latitude:
+
+```
+φ_estimated = atan(tan(ψ) / 2)
+```
+
+This estimate is:
+
+- Autonomous — requires no GPS or manual entry
+    
+- Sufficient for Coriolis/Eötvös corrections at engagement ranges ≤ 2500 m
+    
+- Subject to ±1–5° typical error from crustal magnetic anomalies and non-dipole field components; worst-case ±10° in high-anomaly regions
+    
+
+Accuracy is adequate because Coriolis corrections are small at typical engagement ranges; a 10° latitude error produces < 0.1 MOA Coriolis error at 1000 m.
+
+**Priority rule:** The magnetometer-derived latitude is used only when neither a GPS/GNSS feed nor a manually entered latitude is available. See priority hierarchy in §11.4.
+
+**Manual entry as calibration:** When the user enters a known latitude manually at a known position, that value serves simultaneously as the live latitude input **and** as a reference calibration point for the magnetometer estimator. This allows the dip-angle model to be locally anchored, improving estimation accuracy in subsequent sessions at or near the same location.
+
+If the magnetometer is disturbed (disturbance flag set), the latitude estimate is suppressed. The same disturbance gate that prevents heading from being updated also invalidates the dip-derived latitude.
+    
 
 ---
 
@@ -308,7 +344,15 @@ Engine behavior:
 
 ---
 
-## 7.5 Zoom Encoder
+## 7.5 GPS / GNSS Receiver (optional)
+
+Latitude may be fed directly from an external GPS/GNSS receiver by the Application layer. DOPE does not ingest raw NMEA or satellite data; the Application provides a single resolved latitude value via `BCE_Update` or `BCE_SetDefaultOverrides`.
+
+When a GPS/GNSS latitude is available it takes the highest priority in the latitude hierarchy (see §11.4). A manually entered latitude should be used to verify/calibrate GPS accuracy at a known benchmark point.
+
+---
+
+## 7.6 Zoom Encoder
 
 - Accepts focal length in mm
     
@@ -336,7 +380,7 @@ Persist until changed.
 |Sight height|mm|
 |Wind speed|m/s|
 |Wind heading|deg true|
-|Latitude|deg|
+|Latitude|deg (see §11.4 — GPS/GNSS feed, manual entry, or magnetometer estimation)|
 |Altitude override|m|
 |Humidity|fraction|
 
@@ -420,13 +464,18 @@ crosswind = wind_speed × sin(angle)
 
 ## 11.4 Coriolis and Eötvös
 
-Latitude required.
+Latitude required. Sources in priority order:
 
-If latitude unset:
+1. **GPS / GNSS** — latitude fed directly by the Application from an attached receiver. Highest accuracy; preempts all other sources.
+2. **Manual entry** — latitude entered explicitly by the user via the Application UI or API. Overrides magnetometer estimation. When entered at a known geographic position, also serves as a reference calibration point for the dip-angle estimator.
+3. **Magnetometer-derived** — latitude estimated from magnetic dip angle (see §7.2.1). Active only when no GPS feed and no manual entry are present, and the magnetometer is undisturbed.
+4. **Unset** — none of the above available; Coriolis disabled.
+
+If latitude is unset:
 
 - Coriolis disabled
     
-- Diagnostic bit set
+- Diagnostic bit set in `defaults_active`
     
 - No FAULT
     
@@ -438,6 +487,8 @@ Earth rotation:
 ```
 
 Integrated each timestep.
+
+The `FiringSolution` shall indicate the latitude source via a flag in `defaults_active` so the application layer can display an appropriate confidence indicator.
 
 ---
 
@@ -606,5 +657,31 @@ All intelligence above trajectory math lives outside it.
 
 ---
 
+---
+
+# 18. Latitude Source Architecture — Design Rationale
+
+Coriolis and Eötvös corrections require latitude. DOPE supports three independent latitude sources with a well-defined priority hierarchy:
+
+**GPS / GNSS (highest priority):** The Application layer may attach any GNSS receiver and pass resolved latitude through the existing scalar input interface (`BCE_Update` / `BCE_SetDefaultOverrides`). DOPE is hardware-agnostic — it does not ingest NMEA or satellite data directly. GPS provides the most accurate latitude (<0.001° typical) and is the preferred source when hardware permits.
+
+**Manual entry (intermediate priority):** The user enters a known latitude at setup time. This is the intended primary workflow when GPS hardware is absent. Manual entry also serves a dual role: it **calibrates the magnetometer dip-angle estimator** by providing a ground-truth value at a known position, improving the accuracy of autonomous estimation in subsequent use at or near the same location.
+
+**Magnetometer-derived (lowest autonomous source):** The RM3100 magnetometer, already present for heading, measures the magnetic dip angle ψ. The dipole approximation `tan(ψ) ≈ 2 × tan(φ)` inverts to yield an estimated latitude with ±1–5° typical accuracy (worst-case ±10° in high-anomaly regions). At engagement ranges ≤ 2500 m, a 10° latitude error produces < 0.1 MOA Coriolis error — inside the system uncertainty budget.
+
+The RM3100 latitude uncertainty budget is **±1.5° flat** for uncertainty propagation purposes (conservative value covering typical mid-latitude deployments).
+
+**Disabled:** If none of the above sources are available (no GPS, no manual entry, magnetometer disturbed or absent), Coriolis is silently disabled and a diagnostic bit is set in `defaults_active`. No FAULT is raised.
+
+**Interaction with disturbance detection:** The magnetometer disturbance flag that gates heading output also gates the dip-derived latitude. A disturbed magnetometer contributes neither a valid heading nor a valid latitude estimate.
+
+**GUI sensor presets:** The GUI exposes two separate hardware preset selectors for latitude uncertainty propagation:
+- *GPS / GNSS Module* — framework ready; no presets yet (sources to be added as receivers are qualified).
+- *Magnetometer (lat est.)* — PNI RM3100 at ±1.5° flat.
+
+Selecting a hardware preset locks the manual σ field, identical to the LRF and thermometer preset patterns.
+
+---
+
 End of Document  
-DOPE SRS v1.3
+DOPE SRS v1.33

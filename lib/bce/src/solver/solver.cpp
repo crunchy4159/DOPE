@@ -16,6 +16,55 @@
 #include <cmath>
 #include <cstring>
 
+namespace {
+
+float EstimateDynamicStabilitySG(const SolverParams& params, float velocity_ms) {
+    // Miller-style SG estimate in imperial units:
+    // SG = (30*m)/(t^2*d^3*l*(1+l^2)) * cbrt(v/2800) * (rho_std/rho)
+    // m [gr], d [in], l [calibers], t [calibers/turn], v [fps].
+    float sg = 1.5f;
+    const float caliber_in = params.caliber_m / BCE_INCHES_TO_M;
+    const float length_in = params.bullet_length_m / BCE_INCHES_TO_M;
+    const float length_cal = (caliber_in > 1e-6f) ? (length_in / caliber_in) : 0.0f;
+    const float twist_cal = (caliber_in > 1e-6f) ? (std::fabs(params.twist_rate_inches) / caliber_in) : 0.0f;
+    const float mass_grains = params.bullet_mass_kg / BCE_GRAINS_TO_KG;
+    const float vel_fps = velocity_ms * 3.28084f;
+    const float density_ratio = (params.air_density > 1e-6f)
+        ? (BCE_STD_AIR_DENSITY / params.air_density)
+        : 1.0f;
+
+    if (caliber_in > 0.05f && length_cal > 0.1f && twist_cal > 0.1f && mass_grains > 10.0f && vel_fps > 300.0f) {
+        const float denom = (twist_cal * twist_cal)
+            * (caliber_in * caliber_in * caliber_in)
+            * length_cal
+            * (1.0f + length_cal * length_cal);
+        if (denom > 1e-6f) {
+            float sg_raw = (30.0f * mass_grains / denom)
+                * std::cbrt(vel_fps / 2800.0f)
+                * density_ratio;
+            if (std::isfinite(sg_raw) && sg_raw > 0.0f) {
+                sg = sg_raw;
+            }
+        }
+    }
+
+    if (sg < 0.5f) sg = 0.5f;
+    if (sg > 3.0f) sg = 3.0f;
+    return sg;
+}
+
+float StabilityDragScale(float sg) {
+    // Coupled-stability drag adjustment.
+    // Low SG -> slightly higher drag, high SG -> slightly lower drag.
+    // Bounded so this remains a small correction over BC-driven drag.
+    float scale = 1.0f + BCE_SG_DRAG_COUPLING_GAIN * (BCE_SG_REFERENCE - sg);
+    if (scale < BCE_SG_DRAG_SCALE_MIN) scale = BCE_SG_DRAG_SCALE_MIN;
+    if (scale > BCE_SG_DRAG_SCALE_MAX) scale = BCE_SG_DRAG_SCALE_MAX;
+    return scale;
+}
+
+} // namespace
+
 void BallisticSolver::init() {
     std::memset(table_, 0, sizeof(table_));
     max_valid_range_ = 0;
@@ -89,8 +138,12 @@ float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
 
     // Final check: if the loop finished without converging, we might still
     // be close.
-    if (!solved && std::fabs(integrateToRange(params, zero_range_m, false) - target_drop) < BCE_ZERO_TOLERANCE_M) {
-        solved = true;
+    if (!solved) {
+        params.launch_angle_rad = best_angle;
+        float final_drop = integrateToRange(params, zero_range_m, false);
+        if (!std::isnan(final_drop) && std::fabs(final_drop - target_drop) < BCE_ZERO_TOLERANCE_M) {
+            solved = true;
+        }
     }
 
     return solved ? best_angle : NAN;
@@ -126,19 +179,14 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
     result.energy_at_target_j = tp.energy_j;
     result.horizontal_range_m = params.target_range_m * std::cos(params.launch_angle_rad);
 
-    // Compute spin drift. This is a simplified model based on the Litz
-    // approximation (drift ∝ TOF^1.83). The gyroscopic stability factor (SG)
-    // is estimated at 1.5, which is a reasonable average but not precise for
-    // all projectiles. A more rigorous model would calculate SG from bullet
-    // geometry, twist rate, and velocity.
+    // Compute spin drift. This uses the Litz approximation (drift ∝ TOF^1.83)
+    // with a dynamic SG estimate from bullet geometry, mass, twist, velocity,
+    // and air density. If required inputs are missing, it falls back to SG=1.5.
     result.spin_drift_moa = 0.0f;
     if (params.spin_drift_enabled && std::fabs(params.twist_rate_inches) > 0.1f) {
-        // Litz approximation: drift ∝ TOF^1.83
-        // SG (stability factor) approximation is embedded in the constant
-        // drift_inches = 1.25 * (SG + 1.2) * TOF^1.83
-        // Simplified: we use a caliber-and-twist dependent scaling
-        float sg = 1.5f; // simplified stability factor estimate
-        float drift_m = 0.0254f * 1.25f * (sg + 1.2f) * std::pow(tp.tof_s, 1.83f);
+        // Litz approximation: drift_inches = 1.25 * (SG + 1.2) * TOF^1.83
+        float sg = EstimateDynamicStabilitySG(params, tp.velocity_ms);
+        float drift_m = 0.0254f * 1.25f * (sg + 1.2f) * std::pow(tp.tof_s, 1.83f); // [MATH §12]
 
         // Sign by twist direction: RH twist (positive) drifts right
         if (params.twist_rate_inches < 0.0f) drift_m = -drift_m;
@@ -162,19 +210,19 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
         float tof = tp.tof_s;
         float range = params.target_range_m;
 
-        // Horizontal (windage) Coriolis deflection:
+        // Horizontal (windage) Coriolis deflection:    [MATH §13]
         // deflection = ω × v × tof × sin(lat)  (simplified)
         // More precisely for a bullet:
         // Δz = ω × range × tof × sin(lat)  (horizontal)
-        float coriolis_hz = BCE_OMEGA_EARTH * range * tof * std::sin(lat);
+        float coriolis_hz = BCE_OMEGA_EARTH * range * tof * std::sin(lat); // [MATH §13]
 
-        // Vertical (Eötvös) component:
+        // Vertical (Eötvös) component:    [MATH §13]
         // Δy = ω × range × tof × cos(lat) × sin(azi)
-        float coriolis_vt = BCE_OMEGA_EARTH * range * tof * std::cos(lat) * std::sin(azi);
+        float coriolis_vt = BCE_OMEGA_EARTH * range * tof * std::cos(lat) * std::sin(azi); // [MATH §13]
 
         if (range > 0.0f) {
-            result.coriolis_wind_moa = (coriolis_hz / range) * BCE_RAD_TO_MOA;
-            result.coriolis_elev_moa = (coriolis_vt / range) * BCE_RAD_TO_MOA;
+            result.coriolis_wind_moa = (coriolis_hz / range) * BCE_RAD_TO_MOA; // [MATH §13]
+            result.coriolis_elev_moa = (coriolis_vt / range) * BCE_RAD_TO_MOA; // [MATH §13]
         }
     }
 
@@ -189,6 +237,8 @@ const TrajectoryPoint* BallisticSolver::getPointAt(int range_m) const {
 }
 
 float BallisticSolver::integrateToRange(const SolverParams& params, float range_m, bool fill_table) {
+    const float half_bullet_mass_kg = 0.5f * params.bullet_mass_kg;
+
     // Initial conditions
     float vx = params.muzzle_velocity_ms * std::cos(params.launch_angle_rad);
     float vy = params.muzzle_velocity_ms * std::sin(params.launch_angle_rad);
@@ -206,17 +256,18 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         table_[0].windage_m = 0.0f;
         table_[0].velocity_ms = params.muzzle_velocity_ms;
         table_[0].tof_s = 0.0f;
-        table_[0].energy_j = 0.5f * params.bullet_mass_kg *
-                              params.muzzle_velocity_ms * params.muzzle_velocity_ms;
+        table_[0].energy_j = half_bullet_mass_kg *
+                      params.muzzle_velocity_ms * params.muzzle_velocity_ms;
     }
 
     uint32_t iteration = 0;
 
     auto computeAcceleration = [&](float vxn, float vyn, float vzn,
                                    float& ax, float& ay, float& az) {
-        float vx_rel = vxn + params.headwind_ms;
-        float vz_rel = vzn - params.crosswind_ms;
-        float v_rel = std::sqrt(vx_rel * vx_rel + vyn * vyn + vz_rel * vz_rel);
+        // Relative velocity components accounting for wind    [MATH §11.2]
+        float vx_rel = vxn + params.headwind_ms;  // [MATH §11.2]
+        float vz_rel = vzn + params.crosswind_ms; // [MATH §11.2]
+        float v_rel = std::sqrt(vx_rel * vx_rel + vyn * vyn + vz_rel * vz_rel); // [MATH §11.2]
 
         if (v_rel < 1.0f) {
             ax = 0.0f;
@@ -225,6 +276,7 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
             return;
         }
 
+        // Drag retardation magnitude — see §5.2 for the formula    [MATH §11.3]
         float decel = DragModelLookup::getDeceleration(v_rel, params.speed_of_sound,
                                                         params.bc, params.drag_model,
                                                         params.air_density);
@@ -232,10 +284,16 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         if (!std::isfinite(drag_scale) || drag_scale <= 0.0f) drag_scale = 1.0f;
         if (drag_scale < 0.2f) drag_scale = 0.2f;
         if (drag_scale > 2.0f) drag_scale = 2.0f;
-        decel *= drag_scale;
-        ax = -decel * (vx_rel / v_rel);
-        ay = -decel * (vyn / v_rel) - BCE_GRAVITY;
-        az = -decel * (vz_rel / v_rel);
+
+        // Stability-coupled drag: SG modulates effective drag slightly.
+        // This keeps BC as the primary drag driver while making geometry
+        // (length/caliber/twist/mass) influence trajectory beyond spin drift.
+        const float sg = EstimateDynamicStabilitySG(params, v_rel);
+        const float stability_drag_scale = StabilityDragScale(sg);
+        decel *= (drag_scale * stability_drag_scale);
+        ax = -decel * (vx_rel / v_rel);             // [MATH §11.3]
+        ay = -decel * (vyn  / v_rel) - BCE_GRAVITY; // [MATH §11.3] gravity always downward
+        az = -decel * (vz_rel / v_rel);             // [MATH §11.3]
     };
 
     while (x < range_m && iteration < BCE_MAX_SOLVER_ITERATIONS) {
@@ -244,21 +302,21 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         float v = std::sqrt(vx * vx + vy * vy + vz * vz);
         if (v < BCE_MIN_VELOCITY) break;
 
-        // Adaptive timestep: smaller near transonic, larger at supersonic.
+        // Adaptive timestep: smaller near transonic, larger at supersonic.    [MATH §11.4]
         // The constant 0.5 is a tuning parameter that balances performance
         // and stability. A smaller value would increase accuracy but slow
         // down the simulation.
-        float mach = v / params.speed_of_sound;
+        float mach = v / params.speed_of_sound; // [MATH §11.4]
         float dt;
         if (mach > 0.9f && mach < 1.2f) {
-            dt = BCE_DT_MIN; // transonic region — use smallest step
+            dt = BCE_DT_MIN; // [MATH §11.4] transonic region — use smallest step
         } else {
             // Scale dt with velocity — faster bullet covers more ground per step
-            dt = 0.5f / v;
+            dt = 0.5f / v; // [MATH §11.4]
         }
 
-        // Bound per-step downrange travel for stability and table fidelity
-        float dt_from_step = BCE_MAX_STEP_DISTANCE_M / v;
+        // Bound per-step downrange travel for stability and table fidelity    [MATH §11.4]
+        float dt_from_step = BCE_MAX_STEP_DISTANCE_M / v; // [MATH §11.4]
         if (dt > dt_from_step) dt = dt_from_step;
         if (dt < BCE_DT_MIN) dt = BCE_DT_MIN;
         if (dt > BCE_DT_MAX) dt = BCE_DT_MAX;
@@ -313,10 +371,10 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         float k4_y = vy_k4;
         float k4_z = vz_k4;
 
-        // RK4 integration step
+        // RK4 integration step: pos += (dt/6)(k1 + 2k2 + 2k3 + k4)    [MATH §11.5]
         auto rk4_step = [&](float& pos, float& vel, float k1_p, float k1_v, float k2_p, float k2_v, float k3_p, float k3_v, float k4_p, float k4_v) {
-            pos += (dt / 6.0f) * (k1_p + 2.0f * k2_p + 2.0f * k3_p + k4_p);
-            vel += (dt / 6.0f) * (k1_v + 2.0f * k2_v + 2.0f * k3_v + k4_v);
+            pos += (dt / 6.0f) * (k1_p + 2.0f * k2_p + 2.0f * k3_p + k4_p); // [MATH §11.5]
+            vel += (dt / 6.0f) * (k1_v + 2.0f * k2_v + 2.0f * k3_v + k4_v); // [MATH §11.5]
         };
 
         rk4_step(x, vx, k1_x, k1_vx, k2_x, k2_vx, k3_x, k3_vx, k4_x, k4_vx);
@@ -335,7 +393,7 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
                 table_[last_range_index].windage_m = z;
                 table_[last_range_index].velocity_ms = v_current;
                 table_[last_range_index].tof_s = t;
-                table_[last_range_index].energy_j = 0.5f * params.bullet_mass_kg *
+                table_[last_range_index].energy_j = half_bullet_mass_kg *
                                                      v_current * v_current;
             }
             max_valid_range_ = last_range_index;

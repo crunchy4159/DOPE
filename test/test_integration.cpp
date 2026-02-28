@@ -50,6 +50,24 @@ protected:
 
         return f;
     }
+
+    void setDefault308BulletProfile(float twist_rate_inches = 10.0f) {
+        BulletProfile bullet = {};
+        bullet.bc = 0.505f;
+        bullet.drag_model = DragModel::G1;
+        bullet.muzzle_velocity_ms = 792.0f;
+        bullet.mass_grains = 175.0f;
+        bullet.caliber_inches = 0.308f;
+        bullet.twist_rate_inches = twist_rate_inches;
+        BCE_SetBulletProfile(&bullet);
+    }
+
+    void setZero100m(float sight_height_mm = 38.1f) {
+        ZeroConfig zero = {};
+        zero.zero_range_m = 100.0f;
+        zero.sight_height_mm = sight_height_mm;
+        BCE_SetZeroConfig(&zero);
+    }
 };
 
 // After init, mode should be IDLE
@@ -115,6 +133,47 @@ TEST_F(IntegrationTest, FullConfigProducesSolution) {
     EXPECT_GT(sol.velocity_at_target_ms, 0.0f);
     EXPECT_GT(sol.energy_at_target_j, 0.0f);
     EXPECT_GT(sol.air_density_kgm3, 0.0f);
+}
+
+TEST_F(IntegrationTest, RealtimeSolutionMatchesPrimaryHolds) {
+    setDefault308BulletProfile();
+    setZero100m();
+
+    for (int i = 0; i < 100; ++i) {
+        SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
+        f.lrf_valid = true;
+        f.lrf_range_m = 500.0f;
+        f.lrf_timestamp_us = f.timestamp_us;
+        BCE_Update(&f);
+    }
+
+    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+
+    FiringSolution full = {};
+    RealtimeSolution rt = {};
+    BCE_GetSolution(&full);
+    BCE_GetRealtimeSolution(&rt);
+
+    EXPECT_EQ(rt.solution_mode, full.solution_mode);
+    EXPECT_EQ(rt.fault_flags, full.fault_flags);
+    EXPECT_EQ(rt.defaults_active, full.defaults_active);
+    EXPECT_FLOAT_EQ(rt.hold_elevation_moa, full.hold_elevation_moa);
+    EXPECT_FLOAT_EQ(rt.hold_windage_moa, full.hold_windage_moa);
+    EXPECT_FLOAT_EQ(rt.range_m, full.range_m);
+    EXPECT_FLOAT_EQ(rt.tof_ms, full.tof_ms);
+    EXPECT_FLOAT_EQ(rt.velocity_at_target_ms, full.velocity_at_target_ms);
+
+    EXPECT_FLOAT_EQ(rt.uncertainty_confidence, 0.682689f);
+    if (full.uncertainty_valid) {
+        const float expected_radius = std::sqrt(
+            full.sigma_elevation_moa * full.sigma_elevation_moa +
+            full.sigma_windage_moa * full.sigma_windage_moa);
+        EXPECT_TRUE(rt.uncertainty_valid);
+        EXPECT_NEAR(rt.uncertainty_radius_moa, expected_radius, 1e-5f);
+    } else {
+        EXPECT_FALSE(rt.uncertainty_valid);
+        EXPECT_FLOAT_EQ(rt.uncertainty_radius_moa, 0.0f);
+    }
 }
 
 // .308 Win 150gr Federal Fusion reference-style scenario at 500 yd
@@ -221,19 +280,8 @@ TEST_F(IntegrationTest, PresetPair223Vs308HoldOrderingAt500Yd) {
 
 // Coriolis should be disabled without latitude
 TEST_F(IntegrationTest, CoriolisDisabledWithoutLatitude) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    setDefault308BulletProfile();
+    setZero100m();
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
@@ -253,19 +301,8 @@ TEST_F(IntegrationTest, CoriolisDisabledWithoutLatitude) {
 
 // LRF staleness should transition away from SOLUTION_READY
 TEST_F(IntegrationTest, StaleLRFCausesFault) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    setDefault308BulletProfile();
+    setZero100m();
 
     // Feed frames with LRF
     for (int i = 0; i < 100; ++i) {
@@ -290,6 +327,36 @@ TEST_F(IntegrationTest, StaleLRFCausesFault) {
     EXPECT_NE(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
 }
 
+// Timestamp arithmetic near uint64 max should not falsely mark fresh LRF as stale
+TEST_F(IntegrationTest, LRFStaleCheckHandlesTimestampNearWrap) {
+    setDefault308BulletProfile();
+    setZero100m();
+
+    for (int i = 0; i < 100; ++i) {
+        SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
+        f.lrf_valid = true;
+        f.lrf_range_m = 500.0f;
+        f.lrf_timestamp_us = f.timestamp_us;
+        BCE_Update(&f);
+    }
+    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+
+    constexpr uint64_t near_wrap_lrf_ts = std::numeric_limits<uint64_t>::max() - 100;
+
+    SensorFrame near_wrap = makeDefaultFrame(near_wrap_lrf_ts);
+    near_wrap.lrf_valid = true;
+    near_wrap.lrf_range_m = 500.0f;
+    near_wrap.lrf_timestamp_us = near_wrap.timestamp_us;
+    BCE_Update(&near_wrap);
+
+    SensorFrame shortly_after = makeDefaultFrame(near_wrap_lrf_ts + 50);
+    shortly_after.lrf_valid = false;
+    BCE_Update(&shortly_after);
+
+    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(BCE_GetDiagFlags() & BCE_Diag::LRF_STALE, 0u);
+}
+
 // Default overrides should be reflected in solution
 TEST_F(IntegrationTest, DefaultOverridesApplied) {
     BCE_DefaultOverrides ovr = {};
@@ -306,14 +373,7 @@ TEST_F(IntegrationTest, DefaultOverridesApplied) {
 
 // Invalid zero config should produce ZERO_UNSOLVABLE hard fault
 TEST_F(IntegrationTest, InvalidZeroRangeFaults) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    setDefault308BulletProfile();
 
     ZeroConfig zero = {};
     zero.zero_range_m = 0.0f;
@@ -334,19 +394,8 @@ TEST_F(IntegrationTest, InvalidZeroRangeFaults) {
 
 // Wind default overrides should behave like startup manual wind
 TEST_F(IntegrationTest, WindDefaultOverrideAffectsSolution) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 0.0f; // isolate wind contribution
-    BCE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    setDefault308BulletProfile(0.0f); // isolate wind contribution
+    setZero100m();
 
     BCE_DefaultOverrides ovr = {};
     ovr.use_wind = true;
@@ -370,19 +419,34 @@ TEST_F(IntegrationTest, WindDefaultOverrideAffectsSolution) {
     EXPECT_NE(sol.hold_windage_moa, 0.0f);
 }
 
+// Crosswind sign convention: wind from the right should require right hold (+MOA).
+TEST_F(IntegrationTest, WindFromRightRequiresRightHold) {
+    setDefault308BulletProfile(0.0f); // isolate wind contribution
+    setZero100m();
+
+    BCE_SetWindManual(10.0f, 90.0f); // wind from right (east) when firing north
+
+    for (int i = 0; i < 100; ++i) {
+        SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
+        f.lrf_valid = true;
+        f.lrf_range_m = 500.0f;
+        f.lrf_timestamp_us = f.timestamp_us;
+        BCE_Update(&f);
+    }
+
+    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+
+    FiringSolution sol = {};
+    BCE_GetSolution(&sol);
+    EXPECT_GT(sol.hold_windage_moa, 0.0f);
+}
+
 // Null calibration pointers should be accepted safely
 TEST_F(IntegrationTest, NullCalibrationInputsAreSafe) {
     BCE_SetIMUBias(nullptr, nullptr);
     BCE_SetMagCalibration(nullptr, nullptr);
 
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    setDefault308BulletProfile();
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
@@ -398,65 +462,6 @@ TEST_F(IntegrationTest, NullCalibrationInputsAreSafe) {
     }
 
     EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
-}
-
-// Low-confidence LRF samples should not be accepted as valid range updates
-TEST_F(IntegrationTest, LowConfidenceRangeRejected) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
-
-    for (int i = 0; i < 100; ++i) {
-        SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
-        f.lrf_valid = true;
-        f.lrf_range_m = 500.0f;
-        f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 0.1f;
-        BCE_Update(&f);
-    }
-
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::FAULT);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::NO_RANGE, 0u);
-}
-
-// Out-of-range confidence should flag SENSOR_INVALID while keeping NO_RANGE
-TEST_F(IntegrationTest, InvalidConfidenceFlagsSensorInvalid) {
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
-
-    for (int i = 0; i < 100; ++i) {
-        SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
-        f.lrf_valid = true;
-        f.lrf_range_m = 500.0f;
-        f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 1.5f;
-        BCE_Update(&f);
-    }
-
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::FAULT);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::NO_RANGE, 0u);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::SENSOR_INVALID, 0u);
 }
 
 // Boresight + reticle offsets should add directly to holds when cant is near zero
@@ -737,7 +742,7 @@ TEST_F(IntegrationTest, InfRangeRejectedAndFlagged) {
     EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::SENSOR_INVALID, 0u);
 }
 
-// Rapid alternation of valid and invalid LRF samples should recover deterministically
+// Rapid alternation of valid and missing LRF samples should recover deterministically
 TEST_F(IntegrationTest, RapidRangeValidityTransitionsRecover) {
     BulletProfile bullet = {};
     bullet.bc = 0.505f;
@@ -755,10 +760,9 @@ TEST_F(IntegrationTest, RapidRangeValidityTransitionsRecover) {
 
     for (int i = 0; i < 200; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
-        f.lrf_valid = true;
+        f.lrf_valid = (i % 2 == 0);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = (i % 2 == 0) ? 1.0f : 0.1f;
         BCE_Update(&f);
     }
 
@@ -766,7 +770,6 @@ TEST_F(IntegrationTest, RapidRangeValidityTransitionsRecover) {
     final_good.lrf_valid = true;
     final_good.lrf_range_m = 500.0f;
     final_good.lrf_timestamp_us = final_good.timestamp_us;
-    final_good.lrf_confidence = 1.0f;
     BCE_Update(&final_good);
 
     EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);

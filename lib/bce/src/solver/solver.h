@@ -33,6 +33,7 @@ struct SolverParams {
     DragModel drag_model;        // G1–G8
     float muzzle_velocity_ms;    // m/s
     float bullet_mass_kg;        // kg (converted from grains by caller)
+    float bullet_length_m;       // m (used for dynamic stability estimate)
     float sight_height_m;        // meters above bore axis
 
     float air_density;           // kg/m³

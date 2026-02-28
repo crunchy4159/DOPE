@@ -19,6 +19,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
 
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
@@ -48,6 +52,17 @@ static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
 using namespace bce::math;
+
+// ---------------------------------------------------------------------------
+// Engine ticker thread — mirrors the FreeRTOS task pattern on the ESP32-P4.
+// The ticker owns BCE_Update() and RefreshOutput(). The render loop reads
+// only the cached display snapshot, so it never blocks on the solver.
+// ---------------------------------------------------------------------------
+static std::mutex g_engine_mutex;   // guards all BCE_* API calls
+static std::mutex g_display_mutex;  // guards display snapshot (held briefly)
+static FiringSolution g_display_sol = {};
+static std::string g_display_output;
+static std::atomic<bool> g_ticker_running{false};
 
 constexpr uint64_t FRAME_STEP_US = 10000;
 constexpr int TARGET_RING_COUNT = 4;
@@ -99,9 +114,199 @@ struct GunPreset {
     float barrel_length_in = 24.0f;
     float mv_adjustment_factor = 25.0f;
     float twist_rate_inches = 10.0f;
-    float zero_range_m = 100.0f;
+    float zero_range_m = 91.44f; // 100 yd
     float sight_height_mm = 38.1f;
 };
+
+// ---------------------------------------------------------------------------
+// Sensor hardware presets — each entry specifies the 1-sigma accuracy for
+// the sensor's output(s).  "Custom" (index 0) lets the user type a manual
+// value; all other entries auto-populate the sigma fields.
+// ---------------------------------------------------------------------------
+
+// --- LRF accuracy tables (range-dependent) --------------------------------
+// Each LRF model has a piecewise-linear table of (range_m, sigma_m) break-
+// points; the effective sigma is interpolated at the current LRF range.
+
+// ---------------------------------------------------------------------------
+// Generic sensor preset — name + BCE_ErrorTable (x = sensor-specific unit,
+// sigma = 1-sigma uncertainty in the same unit as x).
+// index 0 is always the "Custom / manual" sentinel: {nullptr, 0}.
+// ---------------------------------------------------------------------------
+struct SensorPreset {
+    const char*   name;
+    BCE_ErrorTable table;   // {nullptr, 0} for Custom
+};
+
+// Helper macro: build a BCE_ErrorTable from a static array.
+#define SENSOR_TABLE(arr) { arr, (int)(sizeof(arr)/sizeof(arr[0])) }
+#define SENSOR_CUSTOM     { nullptr, 0 }
+
+// ===========================================================================
+// LRF accuracy tables  (x = range_m, sigma = sigma_m)
+// ===========================================================================
+
+// JRT D09C 2000 m rangefinder
+//   0.15–22 m  : ±0.2 mm to ±1 mm
+//   5–400 m    : ≤ ±1 m
+//   400–1000 m : ±1.2 m to ±3 m
+//   1000–2000 m: ±3 m to ±6 m
+static const BCE_ErrorPoint kLRF_D09C[] = {
+    {   0.15f,  0.0002f },   // 0.2 mm
+    {  22.0f,   0.001f  },   // 1 mm (end of precision band)
+    { 400.0f,   1.0f    },   // ≤ ±1 m
+    {1000.0f,   3.0f    },   // ±3 m
+    {2000.0f,   6.0f    },   // ±6 m
+};
+
+static const SensorPreset kLRFPresets[] = {
+    { "Custom",             SENSOR_CUSTOM           },
+    { "JRT D09C (2000 m)",  SENSOR_TABLE(kLRF_D09C) },
+};
+static const int kNumLRFPresets = sizeof(kLRFPresets) / sizeof(kLRFPresets[0]);
+
+// ===========================================================================
+// Temperature sensor accuracy tables  (x = temp_c, sigma = sigma_c)
+// Source: manufacturer datasheets.
+// ===========================================================================
+
+// Texas Instruments TMP117
+//   −40 to −20 °C : ±0.15 °C  (extended edge)
+//   −20 to +50 °C : ±0.10 °C  (main calibrated range)
+//   +50 to +70 °C : ±0.15 °C  (extended edge)
+static const BCE_ErrorPoint kTemp_TMP117[] = {
+    { -40.0f, 0.15f },
+    { -20.0f, 0.15f },
+    { -19.9f, 0.10f },   // step at −20 °C lower edge of main range
+    {  50.0f, 0.10f },
+    {  50.1f, 0.15f },   // step at +50 °C upper edge of main range
+    {  70.0f, 0.15f },
+};
+
+// Bosch BMP581 — onboard temperature sensor
+//    −5 to +55 °C : ±0.52 °C  (calibrated operating range)
+//   outside range  : ±1.52 °C
+static const BCE_ErrorPoint kTemp_BMP581[] = {
+    { -40.0f, 1.52f },
+    {  -5.0f, 1.52f },
+    {  -4.9f, 0.52f },   // step at −5 °C lower edge of cal range
+    {  55.0f, 0.52f },
+    {  55.1f, 1.52f },   // step at +55 °C upper edge of cal range
+    {  85.0f, 1.52f },
+};
+
+static const SensorPreset kTempSensorPresets[] = {
+    { "Custom",                   SENSOR_CUSTOM              },
+    { "Texas Instruments TMP117", SENSOR_TABLE(kTemp_TMP117) },
+    { "Bosch BMP581 (internal)",  SENSOR_TABLE(kTemp_BMP581) },
+};
+static const int kNumTempSensorPresets = sizeof(kTempSensorPresets) / sizeof(kTempSensorPresets[0]);
+
+// ===========================================================================
+// Barometer pressure drift tables  (x = |delta_temp_c_since_cal|, sigma = Pa)
+// Source: BMP581 profile specified by project requirements.
+// ===========================================================================
+static const BCE_ErrorPoint kBaroPressure_BMP581[] = {
+    {  0.0f,  0.10f },
+    {  0.5f,  0.25f },
+    {  1.0f,  0.51f },
+    {  2.0f,  1.01f },
+    {  3.0f,  1.50f },
+    {  5.0f,  2.50f },
+    {  8.0f,  4.00f },
+    { 10.0f,  5.00f },
+    { 15.0f,  7.50f },
+    { 20.0f, 10.00f },
+    { 30.0f, 15.00f },
+    { 40.0f, 20.00f },
+};
+
+static const SensorPreset kBarometerPresets[] = {
+    { "Bosch BMP581", SENSOR_TABLE(kBaroPressure_BMP581) },
+};
+static const int kNumBarometerPresets = sizeof(kBarometerPresets) / sizeof(kBarometerPresets[0]);
+
+// --- Cant sensor presets ---
+struct CantSensorPreset {
+    const char* name;
+    float sigma_cant_deg;
+};
+
+static const CantSensorPreset kCantPresets[] = {
+    { "Custom",                         0.0f },
+    { "ST ISM330DHCX IMU (1.5 deg)",    1.5f },
+    { "Level bubble (2 deg)",           2.0f },
+    { "Precision digital level (0.1 deg)", 0.1f },
+};
+static const int kNumCantPresets = sizeof(kCantPresets) / sizeof(kCantPresets[0]);
+
+// --- Magnetometer latitude-estimation presets ---
+// Used when the magnetometer dip angle is used to derive latitude autonomously.
+// sigma_lat_deg reflects the expected worst-case error in the derived latitude.
+struct MagLatPreset {
+    const char* name;
+    float sigma_lat_deg;   // 1-sigma latitude uncertainty (degrees) from mag dip estimation
+};
+
+static const MagLatPreset kMagLatPresets[] = {
+    { "Custom",       0.0f },
+    { "PNI RM3100",   1.5f },   // flat ±1.5° from magnetic dip estimation
+};
+static const int kNumMagLatPresets = sizeof(kMagLatPresets) / sizeof(kMagLatPresets[0]);
+
+// --- GPS / GNSS module presets ---
+// Used when the application feeds latitude directly from a GNSS receiver.
+// sigma_lat_deg reflects the receiver's position accuracy converted to degrees.
+// No presets yet — framework ready for specific modules to be added later.
+struct GpsLatPreset {
+    const char* name;
+    float sigma_lat_deg;   // 1-sigma latitude uncertainty (degrees)
+};
+
+static const GpsLatPreset kGpsLatPresets[] = {
+    { "None",  0.0f },
+    // Add GPS/GNSS module presets here as hardware is qualified
+};
+static const int kNumGpsLatPresets = sizeof(kGpsLatPresets) / sizeof(kGpsLatPresets[0]);
+
+static const int kLrfDefaultIndex = 1;         // JRT D09C (2000 m)
+static const int kTempDefaultIndex = 1;        // Texas Instruments TMP117
+static const int kBarometerDefaultIndex = 0;   // Bosch BMP581
+static const int kGpsDefaultIndex = 0;         // None
+static const int kMagLatDefaultIndex = 1;      // PNI RM3100
+
+struct ErrorMultiplierPreset {
+    const char* name;
+    float multiplier;
+};
+
+static const ErrorMultiplierPreset kMassErrorPresets[] = {
+    { "Monolithic Copper", 0.0005f },
+    { "Match-Grade [DEFAULT]", 0.0012f },
+    { "Soft Point", 0.0025f },
+    { "Cheap", 0.005f },
+};
+static const int kNumMassErrorPresets = sizeof(kMassErrorPresets) / sizeof(kMassErrorPresets[0]);
+static const int kMassErrorDefaultIndex = 1;
+
+static const ErrorMultiplierPreset kLengthErrorPresets[] = {
+    { "Polymer Tips", 0.002f },
+    { "Soft Point", 0.008f },
+    { "Standard [DEFAULT]", 0.005f },
+    { "Match Sorted", 0.001f },
+};
+static const int kNumLengthErrorPresets = sizeof(kLengthErrorPresets) / sizeof(kLengthErrorPresets[0]);
+static const int kLengthErrorDefaultIndex = 2;
+
+static const ErrorMultiplierPreset kCaliberErrorPresets[] = {
+    { "Monolithic Copper", 0.00015f },
+    { "Lead Core Match-Grade [DEFAULT]", 0.00045f },
+    { "Soft Point", 0.00075f },
+    { "Cheap", 0.0015f },
+};
+static const int kNumCaliberErrorPresets = sizeof(kCaliberErrorPresets) / sizeof(kCaliberErrorPresets[0]);
+static const int kCaliberErrorDefaultIndex = 1;
+
 
 struct GuiState {
     BulletProfile bullet = {};
@@ -115,10 +320,9 @@ struct GuiState {
     float latitude = 0.0f;
 
     float baro_pressure = 101325.0f;
-    float baro_temp = 15.0f;
-    float baro_humidity = 0.5f;
-    float lrf_range = 500.0f;
-    float lrf_conf = 1.0f;
+    float baro_temp = 18.333f; // 65 °F
+    float baro_humidity = 0.65f;
+    float lrf_range = 457.2f; // 500 yd
 
     bool imu_valid = true;
     bool mag_valid = true;
@@ -141,8 +345,21 @@ struct GuiState {
     std::string last_action;
 
     // Uncertainty / error-margin config (initialized from BCE_GetDefaultUncertaintyConfig).
-    // sigma_cant_deg uses the RM3100 magnetometer default (1.5 deg).
     UncertaintyConfig uc_config = {};
+
+    // Hardware sensor preset indices (0 = Custom/manual).
+    int hw_barometer_index = kBarometerDefaultIndex;
+    int hw_lrf_index = kLrfDefaultIndex;
+    int hw_cant_index = 0;
+    int hw_temp_sensor_index = kTempDefaultIndex;   // temperature-dependent sensor
+    int hw_gps_index = kGpsDefaultIndex;            // GPS/GNSS module for direct latitude feed
+    int hw_mag_lat_index = kMagLatDefaultIndex;     // magnetometer preset for dip-angle latitude estimation
+    bool baro_is_calibrated = false;
+    bool baro_has_calibration_temp = false;
+    float baro_calibration_temp_c = 0.0f;
+    int mass_error_preset_index = kMassErrorDefaultIndex;
+    int length_error_preset_index = kLengthErrorDefaultIndex;
+    int caliber_error_preset_index = kCaliberErrorDefaultIndex;
 };
 
 GuiState g_state;
@@ -329,9 +546,98 @@ void EnsureProfileDefaults() {
 }
 
 float ClampValue(float value, float lo, float hi) {
+    if (!std::isfinite(value)) return lo;
+    if (!std::isfinite(lo)) lo = 0.0f;
+    if (!std::isfinite(hi)) hi = lo;
+    if (hi < lo) {
+        const float tmp = lo;
+        lo = hi;
+        hi = tmp;
+    }
     if (value < lo) return lo;
     if (value > hi) return hi;
     return value;
+}
+
+int ClampPresetIndex(int value, int count, int fallback) {
+    if (value < 0 || value >= count) {
+        return fallback;
+    }
+    return value;
+}
+
+float GetPresetMultiplier(const ErrorMultiplierPreset* presets, int count, int default_index, int index) {
+    const int safe_index = ClampPresetIndex(index, count, default_index);
+    return presets[safe_index].multiplier;
+}
+
+void SyncDerivedInputUncertaintySigmas() {
+    g_state.mass_error_preset_index = ClampPresetIndex(g_state.mass_error_preset_index, kNumMassErrorPresets, kMassErrorDefaultIndex);
+    g_state.length_error_preset_index = ClampPresetIndex(g_state.length_error_preset_index, kNumLengthErrorPresets, kLengthErrorDefaultIndex);
+    g_state.caliber_error_preset_index = ClampPresetIndex(g_state.caliber_error_preset_index, kNumCaliberErrorPresets, kCaliberErrorDefaultIndex);
+    g_state.hw_barometer_index = ClampPresetIndex(g_state.hw_barometer_index, kNumBarometerPresets, kBarometerDefaultIndex);
+    g_state.hw_lrf_index = ClampPresetIndex(g_state.hw_lrf_index, kNumLRFPresets, kLrfDefaultIndex);
+    g_state.hw_temp_sensor_index = ClampPresetIndex(g_state.hw_temp_sensor_index, kNumTempSensorPresets, kTempDefaultIndex);
+    g_state.hw_gps_index = ClampPresetIndex(g_state.hw_gps_index, kNumGpsLatPresets, kGpsDefaultIndex);
+    g_state.hw_mag_lat_index = ClampPresetIndex(g_state.hw_mag_lat_index, kNumMagLatPresets, kMagLatDefaultIndex);
+
+    const float mass_mult = GetPresetMultiplier(kMassErrorPresets, kNumMassErrorPresets, kMassErrorDefaultIndex, g_state.mass_error_preset_index);
+    const float length_mult = GetPresetMultiplier(kLengthErrorPresets, kNumLengthErrorPresets, kLengthErrorDefaultIndex, g_state.length_error_preset_index);
+    const float caliber_mult = GetPresetMultiplier(kCaliberErrorPresets, kNumCaliberErrorPresets, kCaliberErrorDefaultIndex, g_state.caliber_error_preset_index);
+
+    g_state.uc_config.sigma_mass_grains = std::fabs(g_state.bullet.mass_grains) * mass_mult;
+    g_state.uc_config.sigma_length_mm = std::fabs(g_state.bullet.length_mm) * length_mult;
+    g_state.uc_config.sigma_caliber_inches = std::fabs(g_state.bullet.caliber_inches) * caliber_mult;
+    g_state.uc_config.sigma_twist_rate_inches = std::fabs(g_state.bullet.twist_rate_inches) * 0.01f;
+
+    g_state.uc_config.use_range_error_table =
+        (g_state.hw_lrf_index > 0 && kLRFPresets[g_state.hw_lrf_index].table.points != nullptr);
+    g_state.uc_config.range_error_table = g_state.uc_config.use_range_error_table
+        ? kLRFPresets[g_state.hw_lrf_index].table
+        : BCE_ErrorTable{nullptr, 0};
+
+    g_state.uc_config.use_temperature_error_table =
+        (g_state.hw_temp_sensor_index > 0 && kTempSensorPresets[g_state.hw_temp_sensor_index].table.points != nullptr);
+    g_state.uc_config.temperature_error_table = g_state.uc_config.use_temperature_error_table
+        ? kTempSensorPresets[g_state.hw_temp_sensor_index].table
+        : BCE_ErrorTable{nullptr, 0};
+
+    g_state.uc_config.use_pressure_delta_temp_error_table =
+        (g_state.hw_barometer_index >= 0 && g_state.hw_barometer_index < kNumBarometerPresets) &&
+        (kBarometerPresets[g_state.hw_barometer_index].table.points != nullptr);
+    g_state.uc_config.pressure_delta_temp_error_table = g_state.uc_config.use_pressure_delta_temp_error_table
+        ? kBarometerPresets[g_state.hw_barometer_index].table
+        : BCE_ErrorTable{nullptr, 0};
+    g_state.uc_config.pressure_uncalibrated_sigma_pa = 50.0f;
+    g_state.uc_config.pressure_is_calibrated = g_state.baro_is_calibrated;
+    g_state.uc_config.pressure_has_calibration_temp = g_state.baro_has_calibration_temp;
+    g_state.uc_config.pressure_calibration_temp_c = g_state.baro_calibration_temp_c;
+
+    if (g_state.uc_config.use_pressure_delta_temp_error_table && !g_state.baro_is_calibrated) {
+        g_state.uc_config.sigma_pressure_pa = g_state.uc_config.pressure_uncalibrated_sigma_pa;
+    }
+
+    if (g_state.hw_gps_index > 0) {
+        g_state.uc_config.sigma_latitude_deg = kGpsLatPresets[g_state.hw_gps_index].sigma_lat_deg;
+        g_state.hw_mag_lat_index = 0;
+    } else if (g_state.hw_mag_lat_index > 0) {
+        g_state.uc_config.sigma_latitude_deg = kMagLatPresets[g_state.hw_mag_lat_index].sigma_lat_deg;
+    }
+
+    // Sync interpolated sigmas for hardware with error tables
+    if (g_state.uc_config.use_range_error_table) {
+        g_state.uc_config.sigma_range_m = BCE_InterpolateSigma(
+            &kLRFPresets[g_state.hw_lrf_index].table, g_state.lrf_range);
+    }
+    if (g_state.uc_config.use_temperature_error_table) {
+        g_state.uc_config.sigma_temperature_c = BCE_InterpolateSigma(
+            &kTempSensorPresets[g_state.hw_temp_sensor_index].table, g_state.baro_temp);
+    }
+    if (g_state.uc_config.use_pressure_delta_temp_error_table && g_state.baro_is_calibrated && g_state.baro_has_calibration_temp) {
+        const float delta_temp_c = std::fabs(g_state.baro_temp - g_state.baro_calibration_temp_c);
+        g_state.uc_config.sigma_pressure_pa = BCE_InterpolateSigma(
+            &kBarometerPresets[g_state.hw_barometer_index].table, delta_temp_c);
+    }
 }
 
 void SanitizeCartridgePreset(CartridgePreset& preset) {
@@ -533,7 +839,7 @@ void ResetStateDefaults() {
     g_state.bullet.barrel_length_in = 24.0f;
     g_state.bullet.mv_adjustment_factor = 25.0f;
 
-    g_state.zero.zero_range_m = 100.0f;
+    g_state.zero.zero_range_m = 91.44f; // 100 yd
     g_state.zero.sight_height_mm = 38.1f;
 
     g_state.wind_speed_ms = 0.0f;
@@ -541,10 +847,9 @@ void ResetStateDefaults() {
     g_state.latitude = 37.0f;
 
     g_state.baro_pressure = 101325.0f;
-    g_state.baro_temp = 15.0f;
-    g_state.baro_humidity = 0.5f;
-    g_state.lrf_range = 500.0f;
-    g_state.lrf_conf = 1.0f;
+    g_state.baro_temp = 18.333f; // 65 °F
+    g_state.baro_humidity = 0.65f;
+    g_state.lrf_range = 457.2f; // 500 yd
 
     g_state.imu_valid = true;
     g_state.mag_valid = true;
@@ -555,7 +860,19 @@ void ResetStateDefaults() {
     g_state.drag_model_index = 0;
     g_state.now_us = 0;
     g_state.last_action = "Startup";
+    g_state.hw_barometer_index = kBarometerDefaultIndex;
+    g_state.hw_lrf_index = kLrfDefaultIndex;
+    g_state.hw_temp_sensor_index = kTempDefaultIndex;
+    g_state.hw_gps_index = kGpsDefaultIndex;
+    g_state.hw_mag_lat_index = kMagLatDefaultIndex;
+    g_state.baro_is_calibrated = false;
+    g_state.baro_has_calibration_temp = false;
+    g_state.baro_calibration_temp_c = 0.0f;
+    g_state.mass_error_preset_index = kMassErrorDefaultIndex;
+    g_state.length_error_preset_index = kLengthErrorDefaultIndex;
+    g_state.caliber_error_preset_index = kCaliberErrorDefaultIndex;
     BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
+    SyncDerivedInputUncertaintySigmas();
     std::snprintf(g_state.preset_path, sizeof(g_state.preset_path), "%s", "bce_gui_preset.json");
     std::snprintf(g_state.profile_library_path, sizeof(g_state.profile_library_path), "%s", "bce_gui_profile_library.json");
     std::snprintf(g_state.new_cartridge_preset_name, sizeof(g_state.new_cartridge_preset_name), "%s", "New Cartridge Preset");
@@ -578,6 +895,7 @@ void ApplyConfig() {
     BCE_SetZeroConfig(&g_state.zero);
     BCE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
     BCE_SetLatitude(g_state.latitude);
+    SyncDerivedInputUncertaintySigmas();
     BCE_SetUncertaintyConfig(&g_state.uc_config);
 }
 
@@ -610,7 +928,6 @@ SensorFrame BuildFrame() {
 
     frame.lrf_range_m = g_state.lrf_range;
     frame.lrf_timestamp_us = g_state.now_us;
-    frame.lrf_confidence = g_state.lrf_conf;
     frame.lrf_valid = g_state.lrf_valid;
 
     frame.encoder_focal_length_mm = 0.0f;
@@ -702,7 +1019,7 @@ void RefreshOutput() {
         ss << "Hint: AHRS_UNSTABLE is expected in early frames. Use Run 100 or enough Step updates while IMU is static.\n";
     }
     if (fault & BCE_Fault::NO_RANGE) {
-        ss << "Hint: NO_RANGE means no accepted LRF sample (check LRF valid/range/confidence).\n";
+        ss << "Hint: NO_RANGE means no accepted LRF sample (check LRF valid/range).\n";
     }
     if (diag & BCE_Diag::DEFAULT_ALTITUDE) {
         ss << "Hint: DEFAULT_ALTITUDE is informational (not a fault).\n";
@@ -768,6 +1085,26 @@ void RefreshOutput() {
         ss << "  Windage:   " << sol.sigma_windage_moa   << " MOA\n";
         ss << "  50% CEP:   " << cep50 << " MOA\n";
         ss << "  95% CEP:   " << cep95 << " MOA\n";
+
+        // Per-input variance breakdown
+        const char* input_names[FiringSolution::kNumUncertaintyInputs] = {
+            "MV", "BC", "Range", "WindSpd", "WindDir",
+            "Temp", "Press", "Humid", "SightH", "Cant", "Latitude",
+            "Mass", "Length", "Caliber", "Twist", "ZeroRng", "MVAdj"
+        };
+        const float total_var_e = sol.sigma_elevation_moa * sol.sigma_elevation_moa;
+        const float total_var_w = sol.sigma_windage_moa   * sol.sigma_windage_moa;
+        ss << "  --- Per-input variance (MOA^2):  Elev / Wind ---\n";
+        for (int i = 0; i < FiringSolution::kNumUncertaintyInputs; ++i) {
+            char buf[128];
+            float pct_e = (total_var_e > 1e-12f) ? (sol.uc_var_elev[i] / total_var_e * 100.0f) : 0.0f;
+            float pct_w = (total_var_w > 1e-12f) ? (sol.uc_var_wind[i] / total_var_w * 100.0f) : 0.0f;
+            std::snprintf(buf, sizeof(buf), "  %-8s %8.5f (%5.1f%%)  %8.5f (%5.1f%%)\n",
+                          input_names[i],
+                          sol.uc_var_elev[i], pct_e,
+                          sol.uc_var_wind[i], pct_w);
+            ss << buf;
+        }
     } else if (g_state.uc_config.enabled) {
         ss << "\nUncertainty: enabled but not yet computed (need valid solution).\n";
     } else {
@@ -775,6 +1112,14 @@ void RefreshOutput() {
     }
 
     g_state.output_text = ss.str();
+
+    // Publish to display snapshot so the render loop can read it without
+    // ever blocking on g_engine_mutex (which may be held during a long solve).
+    {
+        std::lock_guard<std::mutex> dlk(g_display_mutex);
+        g_display_output = g_state.output_text;
+        BCE_GetSolution(&g_display_sol);
+    }
 }
 
 void ApplyCartridgePreset(const CartridgePreset& preset) {
@@ -974,7 +1319,6 @@ void SavePreset() {
     j["baro_temperature_c"] = g_state.baro_temp;
     j["baro_humidity"] = g_state.baro_humidity;
     j["lrf_range_m"] = g_state.lrf_range;
-    j["lrf_confidence"] = g_state.lrf_conf;
     j["uc_enabled"]               = g_state.uc_config.enabled;
     j["uc_sigma_mv_ms"]           = g_state.uc_config.sigma_muzzle_velocity_ms;
     j["uc_sigma_bc_fraction"]     = g_state.uc_config.sigma_bc_fraction;
@@ -986,6 +1330,25 @@ void SavePreset() {
     j["uc_sigma_humidity"]        = g_state.uc_config.sigma_humidity;
     j["uc_sigma_sight_height_mm"] = g_state.uc_config.sigma_sight_height_mm;
     j["uc_sigma_cant_deg"]        = g_state.uc_config.sigma_cant_deg;
+    j["uc_sigma_latitude_deg"]    = g_state.uc_config.sigma_latitude_deg;
+    j["uc_sigma_mass_grains"]     = g_state.uc_config.sigma_mass_grains;
+    j["uc_sigma_length_mm"]       = g_state.uc_config.sigma_length_mm;
+    j["uc_sigma_caliber_inches"]  = g_state.uc_config.sigma_caliber_inches;
+    j["uc_sigma_twist_inches"]    = g_state.uc_config.sigma_twist_rate_inches;
+    j["uc_sigma_zero_range_m"]    = g_state.uc_config.sigma_zero_range_m;
+    j["uc_sigma_mv_adj_fps_per_in"] = g_state.uc_config.sigma_mv_adjustment_fps_per_in;
+    j["hw_barometer_index"]    = g_state.hw_barometer_index;
+    j["hw_lrf_index"]          = g_state.hw_lrf_index;
+    j["hw_cant_index"]         = g_state.hw_cant_index;
+    j["hw_temp_sensor_index"]  = g_state.hw_temp_sensor_index;
+    j["hw_gps_index"]          = g_state.hw_gps_index;
+    j["hw_mag_lat_index"]      = g_state.hw_mag_lat_index;
+    j["baro_calibrated"] = g_state.baro_is_calibrated;
+    j["baro_calibration_temp_valid"] = g_state.baro_has_calibration_temp;
+    j["baro_calibration_temp_c"] = g_state.baro_calibration_temp_c;
+    j["uc_mass_error_preset_index"] = g_state.mass_error_preset_index;
+    j["uc_length_error_preset_index"] = g_state.length_error_preset_index;
+    j["uc_caliber_error_preset_index"] = g_state.caliber_error_preset_index;
     j["imu_valid"] = g_state.imu_valid;
     j["mag_valid"] = g_state.mag_valid;
     j["baro_valid"] = g_state.baro_valid;
@@ -1075,10 +1438,9 @@ void LoadPreset() {
             g_state.latitude = 37.0f;
         }
         g_state.baro_pressure = j.value("baro_pressure_pa", 101325.0f);
-        g_state.baro_temp = j.value("baro_temperature_c", 15.0f);
+        g_state.baro_temp = j.value("baro_temperature_c", 18.333f);
         g_state.baro_humidity = j.value("baro_humidity", 0.5f);
         g_state.lrf_range = j.value("lrf_range_m", 500.0f);
-        g_state.lrf_conf = j.value("lrf_confidence", 1.0f);
 
         // Uncertainty config — load with per-field defaults matching BCE defaults
         UncertaintyConfig uc_def = {};
@@ -1094,6 +1456,47 @@ void LoadPreset() {
         g_state.uc_config.sigma_humidity             = j.value("uc_sigma_humidity",        uc_def.sigma_humidity);
         g_state.uc_config.sigma_sight_height_mm      = j.value("uc_sigma_sight_height_mm", uc_def.sigma_sight_height_mm);
         g_state.uc_config.sigma_cant_deg             = j.value("uc_sigma_cant_deg",        uc_def.sigma_cant_deg);
+        g_state.uc_config.sigma_latitude_deg         = j.value("uc_sigma_latitude_deg",   uc_def.sigma_latitude_deg);
+        g_state.uc_config.sigma_mass_grains          = j.value("uc_sigma_mass_grains",     uc_def.sigma_mass_grains);
+        g_state.uc_config.sigma_length_mm            = j.value("uc_sigma_length_mm",       uc_def.sigma_length_mm);
+        g_state.uc_config.sigma_caliber_inches       = j.value("uc_sigma_caliber_inches",  uc_def.sigma_caliber_inches);
+        g_state.uc_config.sigma_twist_rate_inches    = j.value("uc_sigma_twist_inches",    uc_def.sigma_twist_rate_inches);
+        g_state.uc_config.sigma_zero_range_m         = j.value("uc_sigma_zero_range_m",    uc_def.sigma_zero_range_m);
+        g_state.uc_config.sigma_mv_adjustment_fps_per_in = j.value("uc_sigma_mv_adj_fps_per_in", uc_def.sigma_mv_adjustment_fps_per_in);
+
+        // Hardware sensor selections (backwards-compatible: 0 = Custom)
+        g_state.hw_barometer_index   = j.value("hw_barometer_index", kBarometerDefaultIndex);
+        g_state.hw_lrf_index         = j.value("hw_lrf_index", kLrfDefaultIndex);
+        g_state.hw_cant_index        = j.value("hw_cant_index", 0);
+        g_state.hw_temp_sensor_index = j.value("hw_temp_sensor_index", kTempDefaultIndex);
+        g_state.hw_gps_index         = j.value("hw_gps_index", kGpsDefaultIndex);
+        g_state.hw_mag_lat_index      = j.value("hw_mag_lat_index", kMagLatDefaultIndex);
+        if (g_state.hw_barometer_index < 0 || g_state.hw_barometer_index >= kNumBarometerPresets) g_state.hw_barometer_index = kBarometerDefaultIndex;
+        if (g_state.hw_lrf_index < 0 || g_state.hw_lrf_index >= kNumLRFPresets) g_state.hw_lrf_index = kLrfDefaultIndex;
+        if (g_state.hw_cant_index < 0 || g_state.hw_cant_index >= kNumCantPresets) g_state.hw_cant_index = 0;
+        if (g_state.hw_temp_sensor_index < 0 || g_state.hw_temp_sensor_index >= kNumTempSensorPresets) g_state.hw_temp_sensor_index = kTempDefaultIndex;
+        if (g_state.hw_gps_index < 0 || g_state.hw_gps_index >= kNumGpsLatPresets) g_state.hw_gps_index = kGpsDefaultIndex;
+        if (g_state.hw_mag_lat_index < 0 || g_state.hw_mag_lat_index >= kNumMagLatPresets) g_state.hw_mag_lat_index = kMagLatDefaultIndex;
+
+        g_state.baro_is_calibrated = j.value("baro_calibrated", false);
+        g_state.baro_has_calibration_temp = j.value("baro_calibration_temp_valid", false);
+        g_state.baro_calibration_temp_c = j.value("baro_calibration_temp_c", 0.0f);
+
+        g_state.mass_error_preset_index = ClampPresetIndex(
+            j.value("uc_mass_error_preset_index", kMassErrorDefaultIndex),
+            kNumMassErrorPresets,
+            kMassErrorDefaultIndex
+        );
+        g_state.length_error_preset_index = ClampPresetIndex(
+            j.value("uc_length_error_preset_index", kLengthErrorDefaultIndex),
+            kNumLengthErrorPresets,
+            kLengthErrorDefaultIndex
+        );
+        g_state.caliber_error_preset_index = ClampPresetIndex(
+            j.value("uc_caliber_error_preset_index", kCaliberErrorDefaultIndex),
+            kNumCaliberErrorPresets,
+            kCaliberErrorDefaultIndex
+        );
 
         g_state.imu_valid = j.value("imu_valid", true);
         g_state.mag_valid = j.value("mag_valid", true);
@@ -1104,6 +1507,8 @@ void LoadPreset() {
         if (!has_bc && !g_state.override_drag_coefficient) {
             g_state.manual_drag_coefficient = ComputeAutoDragCoefficient(g_state.bullet);
         }
+
+        SyncDerivedInputUncertaintySigmas();
     } catch (const json::parse_error& e) {
         g_state.last_action = "Load Preset (failed)";
         std::string error_msg = "Preset load failed: JSON parse error: ";
@@ -1145,6 +1550,24 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// Engine ticker — mirrors the FreeRTOS BCE task on the ESP32-P4.
+// Runs BCE_Update + RefreshOutput at FRAME_STEP_US intervals on a background
+// thread so the render loop never blocks on the solver.
+// ---------------------------------------------------------------------------
+void EngineTickerThread() {
+    using namespace std::chrono;
+    auto next = steady_clock::now();
+    while (g_ticker_running.load(std::memory_order_relaxed)) {
+        next += microseconds(static_cast<long long>(FRAME_STEP_US));
+        std::this_thread::sleep_until(next);
+        if (!g_ticker_running.load(std::memory_order_relaxed)) break;
+        std::lock_guard<std::mutex> lk(g_engine_mutex);
+        RunFrameUpdates(1);
+        RefreshOutput();
+    }
+}
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     // Desktop harness startup sequence: defaults -> window/device -> ImGui -> BCE init.
@@ -1200,6 +1623,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     ResetEngineAndState();
 
+    // Start engine ticker thread — mirrors the FreeRTOS BCE task on ESP32-P4.
+    g_ticker_running = true;
+    std::thread ticker_thread(EngineTickerThread);
+
     bool done = false;
     while (!done) {
         MSG msg;
@@ -1213,6 +1640,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             break;
         }
 
+        // Snapshot display state from the ticker thread. g_display_mutex is
+        // held only briefly (string copy), so this never blocks on the solver.
+        FiringSolution frame_sol = {};
+        std::string frame_output;
+        {
+            std::lock_guard<std::mutex> dlk(g_display_mutex);
+            frame_sol = g_display_sol;
+            frame_output = g_display_output;
+        }
+
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -1222,7 +1659,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (ImGui::Combo("Unit System", &unit_mode, kUnitSystemLabels, IM_ARRAYSIZE(kUnitSystemLabels))) {
             g_state.unit_system = static_cast<UnitSystem>(unit_mode);
             g_state.last_action = "Unit Mode Changed";
-            RefreshOutput();
+            // ticker will refresh output at next tick
         }
 
         if (ImGui::CollapsingHeader("Cartridge Presets (GUI-only)")) {
@@ -1242,7 +1679,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         g_state.selected_cartridge_preset = static_cast<int>(g_cartridge_presets.size()) - 1;
                     }
                     g_state.last_action = "Cartridge Preset Saved";
-                    RefreshOutput();
+                    // ticker will refresh output at next tick
                 }
             }
             ImGui::SameLine();
@@ -1251,8 +1688,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
                 ApplyCartridgePreset(g_cartridge_presets[g_state.selected_cartridge_preset]);
                 g_state.last_action = "Cartridge Preset Applied";
-                ApplyConfig();
-                RefreshOutput();
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    ApplyConfig();
+                    RefreshOutput();
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("Remove Selected Cartridge") &&
@@ -1265,7 +1705,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     g_state.selected_cartridge_preset = static_cast<int>(g_cartridge_presets.size()) - 1;
                 }
                 g_state.last_action = "Cartridge Preset Removed";
-                RefreshOutput();
+                // ticker will refresh output at next tick
             }
 
             if (ImGui::BeginListBox("##cartridge_presets", ImVec2(-FLT_MIN, 110.0f))) {
@@ -1298,7 +1738,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         g_state.selected_gun_preset = static_cast<int>(g_gun_presets.size()) - 1;
                     }
                     g_state.last_action = "Gun Preset Saved";
-                    RefreshOutput();
+                    // ticker will refresh output at next tick
                 }
             }
             ImGui::SameLine();
@@ -1308,8 +1748,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 IsGunPresetCompatibleWithSelectedCaliber(g_gun_presets[g_state.selected_gun_preset])) {
                 ApplyGunPreset(g_gun_presets[g_state.selected_gun_preset]);
                 g_state.last_action = "Gun Preset Applied";
-                ApplyConfig();
-                RefreshOutput();
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    ApplyConfig();
+                    RefreshOutput();
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("Remove Selected Gun") &&
@@ -1323,7 +1766,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     g_state.selected_gun_preset = static_cast<int>(g_gun_presets.size()) - 1;
                 }
                 g_state.last_action = "Gun Preset Removed";
-                RefreshOutput();
+                // ticker will refresh output at next tick
             }
 
             if (ImGui::BeginListBox("##gun_presets", ImVec2(-FLT_MIN, 110.0f))) {
@@ -1345,69 +1788,432 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         const bool is_imperial = (g_state.unit_system == UnitSystem::IMPERIAL);
 
+        ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
+        if (g_state.uc_config.enabled) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset Sigmas")) {
+                bool was_enabled = g_state.uc_config.enabled;
+                BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
+                g_state.uc_config.enabled = was_enabled;
+                g_state.hw_barometer_index = kBarometerDefaultIndex;
+                g_state.hw_lrf_index = kLrfDefaultIndex;
+                g_state.hw_cant_index = 0;
+                g_state.hw_temp_sensor_index = kTempDefaultIndex;
+                g_state.hw_gps_index = kGpsDefaultIndex;
+                g_state.hw_mag_lat_index = kMagLatDefaultIndex;
+                g_state.baro_is_calibrated = false;
+                g_state.baro_has_calibration_temp = false;
+                g_state.baro_calibration_temp_c = 0.0f;
+                g_state.mass_error_preset_index = kMassErrorDefaultIndex;
+                g_state.length_error_preset_index = kLengthErrorDefaultIndex;
+                g_state.caliber_error_preset_index = kCaliberErrorDefaultIndex;
+                SyncDerivedInputUncertaintySigmas();
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(+/- shown inline with each value)");
+        }
+
+        const bool uc_on = g_state.uc_config.enabled;
+
         ImGui::TextUnformatted("Manual Inputs");
         ImGui::Checkbox("Override Drag Coefficient", &g_state.override_drag_coefficient);
-        if (g_state.override_drag_coefficient) {
-            ImGui::InputFloat("Drag Coefficient (G-model)", &g_state.manual_drag_coefficient, 0.001f, 0.01f, "%.4f");
-        } else {
-            const float auto_drag = ComputeAutoDragCoefficient(g_state.bullet);
-            ImGui::Text("Drag Coefficient (auto): %.4f", auto_drag);
+        {
+            const float avail_bc = ImGui::GetContentRegionAvail().x;
+            if (g_state.override_drag_coefficient) {
+                ImGui::SetNextItemWidth(uc_on ? avail_bc * 0.45f : -1.0f);
+                ImGui::InputFloat("Drag Coefficient (G-model)", &g_state.manual_drag_coefficient, 0.001f, 0.01f, "%.4f");
+            } else {
+                const float auto_drag = ComputeAutoDragCoefficient(g_state.bullet);
+                ImGui::Text("Drag Coefficient (auto): %.4f", auto_drag);
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::InputFloat("+/-BC##bc_sig", &g_state.uc_config.sigma_bc_fraction, 0.0f, 0.0f, "%.3f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma BC uncertainty as a fraction, e.g. 0.02 = 2%%");
+            }
         }
         ImGui::Combo("Drag Model", &g_state.drag_model_index, kDragModelLabels, IM_ARRAYSIZE(kDragModelLabels));
         float muzzle_display = is_imperial ? (g_state.bullet.muzzle_velocity_ms * MPS_TO_FPS) : g_state.bullet.muzzle_velocity_ms;
-        if (ImGui::InputFloat(is_imperial ? "Muzzle Velocity (fps)" : "Muzzle Velocity (m/s)", &muzzle_display, is_imperial ? 5.0f : 1.0f, is_imperial ? 50.0f : 10.0f, "%.1f")) {
-            g_state.bullet.muzzle_velocity_ms = is_imperial ? (muzzle_display * FPS_TO_MPS) : muzzle_display;
+        {
+            const float avail_mv = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_mv * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Muzzle Velocity (fps)" : "Muzzle Velocity (m/s)", &muzzle_display, is_imperial ? 5.0f : 1.0f, is_imperial ? 50.0f : 10.0f, "%.1f")) {
+                g_state.bullet.muzzle_velocity_ms = is_imperial ? (muzzle_display * FPS_TO_MPS) : muzzle_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                float mv_sig = is_imperial ? (g_state.uc_config.sigma_muzzle_velocity_ms * MPS_TO_FPS) : g_state.uc_config.sigma_muzzle_velocity_ms;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-MV(fps)##mv" : "+/-MV(m/s)##mv", &mv_sig, 0.0f, 0.0f, "%.1f")) {
+                    g_state.uc_config.sigma_muzzle_velocity_ms = is_imperial ? (mv_sig * FPS_TO_MPS) : mv_sig;
+                    if (g_state.uc_config.sigma_muzzle_velocity_ms < 0.0f)
+                        g_state.uc_config.sigma_muzzle_velocity_ms = 0.0f;
+                }
+            }
         }
-        ImGui::InputFloat("Mass (gr)", &g_state.bullet.mass_grains, 1.0f, 10.0f, "%.2f");
+        {
+            const float avail_mass = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_mass * 0.45f : -1.0f);
+            ImGui::InputFloat("Mass (gr)", &g_state.bullet.mass_grains, 1.0f, 10.0f, "%.2f");
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                const char* mass_labels[8];
+                for (int i = 0; i < kNumMassErrorPresets && i < 8; ++i) mass_labels[i] = kMassErrorPresets[i].name;
+                ImGui::Combo("Mass Type", &g_state.mass_error_preset_index, mass_labels, kNumMassErrorPresets);
+                ImGui::Text("+/-Mass = %.3f gr", g_state.uc_config.sigma_mass_grains);
+            }
+        }
         float length_display = is_imperial ? (g_state.bullet.length_mm * MM_TO_IN) : g_state.bullet.length_mm;
-        if (ImGui::InputFloat(is_imperial ? "Length (in)" : "Length (mm)", &length_display, is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f, is_imperial ? "%.3f" : "%.2f")) {
-            g_state.bullet.length_mm = is_imperial ? (length_display * IN_TO_MM) : length_display;
+        {
+            const float avail_len = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_len * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Length (in)" : "Length (mm)", &length_display, is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f, is_imperial ? "%.3f" : "%.2f")) {
+                g_state.bullet.length_mm = is_imperial ? (length_display * IN_TO_MM) : length_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                const char* length_labels[8];
+                for (int i = 0; i < kNumLengthErrorPresets && i < 8; ++i) length_labels[i] = kLengthErrorPresets[i].name;
+                ImGui::Combo("Length Type", &g_state.length_error_preset_index, length_labels, kNumLengthErrorPresets);
+                const float length_sigma_display = is_imperial ? (g_state.uc_config.sigma_length_mm * MM_TO_IN) : g_state.uc_config.sigma_length_mm;
+                ImGui::Text(is_imperial ? "+/-Len = %.4f in" : "+/-Len = %.3f mm", length_sigma_display);
+            }
         }
         float caliber_display = is_imperial ? g_state.bullet.caliber_inches : (g_state.bullet.caliber_inches * IN_TO_MM);
-        if (ImGui::InputFloat(is_imperial ? "Caliber (in)" : "Caliber (mm)", &caliber_display, is_imperial ? 0.001f : 0.01f, is_imperial ? 0.01f : 0.1f, is_imperial ? "%.3f" : "%.2f")) {
-            g_state.bullet.caliber_inches = is_imperial ? caliber_display : (caliber_display * MM_TO_IN);
+        {
+            const float avail_cal = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_cal * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Caliber (in)" : "Caliber (mm)", &caliber_display, is_imperial ? 0.001f : 0.01f, is_imperial ? 0.01f : 0.1f, is_imperial ? "%.3f" : "%.2f")) {
+                g_state.bullet.caliber_inches = is_imperial ? caliber_display : (caliber_display * MM_TO_IN);
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                const char* caliber_labels[8];
+                for (int i = 0; i < kNumCaliberErrorPresets && i < 8; ++i) caliber_labels[i] = kCaliberErrorPresets[i].name;
+                ImGui::Combo("Caliber Type", &g_state.caliber_error_preset_index, caliber_labels, kNumCaliberErrorPresets);
+                const float caliber_sigma_display = is_imperial
+                    ? g_state.uc_config.sigma_caliber_inches
+                    : (g_state.uc_config.sigma_caliber_inches * IN_TO_MM);
+                ImGui::Text(is_imperial ? "+/-Cal = %.5f in" : "+/-Cal = %.4f mm", caliber_sigma_display);
+            }
         }
         float twist_display = is_imperial ? g_state.bullet.twist_rate_inches : (g_state.bullet.twist_rate_inches * IN_TO_MM);
-        if (ImGui::InputFloat(is_imperial ? "Twist (in/turn)" : "Twist (mm/turn)", &twist_display, is_imperial ? 0.1f : 1.0f, is_imperial ? 1.0f : 10.0f, is_imperial ? "%.2f" : "%.1f")) {
-            g_state.bullet.twist_rate_inches = is_imperial ? twist_display : (twist_display * MM_TO_IN);
+        {
+            const float avail_tw = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_tw * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Twist (in/turn)" : "Twist (mm/turn)", &twist_display, is_imperial ? 0.1f : 1.0f, is_imperial ? 1.0f : 10.0f, is_imperial ? "%.2f" : "%.1f")) {
+                g_state.bullet.twist_rate_inches = is_imperial ? twist_display : (twist_display * MM_TO_IN);
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                const float twist_sigma_display = is_imperial
+                    ? g_state.uc_config.sigma_twist_rate_inches
+                    : (g_state.uc_config.sigma_twist_rate_inches * IN_TO_MM);
+                ImGui::Text(is_imperial ? "+/-Twist (1%%) = %.2f in" : "+/-Twist (1%%) = %.1f mm", twist_sigma_display);
+            }
         }
         ImGui::InputFloat("Barrel Length (in)", &g_state.bullet.barrel_length_in, 0.1f, 1.0f, "%.1f");
-        if (ImGui::InputFloat("MV Adjustment (fps/in)", &g_state.bullet.mv_adjustment_factor, 1.0f, 10.0f, "%.1f")) {
-            g_state.bullet.mv_adjustment_factor = std::fabs(g_state.bullet.mv_adjustment_factor);
+        {
+            const float avail_mva = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_mva * 0.45f : -1.0f);
+            if (ImGui::InputFloat("MV Adjustment (fps/in)", &g_state.bullet.mv_adjustment_factor, 1.0f, 10.0f, "%.1f")) {
+                g_state.bullet.mv_adjustment_factor = std::fabs(g_state.bullet.mv_adjustment_factor);
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat("+/-MVAdj(fps/in)##mva", &g_state.uc_config.sigma_mv_adjustment_fps_per_in, 0.0f, 0.0f, "%.2f")) {
+                    if (g_state.uc_config.sigma_mv_adjustment_fps_per_in < 0.0f)
+                        g_state.uc_config.sigma_mv_adjustment_fps_per_in = 0.0f;
+                }
+            }
         }
 
         ImGui::Separator();
         float zero_display = is_imperial ? (g_state.zero.zero_range_m * M_TO_YD) : g_state.zero.zero_range_m;
-        if (ImGui::InputFloat(is_imperial ? "Zero Range (yd)" : "Zero Range (m)", &zero_display, is_imperial ? 1.0f : 1.0f, is_imperial ? 10.0f : 10.0f, "%.2f")) {
-            g_state.zero.zero_range_m = is_imperial ? (zero_display * YD_TO_M) : zero_display;
+        {
+            const float avail_zr = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_zr * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Zero Range (yd)" : "Zero Range (m)", &zero_display, is_imperial ? 1.0f : 1.0f, is_imperial ? 10.0f : 10.0f, "%.2f")) {
+                g_state.zero.zero_range_m = is_imperial ? (zero_display * YD_TO_M) : zero_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                float zr_sig = is_imperial ? (g_state.uc_config.sigma_zero_range_m * M_TO_YD) : g_state.uc_config.sigma_zero_range_m;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-Zero(yd)##zr" : "+/-Zero(m)##zr", &zr_sig, 0.0f, 0.0f, "%.2f")) {
+                    g_state.uc_config.sigma_zero_range_m = is_imperial ? (zr_sig * YD_TO_M) : zr_sig;
+                    if (g_state.uc_config.sigma_zero_range_m < 0.0f)
+                        g_state.uc_config.sigma_zero_range_m = 0.0f;
+                }
+            }
         }
         float sight_display = is_imperial ? (g_state.zero.sight_height_mm * MM_TO_IN) : g_state.zero.sight_height_mm;
-        if (ImGui::InputFloat(is_imperial ? "Sight Height (in)" : "Sight Height (mm)", &sight_display, is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f, is_imperial ? "%.3f" : "%.2f")) {
-            g_state.zero.sight_height_mm = is_imperial ? (sight_display * IN_TO_MM) : sight_display;
+        {
+            const float avail_sh = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_sh * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Sight Height (in)" : "Sight Height (mm)", &sight_display, is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f, is_imperial ? "%.3f" : "%.2f")) {
+                g_state.zero.sight_height_mm = is_imperial ? (sight_display * IN_TO_MM) : sight_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                float sht_sig = is_imperial ? (g_state.uc_config.sigma_sight_height_mm * MM_TO_IN) : g_state.uc_config.sigma_sight_height_mm;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-SightH(in)##sh" : "+/-SightH(mm)##sh", &sht_sig, 0.0f, 0.0f, is_imperial ? "%.3f" : "%.2f")) {
+                    g_state.uc_config.sigma_sight_height_mm = is_imperial ? (sht_sig * IN_TO_MM) : sht_sig;
+                    if (g_state.uc_config.sigma_sight_height_mm < 0.0f)
+                        g_state.uc_config.sigma_sight_height_mm = 0.0f;
+                }
+            }
         }
         float wind_display = is_imperial ? (g_state.wind_speed_ms * MPS_TO_MPH) : g_state.wind_speed_ms;
-        if (ImGui::InputFloat(is_imperial ? "Wind Speed (mph)" : "Wind Speed (m/s)", &wind_display, is_imperial ? 0.5f : 0.1f, is_imperial ? 5.0f : 1.0f, "%.2f")) {
-            g_state.wind_speed_ms = is_imperial ? (wind_display * MPH_TO_MPS) : wind_display;
+        {
+            const float avail_ws = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_ws * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Wind Speed (mph)" : "Wind Speed (m/s)", &wind_display, is_imperial ? 0.5f : 0.1f, is_imperial ? 5.0f : 1.0f, "%.2f")) {
+                g_state.wind_speed_ms = is_imperial ? (wind_display * MPH_TO_MPS) : wind_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                float wsp_sig = is_imperial ? (g_state.uc_config.sigma_wind_speed_ms * MPS_TO_MPH) : g_state.uc_config.sigma_wind_speed_ms;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-Wind(mph)##ws" : "+/-Wind(m/s)##ws", &wsp_sig, 0.0f, 0.0f, "%.2f")) {
+                    g_state.uc_config.sigma_wind_speed_ms = is_imperial ? (wsp_sig * MPH_TO_MPS) : wsp_sig;
+                    if (g_state.uc_config.sigma_wind_speed_ms < 0.0f)
+                        g_state.uc_config.sigma_wind_speed_ms = 0.0f;
+                }
+            }
         }
-        ImGui::InputFloat("Wind Heading (deg)", &g_state.wind_heading, 1.0f, 5.0f, "%.1f");
-        ImGui::InputFloat("Latitude (deg)", &g_state.latitude, 0.1f, 1.0f, "%.3f");
+        {
+            const float avail_wh = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_wh * 0.45f : -1.0f);
+            ImGui::InputFloat("Wind Heading (deg)", &g_state.wind_heading, 1.0f, 5.0f, "%.1f");
+            if (uc_on) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat("+/-WindDir(deg)##wd", &g_state.uc_config.sigma_wind_heading_deg, 0.0f, 0.0f, "%.1f")) {
+                    if (g_state.uc_config.sigma_wind_heading_deg < 0.0f)
+                        g_state.uc_config.sigma_wind_heading_deg = 0.0f;
+                }
+            }
+        }
+        // Latitude source / uncertainty presets (shown when uncertainty propagation is on)
+        if (uc_on) {
+            // GPS / GNSS module combo — direct latitude feed; highest priority source
+            {
+                const char* gps_labels[8];
+                for (int i = 0; i < kNumGpsLatPresets && i < 8; ++i) gps_labels[i] = kGpsLatPresets[i].name;
+                if (ImGui::Combo("GPS / GNSS Module", &g_state.hw_gps_index, gps_labels, kNumGpsLatPresets)) {
+                    if (g_state.hw_gps_index > 0) {
+                        g_state.uc_config.sigma_latitude_deg = kGpsLatPresets[g_state.hw_gps_index].sigma_lat_deg;
+                        g_state.hw_mag_lat_index = 0;  // GPS overrides mag estimator selection
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("GPS/GNSS receiver feeding latitude directly.\n"
+                                      "Takes priority over magnetometer estimation and manual entry.\n"
+                                      "Set to Custom and enter sigma manually if module is not listed.");
+            }
+            // Magnetometer preset — shown only when no GPS module is selected
+            if (g_state.hw_gps_index == 0) {
+                const char* mag_labels[8];
+                for (int i = 0; i < kNumMagLatPresets && i < 8; ++i) mag_labels[i] = kMagLatPresets[i].name;
+                if (ImGui::Combo("Magnetometer (lat est.)", &g_state.hw_mag_lat_index, mag_labels, kNumMagLatPresets)) {
+                    if (g_state.hw_mag_lat_index > 0) {
+                        g_state.uc_config.sigma_latitude_deg = kMagLatPresets[g_state.hw_mag_lat_index].sigma_lat_deg;
+                    }
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Magnetometer used for autonomous latitude estimation via magnetic dip angle.\n"
+                                      "Only active when no GPS/GNSS module is present.\n"
+                                      "Manual entry calibrates the estimator when a known position is available.");
+            }
+        }
+        {
+            // Sigma locked when any hardware preset is providing the value
+            const bool lat_locked = uc_on && (g_state.hw_gps_index > 0 || g_state.hw_mag_lat_index > 0);
+            const float avail_lat = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_lat * 0.45f : -1.0f);
+            ImGui::InputFloat("Latitude (deg)", &g_state.latitude, 0.1f, 1.0f, "%.3f");
+            if (uc_on) {
+                ImGui::SameLine();
+                if (lat_locked) ImGui::BeginDisabled();
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat("+/-Lat(deg)##lat", &g_state.uc_config.sigma_latitude_deg, 0.0f, 0.0f, "%.2f")) {
+                    if (g_state.uc_config.sigma_latitude_deg < 0.0f)
+                        g_state.uc_config.sigma_latitude_deg = 0.0f;
+                }
+                if (lat_locked) ImGui::EndDisabled();
+            }
+        }
 
         ImGui::Separator();
         ImGui::TextUnformatted("Sensor Frame");
+
+        if (uc_on) {
+            const char* baro_labels[8];
+            for (int i = 0; i < kNumBarometerPresets && i < 8; ++i) baro_labels[i] = kBarometerPresets[i].name;
+            if (ImGui::Combo("Barometer", &g_state.hw_barometer_index, baro_labels, kNumBarometerPresets)) {
+                SyncDerivedInputUncertaintySigmas();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Barometer pressure uncertainty profile used for sigma pressure propagation.");
+
+            if (ImGui::Checkbox("Barometer Calibrated", &g_state.baro_is_calibrated)) {
+                if (g_state.baro_is_calibrated && !g_state.baro_has_calibration_temp) {
+                    g_state.baro_is_calibrated = false;
+                }
+                SyncDerivedInputUncertaintySigmas();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Calibration is only valid when an internal calibration temperature is provided.");
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Has Internal Cal Temp", &g_state.baro_has_calibration_temp)) {
+                if (!g_state.baro_has_calibration_temp) {
+                    g_state.baro_is_calibrated = false;
+                }
+                SyncDerivedInputUncertaintySigmas();
+            }
+
+            if (g_state.baro_has_calibration_temp) {
+                float cal_temp_display = is_imperial
+                    ? ((g_state.baro_calibration_temp_c * 9.0f / 5.0f) + 32.0f)
+                    : g_state.baro_calibration_temp_c;
+                if (ImGui::InputFloat(is_imperial ? "Cal Temp (F, internal)" : "Cal Temp (C, internal)",
+                                      &cal_temp_display,
+                                      is_imperial ? 0.5f : 0.1f,
+                                      is_imperial ? 2.0f : 1.0f,
+                                      "%.2f")) {
+                    g_state.baro_calibration_temp_c = is_imperial
+                        ? ((cal_temp_display - 32.0f) * 5.0f / 9.0f)
+                        : cal_temp_display;
+                    SyncDerivedInputUncertaintySigmas();
+                }
+            }
+
+            const float delta_temp_c = (g_state.baro_is_calibrated && g_state.baro_has_calibration_temp)
+                ? std::fabs(g_state.baro_temp - g_state.baro_calibration_temp_c)
+                : 0.0f;
+            ImGui::Text("Barometer sigma pressure: %.2f Pa (\u0394T used: %.2f C)",
+                        g_state.uc_config.sigma_pressure_pa,
+                        delta_temp_c);
+        }
+
+        // Thermometer hardware preset — shown above temp row when uc_on.
+        if (uc_on) {
+            const char* tmp_labels[16];
+            for (int i = 0; i < kNumTempSensorPresets && i < 16; ++i) tmp_labels[i] = kTempSensorPresets[i].name;
+            if (ImGui::Combo("Thermometer", &g_state.hw_temp_sensor_index, tmp_labels, kNumTempSensorPresets)) {
+                SyncDerivedInputUncertaintySigmas();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Thermometer sensor: accuracy varies with temperature.\n"
+                                  "Grays out the manual sigma field when table data is loaded.");
+        }
+        // Lock manual entry only when a preset with actual table data is selected.
+        const bool tmp_locked = uc_on && (g_state.hw_temp_sensor_index > 0 &&
+            kTempSensorPresets[g_state.hw_temp_sensor_index].table.points != nullptr);
+        const bool pressure_locked = uc_on &&
+            (g_state.hw_barometer_index >= 0 && g_state.hw_barometer_index < kNumBarometerPresets) &&
+            (kBarometerPresets[g_state.hw_barometer_index].table.points != nullptr);
         float pressure_display = g_state.baro_pressure;
-        if (ImGui::InputFloat("Baro Pressure (Pa)", &pressure_display, 10.0f, 100.0f, "%.1f")) {
-            g_state.baro_pressure = pressure_display;
+        {
+            const float avail_pr = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_pr * 0.45f : -1.0f);
+            if (ImGui::InputFloat("Baro Pressure (Pa)", &pressure_display, 10.0f, 100.0f, "%.1f")) {
+                // Pressure value itself changed; sigma remains derived from barometer calibration drift model.
+                g_state.baro_pressure = pressure_display;
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                if (pressure_locked) ImGui::BeginDisabled();
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat("+/-Press(Pa)##pr", &g_state.uc_config.sigma_pressure_pa, 0.0f, 0.0f, "%.0f")) {
+                    if (g_state.uc_config.sigma_pressure_pa < 0.0f) g_state.uc_config.sigma_pressure_pa = 0.0f;
+                }
+                if (pressure_locked) ImGui::EndDisabled();
+            }
         }
         float temp_display = is_imperial ? ((g_state.baro_temp * 9.0f / 5.0f) + 32.0f) : g_state.baro_temp;
-        if (ImGui::InputFloat(is_imperial ? "Baro Temp (F)" : "Baro Temp (C)", &temp_display, is_imperial ? 0.5f : 0.1f, is_imperial ? 2.0f : 1.0f, "%.2f")) {
-            g_state.baro_temp = is_imperial ? ((temp_display - 32.0f) * 5.0f / 9.0f) : temp_display;
+        {
+            const float avail_tm = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_tm * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "Temp (F)" : "Temp (C)", &temp_display, is_imperial ? 0.5f : 0.1f, is_imperial ? 2.0f : 1.0f, "%.2f")) {
+                g_state.baro_temp = is_imperial ? ((temp_display - 32.0f) * 5.0f / 9.0f) : temp_display;
+                if (uc_on) {
+                    SyncDerivedInputUncertaintySigmas();
+                }
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                if (tmp_locked) ImGui::BeginDisabled();
+                float tmp_sig = is_imperial ? (g_state.uc_config.sigma_temperature_c * 9.0f / 5.0f) : g_state.uc_config.sigma_temperature_c;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-Temp(F)##tm" : "+/-Temp(C)##tm", &tmp_sig, 0.0f, 0.0f, "%.2f")) {
+                    g_state.uc_config.sigma_temperature_c = is_imperial ? (tmp_sig * 5.0f / 9.0f) : tmp_sig;
+                    if (g_state.uc_config.sigma_temperature_c < 0.0f) g_state.uc_config.sigma_temperature_c = 0.0f;
+                }
+                if (tmp_locked) ImGui::EndDisabled();
+            }
         }
-        ImGui::InputFloat("Humidity (0..1)", &g_state.baro_humidity, 0.01f, 0.1f, "%.2f");
+        {
+            const float avail_hm = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_hm * 0.45f : -1.0f);
+            ImGui::InputFloat("Humidity (0..1)", &g_state.baro_humidity, 0.01f, 0.1f, "%.2f");
+            if (uc_on) {
+                ImGui::SameLine();
+                if (tmp_locked) ImGui::BeginDisabled();
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat("+/-Humid(frac)##hm", &g_state.uc_config.sigma_humidity, 0.0f, 0.0f, "%.3f")) {
+                    if (g_state.uc_config.sigma_humidity < 0.0f) g_state.uc_config.sigma_humidity = 0.0f;
+                }
+                if (tmp_locked) ImGui::EndDisabled();
+            }
+        }
+
+        // --- LRF hardware + range ---
+        if (uc_on) {
+            const char* lrf_labels[16];
+            for (int i = 0; i < kNumLRFPresets && i < 16; ++i) lrf_labels[i] = kLRFPresets[i].name;
+            if (ImGui::Combo("Rangefinder", &g_state.hw_lrf_index, lrf_labels, kNumLRFPresets)) {
+                SyncDerivedInputUncertaintySigmas();
+            }
+        }
+        const bool lrf_locked = uc_on && (g_state.hw_lrf_index > 0);
         float lrf_display = is_imperial ? (g_state.lrf_range * M_TO_YD) : g_state.lrf_range;
-        if (ImGui::InputFloat(is_imperial ? "LRF Range (yd)" : "LRF Range (m)", &lrf_display, 1.0f, 10.0f, "%.2f")) {
-            g_state.lrf_range = is_imperial ? (lrf_display * YD_TO_M) : lrf_display;
+        {
+            const float avail_lrf = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(uc_on ? avail_lrf * 0.45f : -1.0f);
+            if (ImGui::InputFloat(is_imperial ? "LRF Range (yd)" : "LRF Range (m)", &lrf_display, 1.0f, 10.0f, "%.2f")) {
+                g_state.lrf_range = is_imperial ? (lrf_display * YD_TO_M) : lrf_display;
+                if (uc_on) {
+                    SyncDerivedInputUncertaintySigmas();
+                }
+            }
+            if (uc_on) {
+                ImGui::SameLine();
+                if (lrf_locked) ImGui::BeginDisabled();
+                float range_sigma_display = is_imperial
+                    ? (g_state.uc_config.sigma_range_m * M_TO_YD)
+                    : g_state.uc_config.sigma_range_m;
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::InputFloat(is_imperial ? "+/-Range(yd)##lrf" : "+/-Range(m)##lrf",
+                                      &range_sigma_display, 0.0f, 0.0f, "%.2f")) {
+                    g_state.uc_config.sigma_range_m = is_imperial
+                        ? (range_sigma_display * YD_TO_M) : range_sigma_display;
+                    if (g_state.uc_config.sigma_range_m < 0.0f)
+                        g_state.uc_config.sigma_range_m = 0.0f;
+                }
+                if (lrf_locked) ImGui::EndDisabled();
+            }
         }
-        ImGui::InputFloat("LRF Confidence", &g_state.lrf_conf, 0.01f, 0.1f, "%.2f");
 
         ImGui::Checkbox("IMU Valid", &g_state.imu_valid);
         ImGui::SameLine();
@@ -1418,67 +2224,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::SameLine();
         ImGui::Checkbox("LRF Valid", &g_state.lrf_valid);
 
-        ImGui::Separator();
-        if (ImGui::CollapsingHeader("Error Margins (1-sigma)")) {
-            ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
-            if (g_state.uc_config.enabled) {
+        if (uc_on) {
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Cant Uncertainty (1-sigma)")) {
                 ImGui::Indent();
-                // Muzzle velocity — fps in imperial
-                float mv_sig = is_imperial ? (g_state.uc_config.sigma_muzzle_velocity_ms * MPS_TO_FPS) : g_state.uc_config.sigma_muzzle_velocity_ms;
-                if (ImGui::InputFloat(is_imperial ? "MV sigma (fps)" : "MV sigma (m/s)", &mv_sig, 0.5f, 5.0f, "%.1f"))
-                    g_state.uc_config.sigma_muzzle_velocity_ms = is_imperial ? (mv_sig * FPS_TO_MPS) : mv_sig;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma muzzle velocity spread (chrono SD)");
 
-                ImGui::InputFloat("BC sigma (fraction)", &g_state.uc_config.sigma_bc_fraction, 0.001f, 0.01f, "%.3f");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma BC uncertainty as a fraction, e.g. 0.02 = 2%%");
+                // Cant comes from IMU; this preset controls sigma only.
+                {
+                    const char* cant_labels[16];
+                    for (int i = 0; i < kNumCantPresets && i < 16; ++i) cant_labels[i] = kCantPresets[i].name;
+                    if (ImGui::Combo("Cant Sensor", &g_state.hw_cant_index, cant_labels, kNumCantPresets)) {
+                        if (g_state.hw_cant_index > 0) {
+                            g_state.uc_config.sigma_cant_deg = kCantPresets[g_state.hw_cant_index].sigma_cant_deg;
+                        }
+                    }
+                }
+                const bool cant_locked = (g_state.hw_cant_index > 0);
+                if (cant_locked) ImGui::BeginDisabled();
+                if (ImGui::InputFloat("+/- Cant (deg)", &g_state.uc_config.sigma_cant_deg, 0.1f, 1.0f, "%.2f")) {
+                    if (g_state.uc_config.sigma_cant_deg < 0.0f)
+                        g_state.uc_config.sigma_cant_deg = 0.0f;
+                }
+                if (cant_locked) ImGui::EndDisabled();
 
-                // Range — yd in imperial
-                float rng_sig = is_imperial ? (g_state.uc_config.sigma_range_m * M_TO_YD) : g_state.uc_config.sigma_range_m;
-                if (ImGui::InputFloat(is_imperial ? "Range sigma (yd)" : "Range sigma (m)", &rng_sig, 0.1f, 1.0f, "%.2f"))
-                    g_state.uc_config.sigma_range_m = is_imperial ? (rng_sig * YD_TO_M) : rng_sig;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma LRF ranging uncertainty");
-
-                // Wind speed — mph in imperial
-                float wsp_sig = is_imperial ? (g_state.uc_config.sigma_wind_speed_ms * MPS_TO_MPH) : g_state.uc_config.sigma_wind_speed_ms;
-                if (ImGui::InputFloat(is_imperial ? "Wind speed sigma (mph)" : "Wind speed sigma (m/s)", &wsp_sig, 0.1f, 1.0f, "%.2f"))
-                    g_state.uc_config.sigma_wind_speed_ms = is_imperial ? (wsp_sig * MPH_TO_MPS) : wsp_sig;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma wind speed estimation error");
-
-                ImGui::InputFloat("Wind dir sigma (deg)", &g_state.uc_config.sigma_wind_heading_deg, 0.5f, 5.0f, "%.1f");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma wind direction estimation error");
-
-                // Temperature — F in imperial (sigma scales by 9/5 just like absolute temp)
-                float tmp_sig = is_imperial ? (g_state.uc_config.sigma_temperature_c * 9.0f / 5.0f) : g_state.uc_config.sigma_temperature_c;
-                if (ImGui::InputFloat(is_imperial ? "Temp sigma (F)" : "Temp sigma (C)", &tmp_sig, 0.1f, 1.0f, "%.2f"))
-                    g_state.uc_config.sigma_temperature_c = is_imperial ? (tmp_sig * 5.0f / 9.0f) : tmp_sig;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma baro temperature sensor uncertainty");
-
-                ImGui::InputFloat("Pressure sigma (Pa)", &g_state.uc_config.sigma_pressure_pa, 10.0f, 100.0f, "%.0f");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma baro pressure sensor uncertainty");
-
-                ImGui::InputFloat("Humidity sigma (frac)", &g_state.uc_config.sigma_humidity, 0.005f, 0.05f, "%.3f");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma relative humidity uncertainty (0..1)");
-
-                // Sight height — inches in imperial
-                float sht_sig = is_imperial ? (g_state.uc_config.sigma_sight_height_mm * MM_TO_IN) : g_state.uc_config.sigma_sight_height_mm;
-                if (ImGui::InputFloat(is_imperial ? "Sight height sigma (in)" : "Sight height sigma (mm)", &sht_sig, 0.01f, 0.1f, "%.3f"))
-                    g_state.uc_config.sigma_sight_height_mm = is_imperial ? (sht_sig * IN_TO_MM) : sht_sig;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma sight height mounting uncertainty");
-
-                ImGui::InputFloat("Cant sigma (deg)", &g_state.uc_config.sigma_cant_deg, 0.1f, 1.0f, "%.2f");
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1-sigma cant/roll uncertainty from the RM3100 magnetometer");
                 ImGui::Unindent();
             }
         }
 
         if (ImGui::Button("Apply Config")) {
             g_state.last_action = "Apply Config";
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
             ApplyConfig();
             RefreshOutput();
         }
         ImGui::SameLine();
         if (ImGui::Button("Step Update")) {
             g_state.last_action = "Step Update";
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
             ApplyConfig();
             RunFrameUpdates(1);
             RefreshOutput();
@@ -1486,12 +2268,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::SameLine();
         if (ImGui::Button("Run 100")) {
             g_state.last_action = "Run 100";
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
             ApplyConfig();
             RunFrameUpdates(100);
             RefreshOutput();
         }
         ImGui::SameLine();
         if (ImGui::Button("Reset Engine")) {
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
             ResetEngineAndState();
         }
 
@@ -1499,12 +2283,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::InputText("Profile Library Path", g_state.profile_library_path, IM_ARRAYSIZE(g_state.profile_library_path));
         if (ImGui::Button("Save Profile Library")) {
             SaveProfileLibrary();
-            RefreshOutput();
+            // ticker will refresh output at next tick
         }
         ImGui::SameLine();
         if (ImGui::Button("Load Profile Library")) {
             LoadProfileLibrary();
-            RefreshOutput();
+            // ticker will refresh output at next tick
         }
 
         ImGui::Separator();
@@ -1512,12 +2296,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (ImGui::Button("Save Preset")) {
             g_state.last_action = "Save Preset";
             SavePreset();
-            RefreshOutput();
+            // ticker will refresh output at next tick
         }
         ImGui::SameLine();
         if (ImGui::Button("Load Preset")) {
             g_state.last_action = "Load Preset";
             LoadPreset();
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
             ApplyConfig();
             RefreshOutput();
         }
@@ -1527,8 +2312,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::Begin("BCE Output");
         ImGui::InputTextMultiline(
             "##output",
-            g_state.output_text.data(),
-            g_state.output_text.size() + 1,
+            frame_output.data(),
+            frame_output.size() + 1,
             ImVec2(-FLT_MIN, -FLT_MIN),
             ImGuiInputTextFlags_ReadOnly
         );
@@ -1537,23 +2322,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::Begin("Target View");
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        FiringSolution sol = {};
-        BCE_GetSolution(&sol);
+        FiringSolution sol = frame_sol;
 
         const float hold_windage_moa = sol.hold_windage_moa;
         const float hold_elevation_moa = sol.hold_elevation_moa;
         const float impact_distance_moa = std::sqrt(
             hold_windage_moa * hold_windage_moa + hold_elevation_moa * hold_elevation_moa);
-        // Auto-scale: include 3-sigma uncertainty ellipse footprint when available.
-        const float sigma_span_moa = (sol.uncertainty_valid)
-            ? 3.0f * std::max(sol.sigma_elevation_moa, sol.sigma_windage_moa)
-            : 0.0f;
 
+        // Hoist eigendecomposition of the 2x2 uncertainty covariance matrix so the
+        // auto-scale uses the true ellipse major semi-axis (axis1_moa) rather than
+        // max(sigma_elev, sigma_wind), which underestimates when covariance is nonzero.
+        // These variables are reused by the analytic ellipse contour section below.
+        float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, sin_r = 0.0f;
+        if (sol.uncertainty_valid && (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
+            const float se  = std::max(sol.sigma_elevation_moa, 0.001f);
+            const float sw  = std::max(sol.sigma_windage_moa,   0.001f);
+            const float cov = sol.covariance_elev_wind;
+            const float tr_half = (se*se + sw*sw) * 0.5f;
+            const float disc    = std::sqrt(std::max(((se*se - sw*sw) * 0.5f) * ((se*se - sw*sw) * 0.5f) + cov*cov, 0.0f));
+            const float lambda1 = tr_half + disc;
+            const float lambda2 = std::max(tr_half - disc, 0.0f);
+            axis1_moa = std::sqrt(lambda1);
+            axis2_moa = std::sqrt(lambda2);
+            const float rot_rad = std::atan2(lambda1 - se*se, cov);
+            cos_r = std::cos(rot_rad);
+            sin_r = std::sin(rot_rad);
+        }
+
+        // Auto-scale from nominal hold only so uncertainty edits do not shift
+        // the apparent reticle center by changing the MOA-to-pixel scale.
         const float ring_count = static_cast<float>(TARGET_RING_COUNT);
-        const float required_span_moa = impact_distance_moa + sigma_span_moa;
-        float moa_per_ring = ClampValue(std::round(required_span_moa / ring_count), 1.0f, 30.0f);
+        const float required_span_moa = impact_distance_moa;
+        float moa_per_ring = std::max(std::round(required_span_moa / ring_count), 1.0f);
         if ((moa_per_ring * ring_count) < required_span_moa) {
-            moa_per_ring = ClampValue(moa_per_ring + 1.0f, 1.0f, 30.0f);
+            moa_per_ring = std::max(moa_per_ring + 1.0f, 1.0f);
         }
         const float max_span_moa = moa_per_ring * ring_count;
         const float display_range_m = (sol.range_m > 0.0f) ? sol.range_m : g_state.lrf_range;
@@ -1593,14 +2395,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::Text("  Cant:       %.2f MOA (%.2f in)", sol.cant_windage_moa, cant_added_in);
         ImGui::SameLine();
         ImGui::TextColored(direction_color(sol.cant_windage_moa), "[%s]", direction_label(sol.cant_windage_moa));
-        ImGui::Text("Center->Impact: %.2f MOA (%.2f in)", impact_distance_moa, impact_distance_in);
-        if (sol.uncertainty_valid) {
-            const float cep_radius_moa = 1.1774f * std::sqrt((sol.sigma_elevation_moa * sol.sigma_elevation_moa +
-                                                               sol.sigma_windage_moa  * sol.sigma_windage_moa) * 0.5f);
-            ImGui::Text("1-sigma: Elev %.2f MOA, Wind %.2f MOA  |  50%% CEP %.2f MOA",
-                        sol.sigma_elevation_moa, sol.sigma_windage_moa, cep_radius_moa);
-        } else {
-            ImGui::TextDisabled("Uncertainty propagation disabled or not yet computed.");
+        ImGui::Text("Hold from center: %.2f MOA (%.2f in)", impact_distance_moa, impact_distance_in);
+        if (sol.uncertainty_valid && (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
+            ImGui::Text("Confidence: analytic 1s/2s/3s ellipse (no shot sampling)");
         }
         ImGui::Separator();
 
@@ -1652,57 +2449,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             center.y - hold_elevation_moa * moa_to_px
         );
 
-        // Gaussian error ellipse — multi-shell gradient (center=red/opaque, outer=blue/transparent)
+        // Analytic Gaussian uncertainty ellipse contours (no shot simulation/sampling).
         if (sol.uncertainty_valid && (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
-            const float se  = std::max(sol.sigma_elevation_moa, 0.001f);
-            const float sw  = std::max(sol.sigma_windage_moa,   0.001f);
-            const float cov = sol.covariance_elev_wind;
+            // axis1_moa, axis2_moa, cos_r, sin_r already computed above for auto-scaling.
 
-            // Eigendecomposition of 2x2 covariance matrix
-            const float tr_half    = (se*se + sw*sw) * 0.5f;
-            const float disc       = std::sqrt(std::max(((se*se - sw*sw) * 0.5f) * ((se*se - sw*sw) * 0.5f) + cov*cov, 0.0f));
-            const float lambda1    = tr_half + disc;   // larger eigenvalue
-            const float lambda2    = std::max(tr_half - disc, 0.0f);
-            const float axis1_moa  = std::sqrt(lambda1); // major semi-axis (MOA)
-            const float axis2_moa  = std::sqrt(lambda2);
-            // Rotation: angle of eigenvector-1 from the elevation axis
-            const float rot_rad    = std::atan2(lambda1 - se*se, cov);
-            const float cos_r      = std::cos(rot_rad);
-            const float sin_r      = std::sin(rot_rad);
-
-            constexpr int kShells   = 24;
             constexpr int kSegments = 48;
-            constexpr float kMaxSig = 3.0f;
-
-            // Draw filled shells from outermost -> innermost so center is brightest
-            for (int shell = kShells - 1; shell >= 0; --shell) {
-                const float k   = kMaxSig * (shell + 1.0f) / static_cast<float>(kShells);
-                const float t   = static_cast<float>(shell) / static_cast<float>(kShells - 1); // 0=inner, 1=outer
-                const uint8_t r = static_cast<uint8_t>(255.0f * (1.0f - t));
-                const uint8_t g = static_cast<uint8_t>(120.0f * (1.0f - t * 0.85f));
-                const uint8_t b = static_cast<uint8_t>(30.0f  + 200.0f * t);
-                const uint8_t a = static_cast<uint8_t>(160.0f * (1.0f - t * 0.80f) + 10.0f);
-                const ImU32 col = IM_COL32(r, g, b, a);
-
-                ImVec2 pts[kSegments];
-                for (int s = 0; s < kSegments; ++s) {
-                    const float ang      = 2.0f * 3.14159265f * s / static_cast<float>(kSegments);
-                    const float u        = k * axis1_moa * std::cos(ang);
-                    const float v        = k * axis2_moa * std::sin(ang);
-                    const float elev_moa = u * cos_r - v * sin_r;
-                    const float wind_moa = u * sin_r + v * cos_r;
-                    pts[s] = ImVec2(impact_point.x + wind_moa * moa_to_px,
-                                    impact_point.y - elev_moa * moa_to_px);
-                }
-                draw_list->AddConvexPolyFilled(pts, kSegments, col);
-            }
 
             // Labeled contour outlines at 1σ / 2σ / 3σ
             const float sigma_levels[]  = { 1.0f, 2.0f, 3.0f };
             const ImU32 sigma_colors[]  = { IM_COL32(255, 200, 80, 230),
                                              IM_COL32(180, 120, 255, 180),
                                              IM_COL32(80,  160, 255, 140) };
-            const char* sigma_labels[]  = { "1\xcf\x83 39%", "2\xcf\x83 86%", "3\xcf\x83 99%" };
             for (int si = 0; si < 3; ++si) {
                 const float k = sigma_levels[si];
                 ImVec2 pts[kSegments];
@@ -1716,22 +2473,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                                     impact_point.y - elev_moa * moa_to_px);
                 }
                 draw_list->AddPolyline(pts, kSegments, sigma_colors[si], ImDrawFlags_Closed, 1.2f);
-                // Label near the topmost point of the contour (s=kSegments/4 → top)
-                const int label_seg = kSegments / 4;
-                draw_list->AddText(ImVec2(pts[label_seg].x + 2.0f, pts[label_seg].y - 12.0f),
-                                   sigma_colors[si], sigma_labels[si]);
             }
         }
 
-        draw_list->AddCircleFilled(impact_point, 4.0f, IM_COL32(255, 70, 70, 255));
+        draw_list->AddCircleFilled(impact_point, 2.0f, IM_COL32(255, 70, 70, 255));
 
         ImGui::End();
 
         ImGui::Begin("Side View Arc");
         ImDrawList* side_draw_list = ImGui::GetWindowDrawList();
 
-        FiringSolution side_sol = {};
-        BCE_GetSolution(&side_sol);
+        FiringSolution side_sol = frame_sol;
 
         float side_range_m = side_sol.horizontal_range_m;
         if (side_range_m <= 0.0f) {
@@ -1771,25 +2523,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float side_range_scale_m = side_range_scale_display * range_display_to_m;
         const float side_range_step_m = side_range_step_display * range_display_to_m;
         const float drop_display = drop_m * offset_m_to_display;
-        const float side_drop_scale_display = ClampValue(nice_ceil((drop_display * 1.20f) + 0.1f), 1.0f, is_imperial ? 8000.0f : 20000.0f);
-        const float side_drop_scale_m = side_drop_scale_display * offset_display_to_m;
         const char* drop_units = is_imperial ? "in" : "cm";
         const float range_display = side_range_display;
         const char* range_units = is_imperial ? "yd" : "m";
-        const float range_scale_display = side_range_scale_display;
-        const float range_step_display = side_range_step_display;
-        const float drop_scale_display = side_drop_scale_display;
         const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
         const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
+        const float wind_relative_rad = (g_state.wind_heading - side_sol.heading_deg_true) * BCE_DEG_TO_RAD;
+        const float headwind_ms = g_state.wind_speed_ms * std::cos(wind_relative_rad);
+        const float crosswind_ms = g_state.wind_speed_ms * std::sin(wind_relative_rad);
+        const float wind_ms_to_display = is_imperial ? MPS_TO_MPH : 1.0f;
+        const float wind_axis_eps_ms = 0.05f;
 
-        if (ImGui::Button(g_state.side_view_show_required_angle ? "Show Bullet Path" : "Show Required Elevation Angle")) {
-            g_state.side_view_show_required_angle = !g_state.side_view_show_required_angle;
-        }
+        // NOTE: side_drop_scale_m is computed after plot_height is known (below),
+        // so that the vertical chart scale can be anchored to guarantee the 6ft
+        // shooter figure is always drawn at true physical scale on the chart.
 
         ImGui::Text("Range: %.1f %s", range_display, range_units);
         ImGui::Text("Estimated drop at target: %.2f %s", drop_display, drop_units);
-        ImGui::Text("Graph scale: 0..%.0f %s (step %.0f), vertical +/-%.1f %s", range_scale_display, range_units, range_step_display, drop_scale_display, drop_units);
-        ImGui::Text("Required elevation angle: %.3f deg", elevation_angle_deg);
+        ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
         ImGui::Separator();
 
         ImVec2 side_avail = ImGui::GetContentRegionAvail();
@@ -1808,7 +2559,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         side_draw_list->AddRectFilled(side_canvas_pos, side_canvas_end, IM_COL32(24, 24, 28, 255));
         side_draw_list->AddRect(side_canvas_pos, side_canvas_end, IM_COL32(80, 80, 90, 255));
 
-        const float left_margin = 28.0f;
+        const float left_margin = 82.0f;  // wider to fit shooter silhouette
         const float right_margin = 20.0f;
         const float top_margin = 20.0f;
         const float bottom_margin = 24.0f;
@@ -1818,6 +2569,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float plot_bottom = side_canvas_end.y - bottom_margin;
         const float plot_width = plot_right - plot_left;
         const float plot_height = plot_bottom - plot_top;
+
+        // Compute vertical scale NOW that we know plot_height.
+        // Scale is driven by the bullet drop, not by the figure height.
+        const float side_drop_min_scale_m = drop_m * 1.5f;
+        const float side_drop_scale_m = ClampValue(side_drop_min_scale_m, offset_display_to_m, 5000.0f);
+        const float side_drop_scale_display = side_drop_scale_m * offset_m_to_display;
+        const float side_exaggeration = (side_drop_scale_m > 0.001f) ? (side_range_scale_m / side_drop_scale_m) : 1.0f;
+        const float drop_scale_display = side_drop_scale_display;
 
         const float y_min_m = -side_drop_scale_m;
         const float y_max_m = side_drop_scale_m;
@@ -1856,31 +2615,201 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         const int sample_count = 64;
         ImVec2 arc_points[sample_count + 1];
-        if (!g_state.side_view_show_required_angle) {
-            const float tan_theta = std::tanf(elevation_angle_rad);
+
+        // Muzzle origin (defined early so shooter silhouette and arcs share it)
+        const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
+
+        // ---- Shooter silhouette ----
+        // The body is drawn in the left margin (82 px) immediately to the left of muzzle_pt.
+        // Physical scale: 72 in converted to meters and mapped to the chart's Y axis.
+        // A tiny minimum draw height is enforced so the figure stays visible at extreme scales;
+        // when the physical scale is clamped, the "72in" label is marked "(ref)".
+        {
+            const float shooter_height_in = 72.0f;
+            const float shooter_height_m  = shooter_height_in * (IN_TO_MM / 1000.0f);
+            const float px_per_m_y   = plot_height / (2.0f * side_drop_scale_m);
+            const float h_px_true    = shooter_height_m * px_per_m_y;  // to-scale pixels
+            // Clamp: tiny minimum only for visibility; no max cap so larger true scale is preserved.
+            const float h_px         = std::fmax(h_px_true, 6.0f);
+            const bool  off_scale    = (h_px > (h_px_true + 0.001f));
+
+            // Proportions as fractions of total figure height
+            // Origin: shoulder = muzzle height (bore line), everything is relative to that.
+            const float shoulder_y = muzzle_pt.y;
+            const float hip_down   = 0.30f * h_px;   // hip below shoulder
+            const float knee_down  = 0.52f * h_px;   // knee below shoulder
+            const float feet_down  = 0.77f * h_px;   // feet (ground) below shoulder
+            const float head_r     = std::fmax(0.10f * h_px, 4.5f);  // always visible
+            const float head_cy    = shoulder_y - head_r * 1.4f;     // head center above shoulder
+
+            const float hip_y  = shoulder_y + hip_down;
+            const float knee_y = shoulder_y + knee_down;
+            const float feet_y = shoulder_y + feet_down;
+
+            // Body X: shoulder at muzzle_pt.x, body center 22 px left of muzzle
+            const float sx = muzzle_pt.x - 22.0f;
+
+            // Leg splay in pixels (scales with figure, min 4px so always visible)
+            const float splay = std::fmax(0.08f * h_px, 4.0f);
+
+            const ImU32 sc = IM_COL32(160, 175, 200, 220);
+            const float sw = 1.6f;
+
+            // Head
+            side_draw_list->AddCircle(ImVec2(sx, head_cy), head_r, sc, 16, sw);
+            // Neck + torso (single vertical line from neck to hip)
+            side_draw_list->AddLine(ImVec2(sx, head_cy + head_r), ImVec2(sx, hip_y), sc, sw);
+            // Upper legs (splayed outward from hip)
+            side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx - splay, knee_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx + splay, knee_y), sc, sw);
+            // Lower legs (straight down from knees)
+            side_draw_list->AddLine(ImVec2(sx - splay, knee_y), ImVec2(sx - splay, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx + splay, knee_y), ImVec2(sx + splay, feet_y), sc, sw);
+            // Feet (short horizontal ticks)
+            side_draw_list->AddLine(ImVec2(sx - splay,          feet_y), ImVec2(sx - splay - 5.0f, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx + splay,          feet_y), ImVec2(sx + splay + 5.0f, feet_y), sc, sw);
+
+            // Arms: both arms raised forward holding the rifle (reaching toward muzzle)
+            // Forward arm: from shoulder (sx, shoulder_y) to muzzle_pt
+            side_draw_list->AddLine(ImVec2(sx, shoulder_y), muzzle_pt, IM_COL32(175, 188, 210, 220), sw);
+            // Rear arm: from body center, angled back and slightly down (holding stock)
+            side_draw_list->AddLine(ImVec2(sx, shoulder_y),
+                ImVec2(sx - 12.0f, shoulder_y + 0.07f * h_px), sc, sw);
+
+            // "6ft" scale brace — vertical line left of body with ticks
+            const float brace_x = sx - splay - 7.0f;
+            const float top_y   = head_cy - head_r;
+            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x, feet_y),
+                IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, top_y),  ImVec2(brace_x + 3.0f, top_y),  IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddText(
+                ImVec2(brace_x - 28.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f),
+                IM_COL32(130, 140, 165, 210),
+                off_scale ? "72in\n(ref)" : "72in");
+        }
+
+        // Always draw both: aim line in bore direction (dim amber) + bullet parabola (bright cyan).
+        // Aim line: required elevation direction, i.e. where the bore is pointed.
+        {
+            const ImVec2 aim_start(map_x(0.0f), map_y(0.0f));
+            const ImVec2 aim_end(map_x(side_range_m), map_y(drop_m));
+            side_draw_list->AddLine(aim_start, aim_end, IM_COL32(255, 190, 90, 160), 1.5f);
+        }
+        // Bullet parabolic path (bright cyan)
+        {
+            const float tan_theta_raw = std::tanf(elevation_angle_rad);
+            const float tan_theta = std::isfinite(tan_theta_raw) ? tan_theta_raw : 0.0f;
             for (int i = 0; i <= sample_count; ++i) {
                 const float t = static_cast<float>(i) / static_cast<float>(sample_count);
                 const float x_m = t * side_range_m;
-                const float y_m = (tan_theta * x_m) - ((tan_theta / side_range_m) * x_m * x_m);
+                // Keep the side-view arc moderately rounded so most of the downrange
+                // length is visually used while preserving muzzle/impact endpoints.
+                const float curvature_weight = 1.30f - (0.30f * t); // 1.30 -> 1.00
+                float y_m = (tan_theta * x_m)
+                    - ((tan_theta / side_range_m) * x_m * x_m * curvature_weight);
+                if (!std::isfinite(y_m)) {
+                    y_m = 0.0f;
+                }
                 arc_points[i] = ImVec2(map_x(x_m), map_y(y_m));
             }
             side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
-        } else {
-            const ImVec2 aim_start(map_x(0.0f), map_y(0.0f));
-            const ImVec2 aim_end(map_x(side_range_m), map_y(drop_m));
-            side_draw_list->AddLine(aim_start, aim_end, IM_COL32(255, 190, 90, 255), 2.0f);
         }
 
-        const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
-        const ImVec2 impact_pt = g_state.side_view_show_required_angle
-            ? ImVec2(map_x(side_range_m), map_y(drop_m))
-            : ImVec2(map_x(side_range_m), map_y(0.0f));
+        const ImVec2 impact_pt(map_x(side_range_m), map_y(0.0f));
+        const ImVec2 aim_pt(map_x(side_range_m), map_y(drop_m));
         side_draw_list->AddCircleFilled(muzzle_pt, 3.5f, IM_COL32(130, 255, 130, 255));
         side_draw_list->AddCircleFilled(impact_pt, 4.0f, IM_COL32(255, 90, 90, 255));
+        side_draw_list->AddCircleFilled(aim_pt, 3.0f, IM_COL32(255, 190, 90, 200));
         side_draw_list->AddText(ImVec2(muzzle_pt.x + 6.0f, muzzle_pt.y - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
-        side_draw_list->AddText(ImVec2(impact_pt.x - 56.0f, impact_pt.y - 16.0f), IM_COL32(230, 200, 200, 255), g_state.side_view_show_required_angle ? "Aim Point" : "Impact");
+        side_draw_list->AddText(ImVec2(impact_pt.x - 50.0f, impact_pt.y + 4.0f), IM_COL32(230, 200, 200, 255), "Impact");
+        side_draw_list->AddText(ImVec2(aim_pt.x - 48.0f, aim_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Aim pt");
+
+        // ---- Elevation angle indicator: small overlay box (always readable) ----
+        {
+            auto draw_arrow = [&](const ImVec2& from, const ImVec2& to, ImU32 color, float thickness) {
+                side_draw_list->AddLine(from, to, color, thickness);
+                const float dx = to.x - from.x;
+                const float dy = to.y - from.y;
+                const float len = std::sqrtf((dx * dx) + (dy * dy));
+                if (len <= 0.001f) return;
+                const float ux = dx / len;
+                const float uy = dy / len;
+                const float px = -uy;
+                const float py = ux;
+                const float head_len = 4.0f;
+                const float head_w = 2.5f;
+                const ImVec2 p1(to.x - (ux * head_len) + (px * head_w), to.y - (uy * head_len) + (py * head_w));
+                const ImVec2 p2(to.x - (ux * head_len) - (px * head_w), to.y - (uy * head_len) - (py * head_w));
+                side_draw_list->AddTriangleFilled(to, p1, p2, color);
+            };
+
+            // Draw a compact angle-arc indicator + text box in the bottom-left of the plot,
+            // clear of the trajectory lines.
+            const float ind_cx  = plot_left + 36.0f;
+            const float ind_cy  = plot_bottom - 28.0f;
+            const float arc_r   = 20.0f;
+            const float ref_len = 30.0f;
+
+            // Horizontal LOS reference
+            side_draw_list->AddLine(ImVec2(ind_cx, ind_cy), ImVec2(ind_cx + ref_len, ind_cy),
+                IM_COL32(150, 150, 170, 180), 1.0f);
+
+            // Wind direction reference (side view axis): show only active direction along bore axis.
+            const float wind_y = ind_cy - arc_r - 10.0f;
+            const float headwind_display = std::fabs(headwind_ms) * wind_ms_to_display;
+            char side_wind_axis_label[32];
+            if (headwind_ms > wind_axis_eps_ms) {
+                draw_arrow(ImVec2(ind_cx + 20.0f, wind_y), ImVec2(ind_cx + 6.0f, wind_y), IM_COL32(255, 175, 120, 220), 1.2f);
+                std::snprintf(side_wind_axis_label, sizeof(side_wind_axis_label), "%.1f", headwind_display);
+                side_draw_list->AddText(ImVec2(ind_cx + 22.0f, wind_y - 6.0f), IM_COL32(255, 175, 120, 220), side_wind_axis_label);
+            } else if (headwind_ms < -wind_axis_eps_ms) {
+                draw_arrow(ImVec2(ind_cx + 6.0f, wind_y), ImVec2(ind_cx + 20.0f, wind_y), IM_COL32(120, 230, 255, 220), 1.2f);
+                std::snprintf(side_wind_axis_label, sizeof(side_wind_axis_label), "%.1f", headwind_display);
+                side_draw_list->AddText(ImVec2(ind_cx + 22.0f, wind_y - 6.0f), IM_COL32(120, 230, 255, 220), side_wind_axis_label);
+            } else {
+                std::snprintf(side_wind_axis_label, sizeof(side_wind_axis_label), "%.1f", headwind_display);
+                side_draw_list->AddText(ImVec2(ind_cx + 22.0f, wind_y - 6.0f), IM_COL32(170, 190, 210, 220), side_wind_axis_label);
+            }
+
+            // Bore direction in screen-space
+            const float step_m  = side_range_scale_m * 0.001f;
+            const float bore_dx = map_x(step_m) - map_x(0.0f);
+            const float bore_dy = map_y(std::tanf(elevation_angle_rad) * step_m) - map_y(0.0f);
+            const float bore_len = std::sqrtf(bore_dx * bore_dx + bore_dy * bore_dy);
+            if (bore_len > 0.01f) {
+                const float bx = bore_dx / bore_len;
+                const float by = bore_dy / bore_len;
+                side_draw_list->AddLine(ImVec2(ind_cx, ind_cy),
+                    ImVec2(ind_cx + bx * ref_len, ind_cy + by * ref_len),
+                    IM_COL32(255, 220, 60, 230), 1.5f);
+
+                // Arc from horizontal to bore
+                const float screen_angle = std::atan2f(by, bx);
+                const int arc_segs = 14;
+                for (int ai = 0; ai < arc_segs; ++ai) {
+                    const float a0 = (static_cast<float>(ai)     / arc_segs) * screen_angle;
+                    const float a1 = (static_cast<float>(ai + 1) / arc_segs) * screen_angle;
+                    side_draw_list->AddLine(
+                        ImVec2(ind_cx + std::cosf(a0) * arc_r, ind_cy + std::sinf(a0) * arc_r),
+                        ImVec2(ind_cx + std::cosf(a1) * arc_r, ind_cy + std::sinf(a1) * arc_r),
+                        IM_COL32(255, 220, 60, 150), 1.0f);
+                }
+            }
+
+            // Angle text in a dark box, below the indicator
+            char elev_label[64];
+            std::snprintf(elev_label, sizeof(elev_label), "Elev: %.4f\xc2\xb0", elevation_angle_deg);
+            const float lx = plot_left + 4.0f;
+            const float ly = plot_bottom - 14.0f;
+            side_draw_list->AddRectFilled(ImVec2(lx - 2.0f, ly - 2.0f), ImVec2(lx + 130.0f, ly + 12.0f), IM_COL32(10, 10, 14, 210));
+            side_draw_list->AddText(ImVec2(lx, ly), IM_COL32(255, 235, 100, 255), elev_label);
+        }
 
         side_draw_list->AddText(ImVec2(plot_right - 90.0f, plot_bottom + 4.0f), IM_COL32(190, 190, 200, 255), range_units);
+
+        ImGui::Text("Graph scale: 0..%.0f %s range, +/-%.1f %s vertical (X zoomed %.0fx vs Y)",
+            side_range_scale_display, range_units, drop_scale_display, drop_units, side_exaggeration);
 
         char los_label[64];
         std::snprintf(los_label, sizeof(los_label), "Line of sight (0 %s)", drop_units);
@@ -1905,8 +2834,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::Begin("Top Down Drift");
         ImDrawList* drift_draw_list = ImGui::GetWindowDrawList();
 
-        FiringSolution drift_sol = {};
-        BCE_GetSolution(&drift_sol);
+        FiringSolution drift_sol = frame_sol;
 
         float drift_range_m = drift_sol.horizontal_range_m;
         if (drift_range_m <= 0.0f) {
@@ -1916,25 +2844,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         const float lateral_m = drift_sol.hold_windage_moa * MOA_TO_RAD * drift_range_m;
         const float drift_range_display = drift_range_m * range_m_to_display;
-        const float drift_range_scale_display = ClampValue(nice_ceil(drift_range_display * 1.15f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
-        const float drift_range_step_display = drift_range_scale_display / 5.0f;
+        const float drift_range_target_display = ClampValue(std::fmax(drift_range_display * 1.03f, drift_range_display + 1.0f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
+        const float drift_range_step_display = ClampValue(nice_ceil(drift_range_target_display / 5.0f), 1.0f, is_imperial ? 1200.0f : 1000.0f);
+        const float drift_range_scale_display = drift_range_step_display * 5.0f;
         const float drift_range_scale_m = drift_range_scale_display * range_display_to_m;
         const float drift_range_step_m = drift_range_step_display * range_display_to_m;
 
-        const float drift_display = lateral_m * offset_m_to_display;
-        const float drift_scale_display = ClampValue(nice_ceil((std::fabs(drift_display) * 1.25f) + 0.1f), 1.0f, is_imperial ? 6000.0f : 20000.0f);
-        const float drift_lateral_scale_m = drift_scale_display * offset_display_to_m;
+        const float offset_display = lateral_m * offset_m_to_display;
+        // Keep lateral scale tight enough that strong windage shots remain readable,
+        // while preserving a minimum scale for tiny corrections.
+        const float drift_lateral_min_scale_m = drift_range_scale_m * 0.01f;
+        const float drift_lateral_scale_m = ClampValue(std::fmax(std::fabs(lateral_m) * 1.05f, drift_lateral_min_scale_m), offset_display_to_m, 5000.0f);
+        const float drift_scale_display = drift_lateral_scale_m * offset_m_to_display;
+        const float drift_exaggeration = (drift_lateral_scale_m > 0.001f) ? (drift_range_scale_m / drift_lateral_scale_m) : 1.0f;
         const float windage_angle_deg = drift_sol.hold_windage_moa / 60.0f;
-        const char* drift_units = is_imperial ? "in" : "cm";
-        const char* drift_direction = (drift_display > 0.01f) ? "RIGHT" : ((drift_display < -0.01f) ? "LEFT" : "CENTER");
+        const char* offset_units = is_imperial ? "in" : "cm";
+        const char* offset_direction = (offset_display > 0.01f) ? "RIGHT" : ((offset_display < -0.01f) ? "LEFT" : "CENTER");
 
-        if (ImGui::Button(g_state.top_down_show_required_angle ? "Show Bullet Path" : "Show Required Windage Angle")) {
-            g_state.top_down_show_required_angle = !g_state.top_down_show_required_angle;
-        }
-
-        ImGui::Text("Total side drift: %.2f %s [%s]", std::fabs(drift_display), drift_units, drift_direction);
-        ImGui::Text("Graph scale: 0..%.0f %s range, +/-%.1f %s lateral", drift_range_scale_display, range_units, drift_scale_display, drift_units);
-        ImGui::Text("Required windage angle: %.3f deg", windage_angle_deg);
+        ImGui::Text("Required aim offset: %.2f %s [%s]", std::fabs(offset_display), offset_units, offset_direction);
+        ImGui::Text("Graph scale: 0..%.0f %s range, +/-%.1f %s lateral (X zoomed %.0fx vs Y)", drift_range_scale_display, range_units, drift_scale_display, offset_units, drift_exaggeration);
+        ImGui::Text("Required windage angle: %.4f deg", windage_angle_deg);
         ImGui::Separator();
 
         ImVec2 drift_avail = ImGui::GetContentRegionAvail();
@@ -1943,7 +2872,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (drift_canvas_w > 900.0f) drift_canvas_w = 900.0f;
         float drift_canvas_h = drift_avail.y;
         if (drift_canvas_h < 180.0f) drift_canvas_h = 180.0f;
-        if (drift_canvas_h > 320.0f) drift_canvas_h = 320.0f;
+        if (drift_canvas_h > 380.0f) drift_canvas_h = 380.0f;
 
         const ImVec2 drift_canvas_size(drift_canvas_w, drift_canvas_h);
         const ImVec2 drift_canvas_pos = ImGui::GetCursorScreenPos();
@@ -1955,8 +2884,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         const float drift_left_margin = 28.0f;
         const float drift_right_margin = 20.0f;
-        const float drift_top_margin = 20.0f;
-        const float drift_bottom_margin = 24.0f;
+        const float drift_top_margin = 10.0f;
+        const float drift_bottom_margin = 12.0f;
         const float drift_plot_left = drift_canvas_pos.x + drift_left_margin;
         const float drift_plot_right = drift_canvas_end.x - drift_right_margin;
         const float drift_plot_top = drift_canvas_pos.y + drift_top_margin;
@@ -1991,40 +2920,147 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         drift_draw_list->AddLine(ImVec2(drift_plot_left, drift_plot_bottom), ImVec2(drift_plot_right, drift_plot_bottom), IM_COL32(120, 120, 130, 180), 1.0f);
 
         ImVec2 drift_points[sample_count + 1];
-        if (!g_state.top_down_show_required_angle) {
-            for (int i = 0; i <= sample_count; ++i) {
-                const float t = static_cast<float>(i) / static_cast<float>(sample_count);
-                const float forward_range_m = t * drift_range_m;
-                const float lateral_offset_m = lateral_m * t * t;
-                drift_points[i] = ImVec2(map_drift_x(lateral_offset_m), map_drift_y(forward_range_m));
-            }
-            drift_draw_list->AddPolyline(drift_points, sample_count + 1, IM_COL32(255, 180, 90, 255), ImDrawFlags_None, 2.0f);
-        } else {
+
+        // Aim direction line (dim cyan): straight line from muzzle in the barrel's aimed direction.
+        // This is where you physically point the weapon to compensate for drift.
+        {
             const ImVec2 aim_start(map_drift_x(0.0f), map_drift_y(0.0f));
             const ImVec2 aim_end(map_drift_x(lateral_m), map_drift_y(drift_range_m));
-            drift_draw_list->AddLine(aim_start, aim_end, IM_COL32(90, 220, 255, 255), 2.0f);
+            drift_draw_list->AddLine(aim_start, aim_end, IM_COL32(90, 220, 255, 170), 1.5f);
         }
 
+        // Bullet path (bright amber): starts tangent to the aim direction, drift curves it
+        // back to the target center.
+        //
+        // Base profile t*(1-t) can look too flat on strong windage shots once projected.
+        // Add a bounded shape term that increases with windage angle while preserving:
+        //   t=0 => at muzzle, t=1 => at target center, and tangent at muzzle.
+        // lateral(t) = lateral_m * t * (1 - t) * (1 + k*t), k in [0, 2.5].
+        //   t=0 => at muzzle (0 offset), tangent matches aim direction
+        //   t=1 => at target range (0 offset), i.e. bullet lands on center.
+        const float drift_curve_k = ClampValue(std::fabs(windage_angle_deg) * 8.0f, 0.0f, 2.5f);
+        for (int i = 0; i <= sample_count; ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(sample_count);
+            const float forward_range_m = t * drift_range_m;
+            const float lateral_shape = t * (1.0f - t) * (1.0f + drift_curve_k * t);
+            const float lateral_offset_m = lateral_m * lateral_shape;
+            drift_points[i] = ImVec2(map_drift_x(lateral_offset_m), map_drift_y(forward_range_m));
+        }
+        drift_draw_list->AddPolyline(drift_points, sample_count + 1, IM_COL32(255, 180, 90, 255), ImDrawFlags_None, 2.0f);
+
         const ImVec2 drift_muzzle_pt(map_drift_x(0.0f), map_drift_y(0.0f));
-        const ImVec2 drift_impact_pt(map_drift_x(lateral_m), map_drift_y(drift_range_m));
+        const ImVec2 drift_impact_pt(map_drift_x(0.0f), map_drift_y(drift_range_m));       // bullet lands at center
+        const ImVec2 drift_aim_pt(map_drift_x(lateral_m), map_drift_y(drift_range_m));     // barrel aim point
         drift_draw_list->AddCircleFilled(drift_muzzle_pt, 3.5f, IM_COL32(130, 255, 130, 255));
         drift_draw_list->AddCircleFilled(drift_impact_pt, 4.0f, IM_COL32(255, 90, 90, 255));
-        drift_draw_list->AddText(ImVec2(drift_muzzle_pt.x + 6.0f, drift_muzzle_pt.y - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
-        drift_draw_list->AddText(ImVec2(drift_impact_pt.x - 56.0f, drift_impact_pt.y - 16.0f), IM_COL32(230, 200, 200, 255), g_state.top_down_show_required_angle ? "Aim Point" : "Impact");
+        drift_draw_list->AddCircleFilled(drift_aim_pt, 3.0f, IM_COL32(90, 220, 255, 180));
+        drift_draw_list->AddText(ImVec2(drift_muzzle_pt.x + 6.0f, drift_muzzle_pt.y + 2.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
+        drift_draw_list->AddText(ImVec2(drift_impact_pt.x + 5.0f, drift_impact_pt.y - 14.0f), IM_COL32(230, 200, 200, 255), "Impact (target)");
+        drift_draw_list->AddText(ImVec2(drift_aim_pt.x - 58.0f, drift_aim_pt.y - 14.0f), IM_COL32(130, 220, 255, 200), "Aim dir");
+
+        // ---- Windage angle indicator: compact overlay box (always readable) ----
+        {
+            auto draw_arrow = [&](const ImVec2& from, const ImVec2& to, ImU32 color, float thickness) {
+                drift_draw_list->AddLine(from, to, color, thickness);
+                const float dx = to.x - from.x;
+                const float dy = to.y - from.y;
+                const float len = std::sqrtf((dx * dx) + (dy * dy));
+                if (len <= 0.001f) return;
+                const float ux = dx / len;
+                const float uy = dy / len;
+                const float px = -uy;
+                const float py = ux;
+                const float head_len = 4.0f;
+                const float head_w = 2.5f;
+                const ImVec2 p1(to.x - (ux * head_len) + (px * head_w), to.y - (uy * head_len) + (py * head_w));
+                const ImVec2 p2(to.x - (ux * head_len) - (px * head_w), to.y - (uy * head_len) - (py * head_w));
+                drift_draw_list->AddTriangleFilled(to, p1, p2, color);
+            };
+
+            // Placed in the bottom-right of the plot, clear of the trajectory.
+            const float ind_cx  = drift_plot_right - 60.0f;
+            const float ind_cy  = drift_plot_bottom - 28.0f;
+            const float arc_r   = 20.0f;
+            const float ref_len = 28.0f;
+
+            // Straight-ahead reference (upward in chart)
+            drift_draw_list->AddLine(ImVec2(ind_cx, ind_cy), ImVec2(ind_cx, ind_cy - ref_len),
+                IM_COL32(150, 150, 170, 180), 1.0f);
+
+            // Wind component arrows (top-down): one per axis, moved to the top-right corner.
+            const ImVec2 axis_origin(drift_plot_right - 72.0f, drift_plot_top + 26.0f);
+            const float crosswind_display = std::fabs(crosswind_ms) * wind_ms_to_display;
+            char wind_long_label[32];
+            char wind_cross_label[32];
+
+            if (headwind_ms > wind_axis_eps_ms) {
+                draw_arrow(ImVec2(axis_origin.x, axis_origin.y - 8.0f), ImVec2(axis_origin.x, axis_origin.y + 8.0f), IM_COL32(255, 175, 120, 220), 1.2f);
+                std::snprintf(wind_long_label, sizeof(wind_long_label), "%.1f", std::fabs(headwind_ms) * wind_ms_to_display);
+                drift_draw_list->AddText(ImVec2(axis_origin.x + 6.0f, axis_origin.y + 4.0f), IM_COL32(255, 175, 120, 220), wind_long_label);
+            } else if (headwind_ms < -wind_axis_eps_ms) {
+                draw_arrow(ImVec2(axis_origin.x, axis_origin.y + 8.0f), ImVec2(axis_origin.x, axis_origin.y - 8.0f), IM_COL32(120, 230, 255, 220), 1.2f);
+                std::snprintf(wind_long_label, sizeof(wind_long_label), "%.1f", std::fabs(headwind_ms) * wind_ms_to_display);
+                drift_draw_list->AddText(ImVec2(axis_origin.x + 6.0f, axis_origin.y - 20.0f), IM_COL32(120, 230, 255, 220), wind_long_label);
+            } else {
+                std::snprintf(wind_long_label, sizeof(wind_long_label), "0.0");
+                drift_draw_list->AddText(ImVec2(axis_origin.x + 6.0f, axis_origin.y - 8.0f), IM_COL32(170, 190, 210, 220), wind_long_label);
+            }
+
+            if (crosswind_ms > wind_axis_eps_ms) {
+                draw_arrow(ImVec2(axis_origin.x + 10.0f, axis_origin.y + 20.0f), ImVec2(axis_origin.x - 10.0f, axis_origin.y + 20.0f), IM_COL32(180, 215, 255, 220), 1.2f);
+                std::snprintf(wind_cross_label, sizeof(wind_cross_label), "%.1f", crosswind_display);
+                drift_draw_list->AddText(ImVec2(axis_origin.x - 30.0f, axis_origin.y + 24.0f), IM_COL32(180, 215, 255, 220), wind_cross_label);
+            } else if (crosswind_ms < -wind_axis_eps_ms) {
+                draw_arrow(ImVec2(axis_origin.x - 10.0f, axis_origin.y + 20.0f), ImVec2(axis_origin.x + 10.0f, axis_origin.y + 20.0f), IM_COL32(180, 215, 255, 220), 1.2f);
+                std::snprintf(wind_cross_label, sizeof(wind_cross_label), "%.1f", crosswind_display);
+                drift_draw_list->AddText(ImVec2(axis_origin.x + 14.0f, axis_origin.y + 24.0f), IM_COL32(180, 215, 255, 220), wind_cross_label);
+            } else {
+                std::snprintf(wind_cross_label, sizeof(wind_cross_label), "0.0");
+                drift_draw_list->AddText(ImVec2(axis_origin.x - 8.0f, axis_origin.y + 24.0f), IM_COL32(170, 190, 210, 220), wind_cross_label);
+            }
+
+            // Aim direction in screen-space
+            const float aim_dx = map_drift_x(lateral_m * 0.001f) - map_drift_x(0.0f);
+            const float aim_dy = map_drift_y(drift_range_scale_m * 0.001f) - map_drift_y(0.0f);
+            const float aim_len2 = std::sqrtf(aim_dx * aim_dx + aim_dy * aim_dy);
+            if (aim_len2 > 0.01f) {
+                const float ax2 = aim_dx / aim_len2;
+                const float ay2 = aim_dy / aim_len2;
+                drift_draw_list->AddLine(ImVec2(ind_cx, ind_cy),
+                    ImVec2(ind_cx + ax2 * ref_len, ind_cy + ay2 * ref_len),
+                    IM_COL32(90, 220, 255, 220), 1.5f);
+
+                const float los_angle2  = -3.14159265f * 0.5f;
+                const float aim_angle2  = std::atan2f(ay2, ax2);
+                const int arc_segs2 = 14;
+                for (int ai = 0; ai < arc_segs2; ++ai) {
+                    const float a0 = los_angle2 + (static_cast<float>(ai)     / arc_segs2) * (aim_angle2 - los_angle2);
+                    const float a1 = los_angle2 + (static_cast<float>(ai + 1) / arc_segs2) * (aim_angle2 - los_angle2);
+                    drift_draw_list->AddLine(
+                        ImVec2(ind_cx + std::cosf(a0) * arc_r, ind_cy + std::sinf(a0) * arc_r),
+                        ImVec2(ind_cx + std::cosf(a1) * arc_r, ind_cy + std::sinf(a1) * arc_r),
+                        IM_COL32(90, 220, 255, 140), 1.0f);
+                }
+            }
+
+            // Angle text in a dark box, below the indicator (mirrors side-view behavior).
+            char wind_label[64];
+            std::snprintf(wind_label, sizeof(wind_label), "%.4f\xc2\xb0", windage_angle_deg);
+            const float wx = ind_cx - 54.0f;
+            const float wy = ind_cy + 8.0f;
+            drift_draw_list->AddRectFilled(ImVec2(wx - 2.0f, wy - 2.0f), ImVec2(wx + 122.0f, wy + 12.0f), IM_COL32(10, 10, 14, 210));
+            drift_draw_list->AddText(ImVec2(wx, wy), IM_COL32(110, 235, 255, 255), wind_label);
+        }
 
         drift_draw_list->AddText(ImVec2(drift_plot_left + 4.0f, drift_plot_top - 16.0f), IM_COL32(190, 190, 200, 255), range_units);
 
-        char center_label[64];
-        std::snprintf(center_label, sizeof(center_label), "Centerline (0 %s)", drift_units);
-        drift_draw_list->AddText(ImVec2(drift_center_x + 4.0f, drift_plot_top + 2.0f), IM_COL32(170, 190, 220, 255), center_label);
-
         char top_tick_label[64];
         const float top_tick_display = (drift_lateral_scale_m * 0.5f) * offset_m_to_display;
-        std::snprintf(top_tick_label, sizeof(top_tick_label), "+%.1f %s", top_tick_display, drift_units);
+        std::snprintf(top_tick_label, sizeof(top_tick_label), "+%.1f %s", top_tick_display, offset_units);
         drift_draw_list->AddText(ImVec2(drift_right_tick_x + 4.0f, drift_plot_top + 2.0f), IM_COL32(150, 150, 165, 255), top_tick_label);
 
         char bot_tick_label[64];
-        std::snprintf(bot_tick_label, sizeof(bot_tick_label), "-%.1f %s", top_tick_display, drift_units);
+        std::snprintf(bot_tick_label, sizeof(bot_tick_label), "-%.1f %s", top_tick_display, offset_units);
         drift_draw_list->AddText(ImVec2(drift_left_tick_x - 56.0f, drift_plot_top + 2.0f), IM_COL32(150, 150, 165, 255), bot_tick_label);
 
         ImGui::End();
@@ -2037,6 +3073,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         g_pSwapChain->Present(1, 0);
     }
+
+    g_ticker_running = false;
+    ticker_thread.join();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();

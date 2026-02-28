@@ -189,23 +189,23 @@ void Atmosphere::recompute() {
     }
 
     // Virtual temperature accounting for humidity
-    // Vapor pressure (Buck equation approximation)
+    // Vapor pressure (Buck equation approximation)    [MATH §3.1]
     float e_sat = 611.21f * std::exp((18.678f - temperature_c_ / 234.5f) *
-                                      (temperature_c_ / (257.14f + temperature_c_)));
+                                      (temperature_c_ / (257.14f + temperature_c_))); // [MATH §3.1]
     float e_vapor = humidity * e_sat;
 
-    // Virtual temperature: Tv = T * (1 + 0.378 * e / P)
-    float T_virtual = T_kelvin * (1.0f + 0.378f * e_vapor / pressure_pa);
+    // Virtual temperature: Tv = T * (1 + 0.378 * e / P)    [MATH §3.2]
+    float T_virtual = T_kelvin * (1.0f + 0.378f * e_vapor / pressure_pa); // [MATH §3.2]
     if (!std::isfinite(T_virtual) || T_virtual < 1.0f) {
         T_virtual = 1.0f;
         had_invalid_input_ = true;
     }
 
-    // Air density via ideal gas law with virtual temperature
-    air_density_ = pressure_pa / (BCE_R_DRY_AIR * T_virtual);
+    // Air density via ideal gas law with virtual temperature    [MATH §3.3]
+    air_density_ = pressure_pa / (BCE_R_DRY_AIR * T_virtual); // [MATH §3.3]
 
-    // Speed of sound (approximation for moist air)
-    speed_of_sound_ = 20.05f * std::sqrt(T_virtual);
+    // Speed of sound (approximation for moist air)    [MATH §3.4]
+    speed_of_sound_ = 20.05f * std::sqrt(T_virtual); // [MATH §3.4]
 
     float current_bc_factor = correctBC(1.0f);
     if (std::fabs(current_bc_factor - prev_bc_factor) >= BCE_ZERO_RECOMPUTE_BC_FACTOR_DELTA ||
@@ -226,28 +226,28 @@ float Atmosphere::correctBC(float bc_standard) const {
     constexpr float std_press_inhg = 29.5300f; // ≈ 101325 Pa
     constexpr float std_temp_f     = 59.0f;    // 15 °C
 
-    // FA — Altitude factor
+    // FA — Altitude factor    [MATH §4.1]
     // Litz: FA = 1 - 0.00003158 × altitude_ft
     // (approximation for density reduction with altitude)
-    float FA = 1.0f - 3.158e-5f * alt_ft;
+    float FA = 1.0f - 3.158e-5f * alt_ft; // [MATH §4.1]
     if (FA < 0.5f) FA = 0.5f; // clamp for extreme altitudes
 
-    // FT — Temperature factor
+    // FT — Temperature factor    [MATH §4.2]
     // FT = (temp_f - std_temp_f) / (std_temp_f + 460)
-    float FT = (temp_f - std_temp_f) / (std_temp_f + 460.0f);
+    float FT = (temp_f - std_temp_f) / (std_temp_f + 460.0f); // [MATH §4.2]
 
-    // FP — Pressure factor
+    // FP — Pressure factor    [MATH §4.3]
     // FP = (std_press_inhg - press_inhg) / std_press_inhg
-    float FP = (std_press_inhg - press_inhg) / std_press_inhg;
+    float FP = (std_press_inhg - press_inhg) / std_press_inhg; // [MATH §4.3]
 
-    // FR — Humidity factor
+    // FR — Humidity factor    [MATH §4.4]
     // Small effect: FR ≈ 1.0 + 0.002 * (humidity_pct - 50)
     // where humidity_pct = humidity_ * 100
     float humidity_pct = humidity_ * 100.0f;
-    float FR = 1.0f + 0.00002f * (humidity_pct - 50.0f);
+    float FR = 1.0f + 0.00002f * (humidity_pct - 50.0f); // [MATH §4.4]
 
-    // Combined correction: BC_corrected = BC × FA × (1 + FT - FP) × FR
-    float bc_corrected = bc_standard * FA * (1.0f + FT - FP) * FR;
+    // Combined correction: BC_corrected = BC × FA × (1 + FT - FP) × FR    [MATH §4.5]
+    float bc_corrected = bc_standard * FA * (1.0f + FT - FP) * FR; // [MATH §4.5]
 
     // Never let BC go below a minimum reasonable value
     if (bc_corrected < 0.01f) bc_corrected = 0.01f;

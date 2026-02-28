@@ -52,28 +52,28 @@ public:
     /** Get the current orientation quaternion. */
     virtual Quaternion getQuaternion() const = 0;
 
-    /** Pitch angle in radians (nose up positive). */
+    /** Pitch angle in radians (nose up positive).    [MATH §7.1] */
     float getPitch() const {
         Quaternion q = getQuaternion();
-        float sinp = 2.0f * (q.w * q.y - q.z * q.x);
+        float sinp = 2.0f * (q.w * q.y - q.z * q.x); // [MATH §7.1]
         if (sinp > 1.0f) sinp = 1.0f;
         if (sinp < -1.0f) sinp = -1.0f;
-        return std::asin(sinp);
+        return std::asin(sinp); // [MATH §7.1]
     }
 
-    /** Roll angle in radians (right wing down positive). */
+    /** Roll angle in radians (right wing down positive).    [MATH §7.2] */
     float getRoll() const {
         Quaternion q = getQuaternion();
-        float sinr_cosp = 2.0f * (q.w * q.x + q.y * q.z);
-        float cosr_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
-        return std::atan2(sinr_cosp, cosr_cosp);
+        float sinr_cosp = 2.0f * (q.w * q.x + q.y * q.z); // [MATH §7.2]
+        float cosr_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y); // [MATH §7.2]
+        return std::atan2(sinr_cosp, cosr_cosp); // [MATH §7.2]
     }
 
-    /** Yaw angle in radians (clockwise from north positive). */
+    /** Yaw angle in radians (clockwise from north positive).    [MATH §7.3] */
     float getYaw() const {
         Quaternion q = getQuaternion();
-        float siny_cosp = 2.0f * (q.w * q.z + q.x * q.y);
-        float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
-        return std::atan2(siny_cosp, cosy_cosp);
+        float siny_cosp = 2.0f * (q.w * q.z + q.x * q.y); // [MATH §7.3]
+        float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z); // [MATH §7.3]
+        return std::atan2(siny_cosp, cosy_cosp); // [MATH §7.3]
     }
 };

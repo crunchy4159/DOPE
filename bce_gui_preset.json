@@ -21,7 +21,6 @@
   "baro_temperature_c": 15,
   "baro_humidity": 0.5,
   "lrf_range_m": 457.2,
-  "lrf_confidence": 1,
   "imu_valid": true,
   "mag_valid": true,
   "baro_valid": true,

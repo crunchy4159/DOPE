@@ -32,6 +32,7 @@ protected:
         float barrel_length_delta_in = barrel_in - ref_barrel_in;
         float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjust);
         p.muzzle_velocity_ms = adjusted_mv_fps * bce::math::FPS_TO_MPS;
+        p.bullet_mass_kg = mass_gr * BCE_GRAINS_TO_KG;
         p.air_density = BCE_STD_AIR_DENSITY;
         p.speed_of_sound = BCE_SPEED_OF_SOUND_15C;
         p.target_range_m = range_m;

@@ -2,11 +2,13 @@
 
 **Digital Optic Precision Engine — Adaptive Smart Scope**
 
-Ballistic Core Engine (BCE) implementing the DOPE SRS v1.31 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
+Ballistic Core Engine (BCE) implementing the DOPE SRS v1.33 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
 
 ## What It Does
 
 The engine ingests normalized sensor data, performs ballistic trajectory computation with atmospheric and Earth-rotation corrections, and produces a structured `FiringSolution`. It is platform-agnostic, display-agnostic, UI-agnostic, and vision-agnostic.
+
+For margin/error modeling, the engine outputs analytic uncertainty primitives (sigma/covariance/per-input variance); presentation-layer confidence rings, heatmaps, or scores belong in the application/UI layer.
 
 It does not render graphics, process camera/LiDAR data, or select targets.
 
@@ -82,13 +84,13 @@ Requires [PlatformIO](https://platformio.org/).
 ### Desktop (native tests)
 
 ```bash
-pio test -e native
+py -m platformio test -e native
 ```
 
 ### Desktop (basic GUI test harness, Windows)
 
 ```bash
-pio run -e native_gui
+py -m platformio run -e native_gui
 ```
 
 Then launch:
@@ -170,9 +172,13 @@ BCE_Update(&sensorFrame);
 
 // Read solution
 if (BCE_GetMode() == BCE_Mode::SOLUTION_READY) {
+    RealtimeSolution rt;
+    BCE_GetRealtimeSolution(&rt);
+    // rt.hold_elevation_moa, rt.hold_windage_moa, rt.uncertainty_radius_moa
+
+    // Optional: full diagnostics payload
     FiringSolution sol;
     BCE_GetSolution(&sol);
-    // sol.hold_elevation_moa, sol.hold_windage_moa, etc.
 }
 ```
 

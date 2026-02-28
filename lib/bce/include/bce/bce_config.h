@@ -33,7 +33,7 @@
 constexpr float BCE_DEFAULT_ALTITUDE_M     = 0.0f;
 constexpr float BCE_DEFAULT_PRESSURE_PA    = 101325.0f;
 constexpr float BCE_DEFAULT_TEMPERATURE_C  = 15.0f;
-constexpr float BCE_DEFAULT_HUMIDITY       = 0.50f;
+constexpr float BCE_DEFAULT_HUMIDITY       = 0.5f;
 constexpr float BCE_DEFAULT_WIND_SPEED_MS  = 0.0f;
 constexpr float BCE_DEFAULT_WIND_HEADING   = 0.0f;
 
@@ -77,6 +77,15 @@ constexpr float BCE_GRAINS_TO_KG = 6.479891e-5f;
 constexpr float BCE_INCHES_TO_M  = 0.0254f;
 constexpr float BCE_MM_TO_M      = 0.001f;
 
+// Dynamic-stability (SG) coupling into drag model.
+// Effective drag scale is:
+//   1 + BCE_SG_DRAG_COUPLING_GAIN * (BCE_SG_REFERENCE - SG)
+// then clamped to [BCE_SG_DRAG_SCALE_MIN, BCE_SG_DRAG_SCALE_MAX].
+constexpr float BCE_SG_REFERENCE          = 1.5f;
+constexpr float BCE_SG_DRAG_COUPLING_GAIN = 0.010f;
+constexpr float BCE_SG_DRAG_SCALE_MIN     = 0.985f;
+constexpr float BCE_SG_DRAG_SCALE_MAX     = 1.040f;
+
 // ---------------------------------------------------------------------------
 // AHRS Configuration
 // ---------------------------------------------------------------------------
@@ -98,9 +107,6 @@ constexpr float BCE_MAHONY_DEFAULT_KI = 0.005f;
 // LRF staleness threshold (microseconds)
 // ---------------------------------------------------------------------------
 constexpr uint32_t BCE_LRF_STALE_US = 2000000; // 2 seconds
-
-// Minimum accepted LRF confidence when provided (0.0 means unknown/unprovided)
-constexpr float BCE_LRF_MIN_CONFIDENCE = 0.50f;
 
 // ---------------------------------------------------------------------------
 // Solver Configuration

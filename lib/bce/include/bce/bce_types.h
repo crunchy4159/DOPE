@@ -95,7 +95,6 @@ struct SensorFrame {
     // Laser Rangefinder — SRS §7.4
     float    lrf_range_m;             // meters
     uint64_t lrf_timestamp_us;        // timestamp of LRF reading
-    float    lrf_confidence;          // 0.0–1.0
     bool     lrf_valid;
 
     // Zoom Encoder — SRS §7.5
@@ -186,6 +185,67 @@ struct FiringSolution {
     float sigma_elevation_moa;        // 1-sigma elevation uncertainty (MOA)
     float sigma_windage_moa;          // 1-sigma windage uncertainty (MOA)
     float covariance_elev_wind;       // Elevation-windage covariance (MOA²)
+
+    // Per-input variance contributions (var_elev, var_wind) for diagnostics.
+    // Each pair is (elevation_variance_moa2, windage_variance_moa2) from that input.
+    // Total var_e = sum of [i][0], total var_w = sum of [i][1].
+    // Index: 0=MV, 1=BC, 2=Range, 3=WindSpeed, 4=WindHeading,
+    //        5=Temperature, 6=Pressure, 7=Humidity, 8=SightHeight, 9=Cant,
+    //        10=Latitude, 11=Mass, 12=Length, 13=Caliber, 14=Twist,
+    //        15=ZeroRange, 16=MVAdjustment
+    static const int kNumUncertaintyInputs = 17;
+    float uc_var_elev[17];            // per-input elevation variance (MOA²)
+    float uc_var_wind[17];            // per-input windage variance (MOA²)
+};
+
+// ---------------------------------------------------------------------------
+// Realtime Solution (minimal hot-path output)
+// ---------------------------------------------------------------------------
+struct RealtimeSolution {
+    uint32_t solution_mode;           // BCE_Mode cast to uint32
+    uint32_t fault_flags;             // BCE_Fault bitfield
+    uint32_t defaults_active;         // BCE_Diag bitfield
+
+    float hold_elevation_moa;         // Final elevation hold (MOA)
+    float hold_windage_moa;           // Final windage hold (MOA)
+
+    bool  uncertainty_valid;          // True when uncertainty_radius_moa is populated
+    float uncertainty_radius_moa;     // Circularized 1-sigma radius in MOA
+    float uncertainty_confidence;     // Confidence mass represented by radius (default 1σ = 0.682689)
+
+    float range_m;                    // Slant range to target
+    float tof_ms;                     // Time of flight (milliseconds)
+    float velocity_at_target_ms;      // Remaining velocity at target
+};
+
+// ---------------------------------------------------------------------------
+// Generic sensor error table — piecewise-linear sigma vs. a scalar input
+// ---------------------------------------------------------------------------
+/**
+ * @brief A single breakpoint in a sensor accuracy table.
+ *
+ * `x`     is the independent variable (e.g. range_m for an LRF,
+ *          temperature_c for a thermometer).
+ * `sigma` is the 1-sigma uncertainty at that x value.
+ */
+struct BCE_ErrorPoint {
+    float x;
+    float sigma;
+};
+
+/**
+ * @brief A reference to an array of BCE_ErrorPoint breakpoints.
+ *
+ * Pass to BCE_InterpolateSigma() to obtain piecewise-linearly interpolated
+ * sigma values at arbitrary x positions.  Clamps to the first/last sigma
+ * outside the table range.
+ *
+ * Set {nullptr, 0} for a "Custom / manual" entry (BCE_InterpolateSigma
+ * returns 0.0f for a null table, leaving the caller's sigma unchanged).
+ */
+struct BCE_ErrorTable {
+    const BCE_ErrorPoint* points;
+    int                   count;
 };
 
 // ---------------------------------------------------------------------------
@@ -200,6 +260,7 @@ struct FiringSolution {
  *
  * Use BCE_GetDefaultUncertaintyConfig() to obtain sensible starting values.
  */
+
 struct UncertaintyConfig {
     bool  enabled;                    // Master enable
     float sigma_muzzle_velocity_ms;   // 1-sigma MV uncertainty (m/s)
@@ -212,6 +273,29 @@ struct UncertaintyConfig {
     float sigma_humidity;             // 1-sigma humidity uncertainty (fraction 0–1)
     float sigma_sight_height_mm;      // 1-sigma sight height uncertainty (mm)
     float sigma_cant_deg;             // 1-sigma cant angle uncertainty (degrees)
+    float sigma_latitude_deg;         // 1-sigma latitude uncertainty (degrees); Coriolis only
+    float sigma_mass_grains;          // 1-sigma bullet mass uncertainty (grains)
+    float sigma_length_mm;            // 1-sigma bullet length uncertainty (mm)
+    float sigma_caliber_inches;       // 1-sigma bullet caliber uncertainty (inches)
+    float sigma_twist_rate_inches;    // 1-sigma twist rate uncertainty (in/turn)
+    float sigma_zero_range_m;         // 1-sigma zero range uncertainty (m)
+    float sigma_mv_adjustment_fps_per_in; // 1-sigma MV/barrel adjustment uncertainty (fps/in)
+
+    // Optional engine-managed sensor profile inputs provided by the app layer.
+    // When enabled, engine derives sigma values from live sensor inputs instead
+    // of trusting GUI/manual scalar sigma entry for those channels.
+    bool          use_range_error_table;
+    BCE_ErrorTable range_error_table;                // x = range_m, sigma = sigma_range_m
+
+    bool          use_temperature_error_table;
+    BCE_ErrorTable temperature_error_table;          // x = temp_c, sigma = sigma_temperature_c
+
+    bool          use_pressure_delta_temp_error_table;
+    BCE_ErrorTable pressure_delta_temp_error_table;  // x = |delta_temp_c_since_cal|, sigma = sigma_pressure_pa
+    float         pressure_uncalibrated_sigma_pa;    // fallback when not calibrated or invalid calibration metadata
+    bool          pressure_is_calibrated;
+    bool          pressure_has_calibration_temp;
+    float         pressure_calibration_temp_c;
 };
 
 // ---------------------------------------------------------------------------

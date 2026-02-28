@@ -47,6 +47,7 @@ public:
 
     // --- Output ---
     void getSolution(FiringSolution* out) const;
+    void getRealtimeSolution(RealtimeSolution* out) const;
     BCE_Mode getMode() const { return mode_; }
     uint32_t getFaultFlags() const { return fault_flags_; }
     uint32_t getDiagFlags() const { return diag_flags_; }
@@ -121,6 +122,10 @@ private:
     // Uncertainty / error propagation config — SRS §14
     UncertaintyConfig uncertainty_config_;
 
+    // Latest internal barometer temperature sample (from SensorFrame).
+    float latest_baro_temp_c_ = 0.0f;
+    bool has_baro_temp_ = false;
+
     // FOV from zoom encoder (degrees; 0 = unknown)
     float fov_h_deg_ = 0.0f;
     float fov_v_deg_ = 0.0f;
@@ -129,6 +134,7 @@ private:
     void evaluateState(uint64_t now_us);
     void computeSolution();
     void computeUncertainty();
+    void refreshDerivedSigmasFromProfiles();
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
 };

@@ -12,7 +12,7 @@ void MahonyFilter::update(float ax, float ay, float az,
                           bool use_mag, float dt) {
     float q0 = q_.w, q1 = q_.x, q2 = q_.y, q3 = q_.z;
 
-    // Error is sum of cross products between estimated and measured directions
+    // Error is sum of cross products between estimated and measured directions    [MATH §6.6]
     float ex = 0.0f, ey = 0.0f, ez = 0.0f;
 
     // Normalize accelerometer
@@ -23,15 +23,15 @@ void MahonyFilter::update(float ax, float ay, float az,
         ay *= a_inv;
         az *= a_inv;
 
-        // Estimated gravity direction from quaternion
-        float vx = 2.0f * (q1 * q3 - q0 * q2);
-        float vy = 2.0f * (q0 * q1 + q2 * q3);
-        float vz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+        // Estimated gravity direction from quaternion    [MATH §6.7]
+        float vx = 2.0f * (q1 * q3 - q0 * q2); // [MATH §6.7]
+        float vy = 2.0f * (q0 * q1 + q2 * q3); // [MATH §6.7]
+        float vz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3; // [MATH §6.7]
 
-        // Cross product: accel × estimated_gravity
-        ex += ay * vz - az * vy;
-        ey += az * vx - ax * vz;
-        ez += ax * vy - ay * vx;
+        // Cross product: accel × estimated_gravity    [MATH §6.8]
+        ex += ay * vz - az * vy; // [MATH §6.8]
+        ey += az * vx - ax * vz; // [MATH §6.8]
+        ez += ax * vy - ay * vx; // [MATH §6.8]
     }
 
     if (use_mag) {
@@ -60,26 +60,26 @@ void MahonyFilter::update(float ax, float ay, float az,
         }
     }
 
-    // Apply integral feedback (if ki > 0)
+    // Apply integral feedback (if ki > 0)    [MATH §6.9]
     if (ki_ > 0.0f) {
-        integral_fb_x_ += ki_ * ex * dt;
-        integral_fb_y_ += ki_ * ey * dt;
-        integral_fb_z_ += ki_ * ez * dt;
+        integral_fb_x_ += ki_ * ex * dt; // [MATH §6.9]
+        integral_fb_y_ += ki_ * ey * dt; // [MATH §6.9]
+        integral_fb_z_ += ki_ * ez * dt; // [MATH §6.9]
         gx += integral_fb_x_;
         gy += integral_fb_y_;
         gz += integral_fb_z_;
     }
 
-    // Apply proportional feedback
-    gx += kp_ * ex;
-    gy += kp_ * ey;
-    gz += kp_ * ez;
+    // Apply proportional feedback    [MATH §6.9]
+    gx += kp_ * ex; // [MATH §6.9]
+    gy += kp_ * ey; // [MATH §6.9]
+    gz += kp_ * ez; // [MATH §6.9]
 
-    // Integrate rate of change of quaternion
-    float qDot0 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
-    float qDot1 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy);
-    float qDot2 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx);
-    float qDot3 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx);
+    // Integrate rate of change of quaternion    [MATH §6.5]
+    float qDot0 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz); // [MATH §6.5]
+    float qDot1 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy); // [MATH §6.5]
+    float qDot2 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx); // [MATH §6.5]
+    float qDot3 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx); // [MATH §6.5]
 
     q0 += qDot0 * dt;
     q1 += qDot1 * dt;

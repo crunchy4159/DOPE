@@ -87,6 +87,23 @@ void BCE_SetExternalReferenceMode(bool enabled) {
     s_engine.setExternalReferenceMode(enabled);
 }
 
+float BCE_InterpolateSigma(const BCE_ErrorTable* table, float x) {
+    if (!table || table->count <= 0) return 0.0f;
+    if (table->count == 1)  return table->points[0].sigma;
+    if (x <= table->points[0].x) return table->points[0].sigma;
+    if (x >= table->points[table->count - 1].x)
+        return table->points[table->count - 1].sigma;
+    for (int i = 0; i < table->count - 1; ++i) {
+        if (x <= table->points[i + 1].x) {
+            float t = (x - table->points[i].x)
+                    / (table->points[i + 1].x - table->points[i].x);
+            return table->points[i].sigma
+                 + t * (table->points[i + 1].sigma - table->points[i].sigma);
+        }
+    }
+    return table->points[table->count - 1].sigma;
+}
+
 void BCE_SetUncertaintyConfig(const UncertaintyConfig* config) {
     s_engine.setUncertaintyConfig(config);
 }
@@ -97,6 +114,10 @@ void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out) {
 
 void BCE_GetSolution(FiringSolution* out) {
     s_engine.getSolution(out);
+}
+
+void BCE_GetRealtimeSolution(RealtimeSolution* out) {
+    s_engine.getRealtimeSolution(out);
 }
 
 BCE_Mode BCE_GetMode(void) {

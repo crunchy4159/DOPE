@@ -270,6 +270,25 @@ TEST_F(SolverTest, AirDensityEffect) {
     EXPECT_LT(r_high.drop_at_target_m, r_low.drop_at_target_m); // More drop in denser air
 }
 
+TEST_F(SolverTest, BulletLengthAffectsDropWithDynamicStability) {
+    SolverParams short_bullet = make308Params(1200.0f);
+    short_bullet.launch_angle_rad = 0.005f;
+    short_bullet.twist_rate_inches = 10.0f;
+    short_bullet.caliber_m = 0.308f * BCE_INCHES_TO_M;
+    short_bullet.bullet_length_m = 28.0f * BCE_MM_TO_M;
+    short_bullet.spin_drift_enabled = true;
+
+    SolverParams long_bullet = short_bullet;
+    long_bullet.bullet_length_m = 36.0f * BCE_MM_TO_M;
+
+    SolverResult r_short = solver.integrate(short_bullet);
+    SolverResult r_long = solver.integrate(long_bullet);
+
+    EXPECT_TRUE(r_short.valid);
+    EXPECT_TRUE(r_long.valid);
+    EXPECT_LT(r_long.drop_at_target_m, r_short.drop_at_target_m);
+}
+
 // Test that an unsolvable zero returns NAN
 TEST_F(SolverTest, UnsolvableZeroReturnsNAN) {
     SolverParams p = make308Params(100.0f);

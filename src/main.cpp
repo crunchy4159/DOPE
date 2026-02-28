@@ -12,7 +12,14 @@
 
 #include "bce/bce_api.h"
 
+#if defined(BCE_PLATFORM_NATIVE)
+int main() {
+    BCE_Init();
+    return 0;
+}
+#else
 extern "C" void app_main(void) {
     BCE_Init();
     // Application layer would feed SensorFrames here
 }
+#endif

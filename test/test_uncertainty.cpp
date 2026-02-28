@@ -77,11 +77,10 @@ protected:
         }
     }
 
-    void feedRange(float range_m, float confidence = 1.0f) {
+    void feedRange(float range_m) {
         SensorFrame f = makeDefaultFrame(10000 * 300);
         f.lrf_range_m = range_m;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = confidence;
         f.lrf_valid = true;
         BCE_Update(&f);
     }
@@ -109,7 +108,6 @@ TEST_F(UncertaintyTest, AllZeroSigmaProducesZeroUncertainty) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -133,7 +131,6 @@ TEST_F(UncertaintyTest, DisabledProducesNoUncertainty) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -158,7 +155,6 @@ TEST_F(UncertaintyTest, MVSigmaAffectsElevation) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -184,7 +180,6 @@ TEST_F(UncertaintyTest, WindSpeedSigmaAffectsWindage) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -208,7 +203,6 @@ TEST_F(UncertaintyTest, RangeSigmaAffectsBothAxes) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -237,7 +231,6 @@ TEST_F(UncertaintyTest, LargerMVSigmaProducesLargerUncertainty) {
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 1.0f;
         f.lrf_valid = true;
         BCE_Update(&f);
     }
@@ -257,7 +250,6 @@ TEST_F(UncertaintyTest, LargerMVSigmaProducesLargerUncertainty) {
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 1.0f;
         f.lrf_valid = true;
         BCE_Update(&f);
     }
@@ -300,7 +292,6 @@ TEST_F(UncertaintyTest, FullDefaultSigmasAt500mProducePlausibleCEP) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 457.2f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
@@ -337,7 +328,6 @@ TEST_F(UncertaintyTest, UncertaintyScalesRoughlyLinearlyWithInputSigma) {
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 1.0f;
         f.lrf_valid = true;
         BCE_Update(&f);
     }
@@ -356,7 +346,6 @@ TEST_F(UncertaintyTest, UncertaintyScalesRoughlyLinearlyWithInputSigma) {
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        f.lrf_confidence = 1.0f;
         f.lrf_valid = true;
         BCE_Update(&f);
     }
@@ -386,12 +375,114 @@ TEST_F(UncertaintyTest, BCSigmaAffectsElevation) {
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_confidence = 1.0f;
     f.lrf_valid = true;
     BCE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
     EXPECT_GT(sol.sigma_elevation_moa, 0.01f);
+}
+
+TEST_F(UncertaintyTest, LengthSigmaContributesToUncertainty) {
+    configureStandard308();
+    stabilizeAHRS();
+    feedRange(1000.0f);
+
+    UncertaintyConfig uc = {};
+    uc.enabled = true;
+    uc.sigma_length_mm = 1.0f;
+    BCE_SetUncertaintyConfig(&uc);
+
+    SensorFrame f = makeDefaultFrame(10000 * 400);
+    f.lrf_range_m = 1000.0f;
+    f.lrf_timestamp_us = f.timestamp_us;
+    f.lrf_valid = true;
+    BCE_Update(&f);
+
+    FiringSolution sol = getSolution();
+    EXPECT_TRUE(sol.uncertainty_valid);
+    EXPECT_GT(sol.uc_var_elev[12], 0.0f);
+    EXPECT_GT(sol.uc_var_wind[12], 0.0f);
+}
+
+// --- Latitude sigma test ---
+
+TEST_F(UncertaintyTest, LatitudeSigmaAffectsBothAxesWhenCoriolisActive) {
+    configureStandard308();
+    BCE_SetLatitude(45.0f); // Coriolis active
+    BCE_SetWindManual(0.0f, 0.0f);
+    
+    // Stabilize AHRS pointing North-East to ensure both vertical (Eotvos) 
+    // and horizontal Coriolis effects are active.
+    for (int i = 0; i < 200; ++i) {
+        SensorFrame f = makeDefaultFrame(10000 * (i + 1));
+        f.mag_y = 25.0f; // Y component gives an Eastward heading
+        BCE_Update(&f);
+    }
+
+    feedRange(1000.0f); // Longer range makes Coriolis more apparent
+
+    UncertaintyConfig uc = {};
+    uc.enabled = true;
+    uc.sigma_latitude_deg = 5.0f; // 5 degrees of latitude uncertainty
+    BCE_SetUncertaintyConfig(&uc);
+
+    SensorFrame f = makeDefaultFrame(10000 * 400);
+    f.mag_y = 25.0f;
+    f.lrf_range_m = 1000.0f;
+    f.lrf_timestamp_us = f.timestamp_us;
+    f.lrf_valid = true;
+    BCE_Update(&f);
+
+    FiringSolution sol = getSolution();
+    EXPECT_TRUE(sol.uncertainty_valid);
+
+    // Coriolis affects elevation (Eotvos effect) and windage (horizontal Coriolis)
+    EXPECT_GT(sol.sigma_elevation_moa, 0.001f);
+    EXPECT_GT(sol.sigma_windage_moa, 0.001f);
+    EXPECT_GT(sol.uc_var_elev[10], 0.0f);
+    EXPECT_GT(sol.uc_var_wind[10], 0.0f);
+}
+
+TEST_F(UncertaintyTest, LatitudeSigmaIsIgnoredIfCoriolisInactive) {
+    BCE_Init();
+    // Configure standard bullet and zero, but omit BCE_SetLatitude
+    BulletProfile bullet = {};
+    bullet.bc = 0.505f;
+    bullet.drag_model = DragModel::G1;
+    bullet.muzzle_velocity_ms = 792.0f;
+    bullet.mass_grains = 175.0f;
+    bullet.length_mm = 31.2f;
+    bullet.caliber_inches = 0.308f;
+    bullet.twist_rate_inches = 10.0f;
+    bullet.barrel_length_in = 24.0f;
+    bullet.reference_barrel_length_in = 24.0f;
+    bullet.mv_adjustment_factor = 25.0f;
+    BCE_SetBulletProfile(&bullet);
+
+    ZeroConfig zero = {};
+    zero.zero_range_m = 100.0f;
+    zero.sight_height_mm = 38.1f;
+    BCE_SetZeroConfig(&zero);
+
+    stabilizeAHRS();
+    feedRange(1000.0f);
+
+    UncertaintyConfig uc = {};
+    uc.enabled = true;
+    uc.sigma_latitude_deg = 5.0f;
+    BCE_SetUncertaintyConfig(&uc);
+
+    SensorFrame f = makeDefaultFrame(10000 * 400);
+    f.lrf_range_m = 1000.0f;
+    f.lrf_timestamp_us = f.timestamp_us;
+    f.lrf_valid = true;
+    BCE_Update(&f);
+
+    FiringSolution sol = getSolution();
+    EXPECT_TRUE(sol.uncertainty_valid);
+    // Should have exactly 0 contribution from latitude (index 10)
+    EXPECT_EQ(sol.uc_var_elev[10], 0.0f);
+    EXPECT_EQ(sol.uc_var_wind[10], 0.0f);
 }
 

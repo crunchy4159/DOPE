@@ -30,7 +30,7 @@ float DragModelLookup::interpolate(const DragPoint* table, int size, float mach)
     // Clamp above maximum
     if (mach >= table[size - 1].mach) return table[size - 1].cd;
 
-    // Binary search for the correct interval
+    // Binary search for the correct interval    [MATH §5.1]
     int lo = 0, hi = size - 1;
     while (hi - lo > 1) {
         int mid = (lo + hi) / 2;
@@ -41,16 +41,17 @@ float DragModelLookup::interpolate(const DragPoint* table, int size, float mach)
         }
     }
 
-    // Linear interpolation between table[lo] and table[hi]
+    // Linear interpolation between table[lo] and table[hi]    [MATH §5.1]
     float frac = (mach - table[lo].mach) / (table[hi].mach - table[lo].mach);
-    return table[lo].cd + frac * (table[hi].cd - table[lo].cd);
+    return table[lo].cd + frac * (table[hi].cd - table[lo].cd); // [MATH §5.1]
 }
 
 float DragModelLookup::getDeceleration(float velocity_ms, float speed_of_sound,
                                         float bc_corrected, DragModel model,
                                         float air_density) {
-    if (velocity_ms < 1.0f) return 0.0f;
-    if (bc_corrected < 0.001f) return 0.0f;
+    if (!std::isfinite(velocity_ms) || velocity_ms < 1.0f) return 0.0f;
+    if (!std::isfinite(speed_of_sound) || speed_of_sound <= 1.0f) return 0.0f;
+    if (!std::isfinite(bc_corrected) || bc_corrected < 0.001f) return 0.0f;
 
     float mach = velocity_ms / speed_of_sound;
     float cd = getCd(model, mach);
@@ -86,9 +87,13 @@ float DragModelLookup::getDeceleration(float velocity_ms, float speed_of_sound,
     //
     // Where C_bal ≈ 731.86 converts BC (lb/in²) to SI retardation constant
 
-    float density_ratio = air_density / BCE_STD_AIR_DENSITY;
+    float density = air_density;
+    if (!std::isfinite(density) || density <= 0.0f) {
+        density = BCE_STD_AIR_DENSITY;
+    }
+    float density_ratio = density / BCE_STD_AIR_DENSITY; // [MATH §5.2]
     float decel = (cd * density_ratio * velocity_ms * velocity_ms) /
-                  (bc_corrected * BCE_BALLISTIC_DRAG_CONSTANT);
+                  (bc_corrected * BCE_BALLISTIC_DRAG_CONSTANT); // [MATH §5.2]
 
     return decel;
 }
