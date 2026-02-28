@@ -2,7 +2,7 @@
 
 # DOPE — Digital Optical Performance Engine
 
-## Version 1.33 — DRAFT
+## Version 1.5 — DRAFT
 
 **Date:** 2026-02-27  
 **Language Target:** C++17  
