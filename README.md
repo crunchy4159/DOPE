@@ -1,8 +1,8 @@
-# DOPE-ASS
+# DOPE
 
-**Digital Optic Precision Engine — Adaptive Smart Scope**
+**Digital Open-Source Precise Extrapolator**
 
-Ballistic Core Engine (BCE) implementing the DOPE SRS v1.33 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
+Ballistic Core Engine (BCE) implementing the DOPE SRS v1.6 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
 
 ## What It Does
 
