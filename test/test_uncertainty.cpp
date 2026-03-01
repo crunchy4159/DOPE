@@ -92,6 +92,51 @@ protected:
     }
 };
 
+TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
+    configureStandard308();
+    stabilizeAHRS();
+    feedRange(500.0f);
+
+    UncertaintyConfig uc = {};
+    BCE_GetDefaultUncertaintyConfig(&uc);
+    uc.enabled = true;
+    BCE_SetUncertaintyConfig(&uc);
+
+    SensorFrame f = makeDefaultFrame(10000 * 400);
+    f.lrf_range_m = 500.0f;
+    f.lrf_timestamp_us = f.timestamp_us;
+    f.lrf_valid = true;
+    BCE_Update(&f);
+
+    FiringSolution base = getSolution();
+    ASSERT_TRUE(base.uncertainty_valid);
+    const float base_radius =
+        std::sqrt(base.sigma_elevation_moa * base.sigma_elevation_moa +
+                  base.sigma_windage_moa * base.sigma_windage_moa);
+    ASSERT_GT(base_radius, 0.001f);
+
+    const float target_factor = 1.8f;
+    const float target_cep50_moa = base_radius * target_factor * 1.17741f; // CEP50 -> 1-sigma
+    BCE_CEPPoint cep_point = {500.0f, target_cep50_moa};
+    uc.use_cartridge_cep_table = true;
+    uc.cartridge_cep_table = {&cep_point, 1};
+    uc.cartridge_cep_scale_floor = 1.0f;
+    BCE_SetUncertaintyConfig(&uc);
+
+    SensorFrame f2 = makeDefaultFrame(10000 * 500);
+    f2.lrf_range_m = 500.0f;
+    f2.lrf_timestamp_us = f2.timestamp_us;
+    f2.lrf_valid = true;
+    BCE_Update(&f2);
+
+    FiringSolution scaled = getSolution();
+    ASSERT_TRUE(scaled.uncertainty_valid);
+    const float scaled_radius =
+        std::sqrt(scaled.sigma_elevation_moa * scaled.sigma_elevation_moa +
+                  scaled.sigma_windage_moa * scaled.sigma_windage_moa);
+    EXPECT_NEAR(scaled_radius, base_radius * target_factor, base_radius * 0.2f);
+}
+
 // --- Zero sigma tests ---
 
 TEST_F(UncertaintyTest, AllZeroSigmaProducesZeroUncertainty) {

@@ -9,6 +9,12 @@
       { "distance_inches": 0, "velocity_ms": 792.0 }
     ],
     "trajectory_profile": [],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 0.8 },
+      { "range_m": 300.0, "cep50_moa": 1.0 },
+      { "range_m": 800.0, "cep50_moa": 1.3 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 175.0,
     "caliber_inches": 0.308,
     "length_mm": 31.5
@@ -23,6 +29,12 @@
       { "distance_inches": 0, "velocity_ms": 987.0 }
     ],
     "trajectory_profile": [],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 1.0 },
+      { "range_m": 300.0, "cep50_moa": 1.2 },
+      { "range_m": 700.0, "cep50_moa": 1.6 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 55.0,
     "caliber_inches": 0.224,
     "length_mm": 19.1
@@ -49,6 +61,12 @@
       { "distance_inches": 14400, "trajectory_inches": -24.1 },
       { "distance_inches": 18000, "trajectory_inches": -49.3 }
     ],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 0.9 },
+      { "range_m": 500.0, "cep50_moa": 1.1 },
+      { "range_m": 900.0, "cep50_moa": 1.5 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 75.0,
     "caliber_inches": 0.224,
     "length_mm": 26.1
@@ -63,6 +81,12 @@
       { "distance_inches": 0, "velocity_ms": 823.0 }
     ],
     "trajectory_profile": [],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 0.7 },
+      { "range_m": 500.0, "cep50_moa": 0.9 },
+      { "range_m": 1100.0, "cep50_moa": 1.2 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 140.0,
     "caliber_inches": 0.264,
     "length_mm": 35.4
@@ -77,6 +101,12 @@
       { "distance_inches": 0, "velocity_ms": 884.0 }
     ],
     "trajectory_profile": [],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 0.75 },
+      { "range_m": 600.0, "cep50_moa": 1.0 },
+      { "range_m": 1200.0, "cep50_moa": 1.4 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 190.0,
     "caliber_inches": 0.308,
     "length_mm": 35.3
@@ -91,6 +121,12 @@
       { "distance_inches": 0, "velocity_ms": 360.0 }
     ],
     "trajectory_profile": [],
+    "cep_table_moa": [
+      { "range_m": 25.0,  "cep50_moa": 1.5 },
+      { "range_m": 50.0,  "cep50_moa": 1.8 },
+      { "range_m": 100.0, "cep50_moa": 2.2 }
+    ],
+    "cep_scale_floor": 1.0,
     "mass_grains": 124.0,
     "caliber_inches": 0.355,
     "length_mm": 15.7

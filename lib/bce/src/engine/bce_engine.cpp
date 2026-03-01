@@ -17,6 +17,7 @@
 namespace {
 constexpr float BCE_LRF_FILTER_ALPHA = 0.2f;
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
+constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
 
 float InterpolatePiecewiseSigma(const BCE_ErrorTable& table, float x) {
     if (!table.points || table.count <= 0)
@@ -37,6 +38,28 @@ float InterpolatePiecewiseSigma(const BCE_ErrorTable& table, float x) {
         }
     }
     return table.points[table.count - 1].sigma;
+}
+
+float InterpolateCEP(const BCE_CEPTable& table, float range_m) {
+    if (!table.points || table.count <= 0)
+        return 0.0f;
+    if (table.count == 1)
+        return table.points[0].cep50_moa;
+    if (range_m <= table.points[0].range_m)
+        return table.points[0].cep50_moa;
+    if (range_m >= table.points[table.count - 1].range_m)
+        return table.points[table.count - 1].cep50_moa;
+    for (int i = 0; i < table.count - 1; ++i) {
+        if (range_m <= table.points[i + 1].range_m) {
+            const float dx = table.points[i + 1].range_m - table.points[i].range_m;
+            if (dx <= 0.0f)
+                return table.points[i + 1].cep50_moa;
+            const float t = (range_m - table.points[i].range_m) / dx;
+            return table.points[i].cep50_moa +
+                   t * (table.points[i + 1].cep50_moa - table.points[i].cep50_moa);
+        }
+    }
+    return table.points[table.count - 1].cep50_moa;
 }
 } // namespace
 
@@ -645,6 +668,9 @@ void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     out->pressure_is_calibrated = false;
     out->pressure_has_calibration_temp = false;
     out->pressure_calibration_temp_c = 0.0f;
+    out->use_cartridge_cep_table = false;
+    out->cartridge_cep_table = {nullptr, 0};
+    out->cartridge_cep_scale_floor = 1.0f;
 }
 
 void BCE_Engine::refreshDerivedSigmasFromProfiles() {
@@ -1121,6 +1147,36 @@ void BCE_Engine::computeUncertainty() {
         pp.muzzle_velocity_ms = std::fmax(1.0f, (base_mv_fps + barrel_delta_in * adj_p) * 0.3048f);
         pm.muzzle_velocity_ms = std::fmax(1.0f, (base_mv_fps + barrel_delta_in * adj_m) * 0.3048f);
         accumulate(pp, pm);
+    }
+
+    // Optional cartridge dispersion scaling (CEP50 table). Converts CEP50 radius to 1-sigma
+    // radial and scales all variances to match while preserving axis ratios.
+    float cep_scale = 1.0f;
+    const float base_sigma_radius = std::sqrt(std::fmax(0.0f, var_e + var_w));
+    if (uncertainty_config_.use_cartridge_cep_table && base_sigma_radius > 0.0f &&
+        uncertainty_config_.cartridge_cep_table.points != nullptr &&
+        uncertainty_config_.cartridge_cep_table.count > 0) {
+        const float cep_moa = InterpolateCEP(uncertainty_config_.cartridge_cep_table, range);
+        if (std::isfinite(cep_moa) && cep_moa > 0.0f) {
+            const float sigma_target = cep_moa / kCep50ToSigma;
+            if (std::isfinite(sigma_target) && sigma_target > 0.0f) {
+                cep_scale = sigma_target / base_sigma_radius;
+                if (uncertainty_config_.cartridge_cep_scale_floor > 0.0f) {
+                    cep_scale = std::fmax(cep_scale, uncertainty_config_.cartridge_cep_scale_floor);
+                }
+            }
+        }
+    }
+
+    if (cep_scale != 1.0f && cep_scale > 0.0f) {
+        const float s2 = cep_scale * cep_scale;
+        var_e *= s2;
+        var_w *= s2;
+        cov_ew *= s2;
+        for (int i = 0; i < FiringSolution::kNumUncertaintyInputs; ++i) {
+            solution_.uc_var_elev[i] *= s2;
+            solution_.uc_var_wind[i] *= s2;
+        }
     }
 
     solution_.sigma_elevation_moa = std::sqrt(var_e); // [MATH §16.2]

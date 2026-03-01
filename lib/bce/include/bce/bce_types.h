@@ -249,6 +249,28 @@ struct BCE_ErrorTable {
 };
 
 // ---------------------------------------------------------------------------
+// Cartridge accuracy (CEP50) table — range-dependent dispersion model
+// ---------------------------------------------------------------------------
+/**
+ * @brief A single breakpoint mapping range to CEP50 radius in MOA.
+ */
+struct BCE_CEPPoint {
+    float range_m;
+    float cep50_moa; // CEP50 radius (MOA)
+};
+
+/**
+ * @brief A reference to an array of CEP breakpoints.
+ *
+ * The engine treats CEP50 radii as a target dispersion envelope and scales the
+ * computed uncertainty to match, preserving directional variance ratios.
+ */
+struct BCE_CEPTable {
+    const BCE_CEPPoint* points;
+    int                 count;
+};
+
+// ---------------------------------------------------------------------------
 // Uncertainty / Error Propagation Config — SRS §14
 // ---------------------------------------------------------------------------
 /**
@@ -296,6 +318,12 @@ struct UncertaintyConfig {
     bool          pressure_is_calibrated;
     bool          pressure_has_calibration_temp;
     float         pressure_calibration_temp_c;
+
+    // Optional cartridge-specific dispersion model (CEP50 in MOA) to scale
+    // propagated uncertainty at each range.  Disabled when table is null/empty.
+    bool         use_cartridge_cep_table;
+    BCE_CEPTable cartridge_cep_table; // x = range_m, cep50_moa = CEP radius (MOA)
+    float        cartridge_cep_scale_floor; // minimum multiplicative scale (>=1 recommended)
 };
 
 // ---------------------------------------------------------------------------

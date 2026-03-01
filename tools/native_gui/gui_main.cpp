@@ -12,6 +12,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -98,6 +99,8 @@ struct CartridgePreset {
     std::vector<std::pair<float,float>> velocity_profile; // (distance_inches, velocity_ms)
     std::vector<std::pair<float,float>> trajectory_profile; // (distance_inches, trajectory_inches)
     std::vector<std::string> tags; // e.g. ["match","hpbt"]
+    std::vector<std::pair<float,float>> cep_table_moa; // (range_m, cep50_moa)
+    float cep_scale_floor = 1.0f;
 };
 
 struct GunPreset {
@@ -327,6 +330,8 @@ struct GuiState {
 
     // Uncertainty / error-margin config (initialized from BCE_GetDefaultUncertaintyConfig).
     UncertaintyConfig uc_config = {};
+    std::vector<BCE_CEPPoint> cartridge_cep_points; // range_m, cep50_moa
+    float cartridge_cep_scale_floor = 1.0f;
 
     // Hardware sensor preset indices (0 = Custom/manual).
     int hw_barometer_index = kBarometerDefaultIndex;
@@ -507,6 +512,17 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                     p.trajectory_profile.emplace_back(dist, traj);
                 }
             }
+            // cartridge CEP (optional)
+            p.cep_table_moa.clear();
+            const auto cep_it = e.find("cep_table_moa");
+            if (cep_it != e.end() && cep_it->is_array()) {
+                for (const auto& cp : *cep_it) {
+                    const float rng = cp.value("range_m", 0.0f);
+                    const float cep = cp.value("cep50_moa", 0.0f);
+                    p.cep_table_moa.emplace_back(rng, cep);
+                }
+            }
+            p.cep_scale_floor = e.value("cep_scale_floor", 1.0f);
             SanitizeCartridgePreset(p);
             tmp.push_back(p);
         }
@@ -852,6 +868,31 @@ void SyncDerivedInputUncertaintySigmas() {
         const float delta_temp_c = std::fabs(g_state.baro_temp - g_state.baro_calibration_temp_c);
         g_state.uc_config.sigma_pressure_pa = BCE_InterpolateSigma(baro_table, delta_temp_c);
     }
+
+    g_state.cartridge_cep_points.erase(
+        std::remove_if(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
+                       [](const BCE_CEPPoint& p) { return p.range_m <= 0.0f || p.cep50_moa <= 0.0f; }),
+        g_state.cartridge_cep_points.end());
+    std::sort(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
+              [](const BCE_CEPPoint& a, const BCE_CEPPoint& b) { return a.range_m < b.range_m; });
+    g_state.cartridge_cep_points.erase(
+        std::unique(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
+                    [](const BCE_CEPPoint& a, const BCE_CEPPoint& b) { return a.range_m == b.range_m; }),
+        g_state.cartridge_cep_points.end());
+
+    if (!std::isfinite(g_state.cartridge_cep_scale_floor) || g_state.cartridge_cep_scale_floor <= 0.0f)
+        g_state.cartridge_cep_scale_floor = 1.0f;
+
+    g_state.uc_config.cartridge_cep_scale_floor = g_state.cartridge_cep_scale_floor;
+    const bool have_cep_table = g_state.uc_config.use_cartridge_cep_table &&
+                                !g_state.cartridge_cep_points.empty();
+    if (have_cep_table) {
+        g_state.uc_config.cartridge_cep_table = {g_state.cartridge_cep_points.data(),
+                                                 static_cast<int>(g_state.cartridge_cep_points.size())};
+    } else {
+        g_state.uc_config.cartridge_cep_table = {nullptr, 0};
+        g_state.uc_config.use_cartridge_cep_table = false;
+    }
 }
 
 void SanitizeCartridgePreset(CartridgePreset& preset) {
@@ -884,6 +925,23 @@ void SanitizeCartridgePreset(CartridgePreset& preset) {
         if (!std::isfinite(p.first)) p.first = 0.0f;
         if (!std::isfinite(p.second)) p.second = 0.0f;
     }
+    auto& cep = preset.cep_table_moa;
+    for (auto& p : cep) {
+        if (!std::isfinite(p.first) || p.first < 0.0f)
+            p.first = 0.0f;
+        if (!std::isfinite(p.second) || p.second < 0.0f)
+            p.second = 0.0f;
+    }
+    cep.erase(std::remove_if(cep.begin(), cep.end(), [](const std::pair<float, float>& p) {
+                  return p.first <= 0.0f || p.second <= 0.0f;
+              }),
+              cep.end());
+    std::sort(cep.begin(), cep.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    cep.erase(std::unique(cep.begin(), cep.end(),
+                          [](const auto& a, const auto& b) { return a.first == b.first; }),
+              cep.end());
+    if (!std::isfinite(preset.cep_scale_floor) || preset.cep_scale_floor <= 0.0f)
+        preset.cep_scale_floor = 1.0f;
     preset.mass_grains = ClampValue(preset.mass_grains, 20.0f, 1200.0f);
     preset.caliber_inches = ClampValue(std::fabs(preset.caliber_inches), 0.10f, 1.00f);
     preset.length_mm = ClampValue(preset.length_mm, 5.0f, 100.0f);
@@ -927,6 +985,16 @@ json SerializeCartridgePreset(const CartridgePreset& input) {
         tp["trajectory_inches"] = p.second;
         item["trajectory_profile"].push_back(tp);
     }
+    if (!preset.cep_table_moa.empty()) {
+        item["cep_table_moa"] = json::array();
+        for (const auto& p : preset.cep_table_moa) {
+            json cp;
+            cp["range_m"] = p.first;
+            cp["cep50_moa"] = p.second;
+            item["cep_table_moa"].push_back(cp);
+        }
+    }
+    item["cep_scale_floor"] = preset.cep_scale_floor;
     item["mass_grains"] = preset.mass_grains;
     item["caliber_inches"] = preset.caliber_inches;
     item["length_mm"] = preset.length_mm;
@@ -1126,6 +1194,11 @@ void ResetStateDefaults() {
     g_state.length_error_preset_index = kLengthErrorDefaultIndex;
     g_state.caliber_error_preset_index = kCaliberErrorDefaultIndex;
     BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
+    g_state.cartridge_cep_points.clear();
+    g_state.cartridge_cep_scale_floor = 1.0f;
+    g_state.uc_config.use_cartridge_cep_table = false;
+    g_state.uc_config.cartridge_cep_table = {nullptr, 0};
+    g_state.uc_config.cartridge_cep_scale_floor = 1.0f;
     SyncDerivedInputUncertaintySigmas();
     std::snprintf(g_state.preset_path, sizeof(g_state.preset_path), "%s", "bce_gui_preset.json");
     std::snprintf(g_state.profile_library_path, sizeof(g_state.profile_library_path), "%s",
@@ -1429,6 +1502,12 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
     if (normalized.reference_barrel_inches > 0.0f) {
         g_state.bullet.barrel_length_in = normalized.reference_barrel_inches;
     }
+    g_state.cartridge_cep_points.clear();
+    for (const auto& pt : normalized.cep_table_moa) {
+        g_state.cartridge_cep_points.push_back({pt.first, pt.second});
+    }
+    g_state.cartridge_cep_scale_floor = normalized.cep_scale_floor;
+    g_state.uc_config.use_cartridge_cep_table = !g_state.cartridge_cep_points.empty();
     g_state.override_drag_coefficient = true;
     g_state.manual_drag_coefficient = normalized.bc;
     EnsureSelectedGunPresetMatchesCurrentCaliber();
@@ -1460,6 +1539,11 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
     preset.mass_grains = g_state.bullet.mass_grains;
     preset.caliber_inches = g_state.bullet.caliber_inches;
     preset.length_mm = g_state.bullet.length_mm;
+    preset.cep_table_moa.clear();
+    for (const auto& pt : g_state.cartridge_cep_points) {
+        preset.cep_table_moa.emplace_back(pt.range_m, pt.cep50_moa);
+    }
+    preset.cep_scale_floor = g_state.cartridge_cep_scale_floor;
     // attach tags from current UI selections where applicable
     preset.tags.clear();
     if (g_state.new_cartridge_tier_index >= 0 && g_state.new_cartridge_tier_index < kNumBulletTiers)
@@ -1701,6 +1785,17 @@ void SavePreset() {
     j["uc_sigma_twist_inches"] = g_state.uc_config.sigma_twist_rate_inches;
     j["uc_sigma_zero_range_m"] = g_state.uc_config.sigma_zero_range_m;
     j["uc_sigma_mv_adj_fps_per_in"] = g_state.uc_config.sigma_mv_adjustment_fps_per_in;
+    j["uc_use_cartridge_cep_table"] = g_state.uc_config.use_cartridge_cep_table;
+    j["uc_cartridge_cep_scale_floor"] = g_state.cartridge_cep_scale_floor;
+    if (!g_state.cartridge_cep_points.empty()) {
+        j["uc_cartridge_cep_table"] = json::array();
+        for (const auto& pt : g_state.cartridge_cep_points) {
+            json cp;
+            cp["range_m"] = pt.range_m;
+            cp["cep50_moa"] = pt.cep50_moa;
+            j["uc_cartridge_cep_table"].push_back(cp);
+        }
+    }
     j["hw_barometer_index"] = g_state.hw_barometer_index;
     j["hw_lrf_index"] = g_state.hw_lrf_index;
     j["hw_cant_index"] = g_state.hw_cant_index;
@@ -1840,6 +1935,18 @@ void LoadPreset() {
             j.value("uc_sigma_zero_range_m", uc_def.sigma_zero_range_m);
         g_state.uc_config.sigma_mv_adjustment_fps_per_in =
             j.value("uc_sigma_mv_adj_fps_per_in", uc_def.sigma_mv_adjustment_fps_per_in);
+
+        g_state.cartridge_cep_points.clear();
+        if (j.contains("uc_cartridge_cep_table") && j["uc_cartridge_cep_table"].is_array()) {
+            for (const auto& cp : j["uc_cartridge_cep_table"]) {
+                const float rng = cp.value("range_m", 0.0f);
+                const float cep = cp.value("cep50_moa", 0.0f);
+                g_state.cartridge_cep_points.push_back({rng, cep});
+            }
+        }
+        g_state.cartridge_cep_scale_floor = j.value("uc_cartridge_cep_scale_floor", 1.0f);
+        g_state.uc_config.use_cartridge_cep_table =
+            j.value("uc_use_cartridge_cep_table", !g_state.cartridge_cep_points.empty());
 
         // Hardware sensor selections (backwards-compatible: 0 = Custom)
         g_state.hw_barometer_index = j.value("hw_barometer_index", kBarometerDefaultIndex);
@@ -2468,6 +2575,69 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
             }
         }
+
+        // Cartridge accuracy: CEP50 (MOA) vs range table and scaling floor
+        {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Cartridge Accuracy (CEP50 scaling)");
+            bool cep_enabled = g_state.uc_config.use_cartridge_cep_table;
+            if (ImGui::Checkbox("Enable CEP scaling", &cep_enabled)) {
+                g_state.uc_config.use_cartridge_cep_table = cep_enabled;
+                SyncDerivedInputUncertaintySigmas();
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
+            if (ImGui::InputFloat("Min scale", &g_state.cartridge_cep_scale_floor, 0.0f, 0.0f,
+                                  "%.2f")) {
+                if (!std::isfinite(g_state.cartridge_cep_scale_floor) ||
+                    g_state.cartridge_cep_scale_floor <= 0.0f) {
+                    g_state.cartridge_cep_scale_floor = 1.0f;
+                }
+                SyncDerivedInputUncertaintySigmas();
+            }
+            ImGui::TextDisabled("CEP50 radius table (MOA vs range m)");
+            for (size_t i = 0; i < g_state.cartridge_cep_points.size(); ++i) {
+                auto& pt = g_state.cartridge_cep_points[i];
+                ImGui::PushID(static_cast<int>(i));
+                float range_val = pt.range_m;
+                float cep_val = pt.cep50_moa;
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
+                if (ImGui::InputFloat("Range (m)", &range_val, 0.0f, 0.0f, "%.1f")) {
+                    pt.range_m = std::fmax(0.0f, range_val);
+                    SyncDerivedInputUncertaintySigmas();
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
+                if (ImGui::InputFloat("CEP50 (MOA)", &cep_val, 0.0f, 0.0f, "%.3f")) {
+                    pt.cep50_moa = std::fmax(0.0f, cep_val);
+                    SyncDerivedInputUncertaintySigmas();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Remove")) {
+                    g_state.cartridge_cep_points.erase(g_state.cartridge_cep_points.begin() +
+                                                       static_cast<long long>(i));
+                    SyncDerivedInputUncertaintySigmas();
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            static float new_cep_range = 100.0f;
+            static float new_cep_moa = 1.0f;
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
+            ImGui::InputFloat("Add Range (m)", &new_cep_range, 0.0f, 0.0f, "%.1f");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
+            ImGui::InputFloat("Add CEP50 (MOA)", &new_cep_moa, 0.0f, 0.0f, "%.3f");
+            ImGui::SameLine();
+            if (ImGui::Button("Add CEP Point")) {
+                if (new_cep_range > 0.0f && new_cep_moa > 0.0f) {
+                    g_state.cartridge_cep_points.push_back({new_cep_range, new_cep_moa});
+                    SyncDerivedInputUncertaintySigmas();
+                }
+            }
+        }
+
         float wind_display =
             is_imperial ? (g_state.wind_speed_ms * MPS_TO_MPH) : g_state.wind_speed_ms;
         {

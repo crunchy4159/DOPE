@@ -8,6 +8,8 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
 $script:RunnerType = $null
+$script:RunnerPath = $null
+$venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
 
 function Test-PlatformIoModule {
     param([string]$PythonCmd)
@@ -20,22 +22,42 @@ function Test-PlatformIoModule {
     }
 }
 
-if (Get-Command pio -ErrorAction SilentlyContinue) {
+if (-not $script:RunnerType -and (Test-Path $venvPython -PathType Leaf)) {
+    if (Test-PlatformIoModule -PythonCmd $venvPython) {
+        $script:RunnerType = "venv-python"
+        $script:RunnerPath = $venvPython
+    }
+}
+
+if (-not $script:RunnerType -and (Get-Command pio -ErrorAction SilentlyContinue)) {
     $script:RunnerType = "pio"
-} elseif (Get-Command platformio -ErrorAction SilentlyContinue) {
+    $script:RunnerPath = "pio"
+}
+
+if (-not $script:RunnerType -and (Get-Command platformio -ErrorAction SilentlyContinue)) {
     $script:RunnerType = "platformio"
-} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $script:RunnerPath = "platformio"
+}
+
+if (-not $script:RunnerType -and (Get-Command py -ErrorAction SilentlyContinue)) {
     if (Test-PlatformIoModule -PythonCmd "py") {
         $script:RunnerType = "py-module"
+        $script:RunnerPath = "py"
     }
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+}
+
+if (-not $script:RunnerType -and (Get-Command python -ErrorAction SilentlyContinue)) {
     if (Test-PlatformIoModule -PythonCmd "python") {
         $script:RunnerType = "python-module"
+        $script:RunnerPath = "python"
     }
 }
 
 function Invoke-PlatformIoBuild {
     switch ($script:RunnerType) {
+        "venv-python" {
+            & $script:RunnerPath -m platformio run -e native_gui
+        }
         "pio" {
             & pio run -e native_gui
         }
@@ -43,10 +65,10 @@ function Invoke-PlatformIoBuild {
             & platformio run -e native_gui
         }
         "py-module" {
-            & py -m platformio run -e native_gui
+            & $script:RunnerPath -m platformio run -e native_gui
         }
         "python-module" {
-            & python -m platformio run -e native_gui
+            & $script:RunnerPath -m platformio run -e native_gui
         }
         default {
             throw "No PlatformIO runner available."
@@ -65,7 +87,11 @@ if (-not $script:RunnerType) {
     exit 1
 }
 
-Write-Host "Using PlatformIO runner: $script:RunnerType"
+if ($script:RunnerPath) {
+    Write-Host "Using PlatformIO runner: $script:RunnerType ($script:RunnerPath)"
+} else {
+    Write-Host "Using PlatformIO runner: $script:RunnerType"
+}
 
 if (-not $NoBuild) {
     Write-Host "Building native_gui..." -ForegroundColor Cyan

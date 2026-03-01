@@ -212,6 +212,7 @@ Suggested order for safe tuning:
 - Current table-like cartridge presets live in:
     - GUI harness: `tools/native_gui/gui_main.cpp` (input prefill only)
     - Tests: `test/test_cartridges.cpp` and reference-envelope integration tests
+- Presets can now carry range-dependent CEP50 accuracy tables (`cep_table_moa`) and a scale floor; when provided and enabled in the GUI, the engine scales propagated uncertainty to match the CEP envelope at each range.
 - Keep this boundary intact: if cartridge presets are updated, use them to verify outputs, not as embedded runtime engine data.
 - For crowd testing, share GUI profile-library JSON files and compare solver outputs under known conditions.
 
