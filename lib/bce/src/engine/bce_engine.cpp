@@ -221,10 +221,14 @@ void BCE_Engine::update(const SensorFrame* frame) {
         }
     }
 
-    // --- 4. Zoom encoder — not yet consumed by engine
-    // encoder_focal_length_mm / encoder_valid are reserved for a future camera
-    // pipeline.  When active, the caller should supply FOV via setFOV().
-    // Until then fov_h/v_deg_ stay 0.0f.
+    // --- 4. Zoom encoder → FOV computation — SRS §7.5    [MATH §14.4]
+    if (frame->encoder_valid && frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
+        float f = frame->encoder_focal_length_mm;
+        fov_h_deg_ =
+            2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
+        fov_v_deg_ =
+            2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
+    }
 
     // --- 5. Evaluate state and compute solution ---
     evaluateState(now_us);

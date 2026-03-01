@@ -1,5 +1,5 @@
 /**
- * @file bce_config.h
+ * @file dope_config.h
  * @brief Compile-time constants and ISA defaults for the Ballistic Core Engine.
  *
  * BCE SRS v1.3 — Sections 4, 5, 6
@@ -65,18 +65,6 @@ constexpr float BCE_STD_PRESSURE_PA = 101325.0f;
 // Kelvin offset
 constexpr float BCE_KELVIN_OFFSET = 273.15f;
 
-// Pi
-constexpr float BCE_PI = 3.14159265358979323846f;
-
-// Conversion helpers
-constexpr float BCE_DEG_TO_RAD = BCE_PI / 180.0f;
-constexpr float BCE_RAD_TO_DEG = 180.0f / BCE_PI;
-constexpr float BCE_MOA_TO_RAD = BCE_PI / (180.0f * 60.0f);
-constexpr float BCE_RAD_TO_MOA = (180.0f * 60.0f) / BCE_PI;
-constexpr float BCE_GRAINS_TO_KG = 6.479891e-5f;
-constexpr float BCE_INCHES_TO_M  = 0.0254f;
-constexpr float BCE_MM_TO_M      = 0.001f;
-
 // Dynamic-stability (SG) coupling into drag model.
 // Effective drag scale is:
 //   1 + BCE_SG_DRAG_COUPLING_GAIN * (BCE_SG_REFERENCE - SG)
@@ -90,7 +78,7 @@ constexpr float BCE_SG_DRAG_SCALE_MAX     = 1.040f;
 // These also serve as fallback member-initialiser values in madgwick.h /
 // mahony.h / ahrs_manager.h.  Runtime overrides are applied via
 // BCE_SetAHRSConfig() / BCE_SetLRFConfig() (see BCE_AHRSConfig / BCE_LRFConfig
-// in bce_types.h); the constants below remain the defaults when those calls
+// in dope_types.h); the constants below remain the defaults when those calls
 // are never made.
 constexpr float    BCE_MADGWICK_DEFAULT_BETA   = 0.1f;
 constexpr float    BCE_MAHONY_DEFAULT_KP       = 2.0f;
@@ -107,12 +95,6 @@ constexpr uint32_t BCE_LRF_STALE_US            = 2000000u; // 2 seconds
 
 // Minimum velocity before solver terminates (m/s)
 constexpr float BCE_MIN_VELOCITY = 30.0f;
-
-// Ballistic drag conversion constant used by the point-mass retardation model.
-// This is a legacy tuning parameter from an older model and is not physically
-// based. It is retained for compatibility but should not be modified without
-// re-validating the entire system.
-constexpr float BCE_BALLISTIC_DRAG_CONSTANT = 900.0f;
 
 // External-reference calibration mode applies a drag scale below 1.0 to
 // reduce modeled retardation while preserving legacy default behavior.

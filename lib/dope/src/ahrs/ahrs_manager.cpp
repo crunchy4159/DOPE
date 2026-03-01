@@ -25,9 +25,6 @@ void AHRSManager::setAlgorithm(AHRS_Algorithm algo) {
 void AHRSManager::applyConfig(const BCE_AHRSConfig& config) {
     madgwick_.setBeta(config.madgwick_beta);
     mahony_.setGains(config.mahony_kp, config.mahony_ki);
-    // static_threshold_mss2 is stored by the engine and compared in
-    // updateStaticDetection; we apply it here so the caller can drive it
-    // through BCE_SetAHRSConfig without rebuilding.
     static_threshold_ = config.static_threshold_mss2;
 }
 

@@ -10,8 +10,8 @@
 
 #include "madgwick.h"
 #include "mahony.h"
-#include "bce/bce_config.h"
-#include "bce/bce_types.h"
+#include "dope/dope_config.h"
+#include "dope/dope_types.h"
 
 class AHRSManager {
 public:
