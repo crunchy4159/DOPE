@@ -42,6 +42,8 @@ public:
     void calibrateBaro();
     void calibrateGyro();
     void setAHRSAlgorithm(AHRS_Algorithm algo);
+    void setAHRSConfig(const BCE_AHRSConfig* config);
+    void setLRFConfig(const BCE_LRFConfig* config);
     void setMagDeclination(float declination_deg);
     void setExternalReferenceMode(bool enabled);
 
@@ -121,6 +123,10 @@ private:
 
     // Uncertainty / error propagation config — SRS §14
     UncertaintyConfig uncertainty_config_;
+
+    // Hardware configs — populated by caller via BCE_SetAHRSConfig / BCE_SetLRFConfig
+    BCE_AHRSConfig ahrs_config_;
+    BCE_LRFConfig  lrf_config_;
 
     // Latest internal barometer temperature sample (from SensorFrame).
     float latest_baro_temp_c_ = 0.0f;

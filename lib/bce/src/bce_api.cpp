@@ -79,6 +79,14 @@ void BCE_SetAHRSAlgorithm(AHRS_Algorithm algo) {
     s_engine.setAHRSAlgorithm(algo);
 }
 
+void BCE_SetAHRSConfig(const BCE_AHRSConfig* config) {
+    s_engine.setAHRSConfig(config);
+}
+
+void BCE_SetLRFConfig(const BCE_LRFConfig* config) {
+    s_engine.setLRFConfig(config);
+}
+
 void BCE_SetMagDeclination(float declination_deg) {
     s_engine.setMagDeclination(declination_deg);
 }

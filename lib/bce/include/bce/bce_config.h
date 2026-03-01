@@ -86,27 +86,12 @@ constexpr float BCE_SG_DRAG_COUPLING_GAIN = 0.010f;
 constexpr float BCE_SG_DRAG_SCALE_MIN     = 0.985f;
 constexpr float BCE_SG_DRAG_SCALE_MAX     = 1.040f;
 
-// ---------------------------------------------------------------------------
-// AHRS Configuration
-// ---------------------------------------------------------------------------
-
-// Sliding window size for static/dynamic detection (samples)
-constexpr int BCE_AHRS_STATIC_WINDOW = 64;
-
-// Accel variance threshold for static detection (m/s²)²
-constexpr float BCE_AHRS_STATIC_THRESHOLD = 0.05f;
-
-// Default Madgwick beta gain
-constexpr float BCE_MADGWICK_DEFAULT_BETA = 0.1f;
-
-// Default Mahony gains
-constexpr float BCE_MAHONY_DEFAULT_KP = 2.0f;
-constexpr float BCE_MAHONY_DEFAULT_KI = 0.005f;
-
-// ---------------------------------------------------------------------------
-// LRF staleness threshold (microseconds)
-// ---------------------------------------------------------------------------
-constexpr uint32_t BCE_LRF_STALE_US = 2000000; // 2 seconds
+// AHRS tuning (madgwick_beta, mahony_kp/ki, static_window, static_threshold)
+// and LRF hardware parameters (filter_alpha, stale_threshold_us) are
+// hardware-specific.  They are now supplied by the application layer via
+// BCE_SetAHRSConfig() and BCE_SetLRFConfig() using BCE_AHRSConfig /
+// BCE_LRFConfig structs defined in bce_types.h.  The engine holds internal
+// default values used when those calls are not made.
 
 // ---------------------------------------------------------------------------
 // Solver Configuration
@@ -156,15 +141,12 @@ constexpr float BCE_MAG_MIN_FIELD_UT = 20.0f;
 constexpr float BCE_MAG_MAX_FIELD_UT = 70.0f;
 
 // ---------------------------------------------------------------------------
-// Zoom Encoder / Optical FOV — SRS §7.5
+// Zoom Encoder / Optical FOV — SRS §7.5  (future use)
 // ---------------------------------------------------------------------------
 
-// Minimum valid focal length from the encoder (mm). Readings at or below
-// this threshold are treated as invalid and the stored FOV is retained.
-constexpr float BCE_ENCODER_MIN_FOCAL_LENGTH_MM = 0.1f;
-
-// Sensor half-dimensions for the target imaging sensor (IMX477, 1/2.3").
-// Full sensor: 6.287 mm × 4.712 mm  →  half: 3.1435 mm × 2.356 mm.
-// FOV formula: FOV = 2 · atan(half_dimension / focal_length_mm)  (in radians).
-constexpr float BCE_SENSOR_HALF_WIDTH_MM  = 3.1435f;
-constexpr float BCE_SENSOR_HALF_HEIGHT_MM = 2.3560f;
+// Camera sensor dimensions are hardware-specific and NOT embedded in the
+// engine.  The encoder_focal_length_mm / encoder_valid fields in SensorFrame
+// are reserved for future use.  When the camera pipeline is active the caller
+// should compute FOV externally and supply it via BCE_SetFOV() (not yet in
+// the public API).  While inactive the engine keeps fov_h/v_deg_ = 0 and
+// does not consume encoder frames.

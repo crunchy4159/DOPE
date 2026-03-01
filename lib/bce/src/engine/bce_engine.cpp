@@ -15,7 +15,6 @@
 #include <cstring>
 
 namespace {
-constexpr float BCE_LRF_FILTER_ALPHA = 0.2f;
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
 
@@ -64,7 +63,22 @@ float InterpolateCEP(const BCE_CEPTable& table, float range_m) {
 } // namespace
 
 void BCE_Engine::init() {
+    // Set built-in hardware config defaults before initialising subsystems.
+    // These values are used when the application never calls BCE_SetAHRSConfig
+    // or BCE_SetLRFConfig.  They are intentionally neutral / conservative —
+    // the application layer should always override them from its hardware
+    // preset tables once the IMU / LRF hardware is known.
+    ahrs_config_ = {0.1f,       // madgwick_beta
+                    2.0f,       // mahony_kp
+                    0.005f,     // mahony_ki
+                    64,         // static_window  (samples)
+                    0.05f};     // static_threshold_mss2 ((m/s²)²)
+
+    lrf_config_ = {0.2f,        // filter_alpha
+                   2000000u};   // stale_threshold_us (2 s)
+
     ahrs_.init();
+    ahrs_.applyConfig(ahrs_config_); // forward defaults to filter objects
     mag_.init();
     atmo_.init();
     solver_.init();
@@ -196,8 +210,8 @@ void BCE_Engine::update(const SensorFrame* frame) {
             } else {
                 // Apply IIR filter    [MATH §14.3]
                 lrf_range_filtered_m_ =
-                    BCE_LRF_FILTER_ALPHA * lrf_range_m +
-                    (1.0f - BCE_LRF_FILTER_ALPHA) * lrf_range_filtered_m_; // [MATH §14.3]
+                    lrf_config_.filter_alpha * lrf_range_m +
+                    (1.0f - lrf_config_.filter_alpha) * lrf_range_filtered_m_; // [MATH §14.3]
             }
             lrf_range_m_ = lrf_range_m;
             lrf_timestamp_us_ = frame->lrf_timestamp_us;
@@ -207,14 +221,10 @@ void BCE_Engine::update(const SensorFrame* frame) {
         }
     }
 
-    // --- 4. Zoom encoder → FOV computation — SRS §7.5    [MATH §14.4]
-    if (frame->encoder_valid && frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
-        float f = frame->encoder_focal_length_mm;
-        fov_h_deg_ =
-            2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
-        fov_v_deg_ =
-            2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
-    }
+    // --- 4. Zoom encoder — not yet consumed by engine
+    // encoder_focal_length_mm / encoder_valid are reserved for a future camera
+    // pipeline.  When active, the caller should supply FOV via setFOV().
+    // Until then fov_h/v_deg_ stay 0.0f.
 
     // --- 5. Evaluate state and compute solution ---
     evaluateState(now_us);
@@ -302,6 +312,17 @@ void BCE_Engine::setAHRSAlgorithm(AHRS_Algorithm algo) {
     ahrs_.setAlgorithm(algo);
 }
 
+void BCE_Engine::setAHRSConfig(const BCE_AHRSConfig* config) {
+    if (!config) return;
+    ahrs_config_ = *config;
+    ahrs_.applyConfig(ahrs_config_);
+}
+
+void BCE_Engine::setLRFConfig(const BCE_LRFConfig* config) {
+    if (!config) return;
+    lrf_config_ = *config;
+}
+
 void BCE_Engine::setMagDeclination(float declination_deg) {
     mag_.setDeclination(declination_deg);
 }
@@ -352,7 +373,7 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     // Check hard faults — SRS §13
     if (!has_range_) {
         fault_flags_ |= BCE_Fault::NO_RANGE;
-    } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > BCE_LRF_STALE_US) {
+    } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > lrf_config_.stale_threshold_us) {
         // LRF stale — not a hard fault, but range is invalid
         has_range_ = false;
         fault_flags_ |= BCE_Fault::NO_RANGE;
@@ -650,7 +671,8 @@ void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     out->sigma_pressure_pa = 5.0f;              // 5 Pa pressure
     out->sigma_humidity = 0.05f;                // 5 % relative humidity
     out->sigma_sight_height_mm = 0.075f;        // updated default sight-height mounting error
-    out->sigma_cant_deg = 1.5f;                 // 1.5 ° cant / roll — RM3100 magnetometer default
+    out->sigma_cant_deg = 1.5f;                 // 1.5° generic starting value; caller should
+                                                 // override from hardware preset (e.g. IMU datasheet)
     out->sigma_latitude_deg = 0.0f;             // latitude error (disabled by default)
     out->sigma_mass_grains = 0.5f;              // ~0.5 gr lot/measurement spread
     out->sigma_length_mm = 0.1f;                // ~0.1 mm OAL measurement spread

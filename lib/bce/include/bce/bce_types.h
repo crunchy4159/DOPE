@@ -151,6 +151,32 @@ struct ZeroConfig {
 };
 
 // ---------------------------------------------------------------------------
+// AHRS Tuning Configuration
+//
+// IMU-hardware-specific parameters that must be supplied by the application
+// layer (GUI / firmware) from its hardware preset tables.  If BCE_SetAHRSConfig
+// is never called the engine starts with built-in neutral defaults.
+// ---------------------------------------------------------------------------
+struct BCE_AHRSConfig {
+    float    madgwick_beta;           // Madgwick gradient-descent gain (hardware-tuned)
+    float    mahony_kp;               // Mahony proportional gain       (hardware-tuned)
+    float    mahony_ki;               // Mahony integral gain           (hardware-tuned)
+    int      static_window;           // Ring-buffer size for static detect (samples, clamped 1-64)
+    float    static_threshold_mss2;   // Accel variance threshold for static detect ((m/s²)²)
+};
+
+// ---------------------------------------------------------------------------
+// LRF Hardware Configuration
+//
+// LRF-hardware-specific parameters supplied by the application layer.
+// If BCE_SetLRFConfig is never called the engine uses built-in defaults.
+// ---------------------------------------------------------------------------
+struct BCE_LRFConfig {
+    float    filter_alpha;            // IIR smoothing weight [0-1]; higher = less smoothing
+    uint32_t stale_threshold_us;      // Range reading marked stale after this many µs
+};
+
+// ---------------------------------------------------------------------------
 // Firing Solution — SRS §12
 // ---------------------------------------------------------------------------
 struct FiringSolution {

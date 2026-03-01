@@ -124,6 +124,23 @@ void BCE_CalibrateBaro(void);
 void BCE_SetAHRSAlgorithm(AHRS_Algorithm algo);
 
 /**
+ * Set AHRS filter tuning parameters (filter gains + static-detection thresholds).
+ *
+ * These values are IMU-hardware-specific and should be supplied by the
+ * application layer from its hardware preset tables.  If not called the engine
+ * uses built-in neutral defaults suitable for initial integration.
+ */
+void BCE_SetAHRSConfig(const BCE_AHRSConfig* config);
+
+/**
+ * Set LRF hardware parameters (IIR filter weight and staleness threshold).
+ *
+ * Should be called after BCE_Init() once the LRF hardware type is known.
+ * If not called the engine uses built-in defaults.
+ */
+void BCE_SetLRFConfig(const BCE_LRFConfig* config);
+
+/**
  * Set magnetic declination for heading correction.
  * @param declination_deg  Declination in degrees (east positive).
  */
