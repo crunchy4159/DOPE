@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python (for any scripts)
         uses: actions/setup-python@v4
@@ -34,16 +36,24 @@ jobs:
 
       - name: Configure (CMake)
         run: |
-          if [[ "${{ matrix.generator }}" == "Ninja" ]]; then
+          if [ "${{ matrix.generator }}" = "Ninja" ]; then
             cmake -S . -B build -G Ninja
           else
             cmake -S . -B build -G "${{ matrix.generator }}" -A x64
           fi
+        shell: bash
+
+      - name: Ensure submodules (fallback)
+        run: |
+          git submodule update --init --recursive
+        shell: bash
 
       - name: Build
         run: |
-          cmake --build build --config Release -- -j$(nproc || echo 2)
+          cmake --build build --config Release --parallel 2
+        shell: bash
 
       - name: Run tests
         run: |
-          ctest --test-dir build --output-on-failure --parallel $(nproc || echo 2)
+          ctest --test-dir build --output-on-failure --parallel 2
+        shell: bash
