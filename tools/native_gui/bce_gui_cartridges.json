@@ -1,0 +1,98 @@
+[
+  {
+    "name": ".308 Win 175gr SMK",
+    "tags": ["match", "hpbt"],
+    "bc": 0.505,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 24,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 792.0 }
+    ],
+    "trajectory_profile": [],
+    "mass_grains": 175.0,
+    "caliber_inches": 0.308,
+    "length_mm": 31.5
+  },
+  {
+    "name": ".223 Rem 55gr FMJ",
+    "tags": ["commercial", "fmj"],
+    "bc": 0.245,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 24,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 987.0 }
+    ],
+    "trajectory_profile": [],
+    "mass_grains": 55.0,
+    "caliber_inches": 0.224,
+    "length_mm": 19.1
+  },
+  {
+    "name": "Hornady .223 Rem 75gr BTHP Match",
+    "tags": ["match", "hpbt"],
+    "bc": 0.395,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 24,
+    "velocity_profile": [
+      { "distance_inches": 0,     "velocity_ms": 850.4 },
+      { "distance_inches": 3600,  "velocity_ms": 781.1 },
+      { "distance_inches": 7200,  "velocity_ms": 714.8 },
+      { "distance_inches": 10800, "velocity_ms": 652.2 },
+      { "distance_inches": 14400, "velocity_ms": 592.9 },
+      { "distance_inches": 18000, "velocity_ms": 536.4 }
+    ],
+    "trajectory_profile": [
+      { "distance_inches": 0,     "trajectory_inches": -1.5  },
+      { "distance_inches": 3600,  "trajectory_inches":  1.9  },
+      { "distance_inches": 7200,  "trajectory_inches":  0.0  },
+      { "distance_inches": 10800, "trajectory_inches": -8.2  },
+      { "distance_inches": 14400, "trajectory_inches": -24.1 },
+      { "distance_inches": 18000, "trajectory_inches": -49.3 }
+    ],
+    "mass_grains": 75.0,
+    "caliber_inches": 0.224,
+    "length_mm": 26.1
+  },
+  {
+    "name": "Hornady 6.5 Creedmoor 140gr ELD-M",
+    "tags": ["match", "polymer_tip"],
+    "bc": 0.326,
+    "drag_model_index": 6,
+    "reference_barrel_inches": 24,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 823.0 }
+    ],
+    "trajectory_profile": [],
+    "mass_grains": 140.0,
+    "caliber_inches": 0.264,
+    "length_mm": 35.4
+  },
+  {
+    "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
+    "tags": ["match", "hpbt"],
+    "bc": 0.533,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 26,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 884.0 }
+    ],
+    "trajectory_profile": [],
+    "mass_grains": 190.0,
+    "caliber_inches": 0.308,
+    "length_mm": 35.3
+  },
+  {
+    "name": "9mm 124gr FMJ",
+    "tags": ["commercial", "fmj"],
+    "bc": 0.149,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 4,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 360.0 }
+    ],
+    "trajectory_profile": [],
+    "mass_grains": 124.0,
+    "caliber_inches": 0.355,
+    "length_mm": 15.7
+  }
+]

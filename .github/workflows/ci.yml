@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            generator: Ninja
+          - os: windows-latest
+            generator: "Visual Studio 17 2022"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for any scripts)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential
+
+      - name: Configure (CMake)
+        run: |
+          if [[ "${{ matrix.generator }}" == "Ninja" ]]; then
+            cmake -S . -B build -G Ninja
+          else
+            cmake -S . -B build -G "${{ matrix.generator }}" -A x64
+          fi
+
+      - name: Build
+        run: |
+          cmake --build build --config Release -- -j$(nproc || echo 2)
+
+      - name: Run tests
+        run: |
+          ctest --test-dir build --output-on-failure --parallel $(nproc || echo 2)

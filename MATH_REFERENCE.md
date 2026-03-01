@@ -886,8 +886,8 @@ The engine intentionally outputs uncertainty primitives (sigmas/covariance/per-i
 | 0 | Muzzle velocity | 1.5 m/s (~5 fps) |
 | 1 | Ballistic coefficient | 2% of BC |
 | 2 | Range | 1 m |
-| 3 | Wind speed | 0.894 m/s (~2 mph) |
-| 4 | Wind heading | 5° |
+| 3 | Wind speed | 1.0 m/s (~2.24 mph) |
+| 4 | Wind heading | 2° |
 | 5 | Temperature | 1.111 °C (~2 °F) |
 | 6 | Pressure | 5 Pa |
 | 7 | Humidity | 5% (0.05) |

@@ -19,21 +19,26 @@ constexpr float BCE_LRF_FILTER_ALPHA = 0.2f;
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 
 float InterpolatePiecewiseSigma(const BCE_ErrorTable& table, float x) {
-    if (!table.points || table.count <= 0) return 0.0f;
-    if (table.count == 1) return table.points[0].sigma;
-    if (x <= table.points[0].x) return table.points[0].sigma;
-    if (x >= table.points[table.count - 1].x) return table.points[table.count - 1].sigma;
+    if (!table.points || table.count <= 0)
+        return 0.0f;
+    if (table.count == 1)
+        return table.points[0].sigma;
+    if (x <= table.points[0].x)
+        return table.points[0].sigma;
+    if (x >= table.points[table.count - 1].x)
+        return table.points[table.count - 1].sigma;
     for (int i = 0; i < table.count - 1; ++i) {
         if (x <= table.points[i + 1].x) {
             const float dx = table.points[i + 1].x - table.points[i].x;
-            if (dx <= 0.0f) return table.points[i + 1].sigma;
+            if (dx <= 0.0f)
+                return table.points[i + 1].sigma;
             const float t = (x - table.points[i].x) / dx;
             return table.points[i].sigma + t * (table.points[i + 1].sigma - table.points[i].sigma);
         }
     }
     return table.points[table.count - 1].sigma;
 }
-}
+} // namespace
 
 void BCE_Engine::init() {
     ahrs_.init();
@@ -83,7 +88,8 @@ void BCE_Engine::init() {
 }
 
 void BCE_Engine::update(const SensorFrame* frame) {
-    if (!frame) return;
+    if (!frame)
+        return;
 
     had_invalid_sensor_input_ = false;
 
@@ -91,8 +97,9 @@ void BCE_Engine::update(const SensorFrame* frame) {
 
     // --- 1. AHRS Update ---
     if (frame->imu_valid) {
-        bool imu_finite = std::isfinite(frame->accel_x) && std::isfinite(frame->accel_y) && std::isfinite(frame->accel_z) &&
-                          std::isfinite(frame->gyro_x) && std::isfinite(frame->gyro_y) && std::isfinite(frame->gyro_z);
+        bool imu_finite = std::isfinite(frame->accel_x) && std::isfinite(frame->accel_y) &&
+                          std::isfinite(frame->accel_z) && std::isfinite(frame->gyro_x) &&
+                          std::isfinite(frame->gyro_y) && std::isfinite(frame->gyro_z);
         if (!imu_finite) {
             had_invalid_sensor_input_ = true;
         }
@@ -100,8 +107,10 @@ void BCE_Engine::update(const SensorFrame* frame) {
         float dt = 0.01f; // default 100 Hz
         if (!first_update_ && now_us > last_imu_timestamp_us_) {
             dt = static_cast<float>(now_us - last_imu_timestamp_us_) * 1e-6f;
-            if (dt > 0.1f) dt = 0.1f; // cap at 100ms for safety
-            if (dt < 0.0001f) dt = 0.0001f;
+            if (dt > 0.1f)
+                dt = 0.1f; // cap at 100ms for safety
+            if (dt < 0.0001f)
+                dt = 0.0001f;
         }
         first_update_ = false;
         last_imu_timestamp_us_ = now_us;
@@ -127,9 +136,8 @@ void BCE_Engine::update(const SensorFrame* frame) {
         }
 
         if (imu_finite) {
-            ahrs_.update(frame->accel_x, frame->accel_y, frame->accel_z,
-                          frame->gyro_x, frame->gyro_y, frame->gyro_z,
-                          mx, my, mz, use_mag, dt);
+            ahrs_.update(frame->accel_x, frame->accel_y, frame->accel_z, frame->gyro_x,
+                         frame->gyro_y, frame->gyro_z, mx, my, mz, use_mag, dt);
         }
     }
 
@@ -155,8 +163,7 @@ void BCE_Engine::update(const SensorFrame* frame) {
             had_invalid_sensor_input_ = true;
         }
 
-        bool range_valid = range_finite &&
-                           lrf_range_m > 0.0f &&
+        bool range_valid = range_finite && lrf_range_m > 0.0f &&
                            lrf_range_m <= static_cast<float>(BCE_MAX_RANGE_M);
 
         if (range_valid) {
@@ -165,8 +172,9 @@ void BCE_Engine::update(const SensorFrame* frame) {
                 lrf_range_filtered_m_ = lrf_range_m;
             } else {
                 // Apply IIR filter    [MATH §14.3]
-                lrf_range_filtered_m_ = BCE_LRF_FILTER_ALPHA * lrf_range_m +
-                                        (1.0f - BCE_LRF_FILTER_ALPHA) * lrf_range_filtered_m_; // [MATH §14.3]
+                lrf_range_filtered_m_ =
+                    BCE_LRF_FILTER_ALPHA * lrf_range_m +
+                    (1.0f - BCE_LRF_FILTER_ALPHA) * lrf_range_filtered_m_; // [MATH §14.3]
             }
             lrf_range_m_ = lrf_range_m;
             lrf_timestamp_us_ = frame->lrf_timestamp_us;
@@ -177,11 +185,12 @@ void BCE_Engine::update(const SensorFrame* frame) {
     }
 
     // --- 4. Zoom encoder → FOV computation — SRS §7.5    [MATH §14.4]
-    if (frame->encoder_valid &&
-        frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
+    if (frame->encoder_valid && frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
         float f = frame->encoder_focal_length_mm;
-        fov_h_deg_ = 2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM  / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
-        fov_v_deg_ = 2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
+        fov_h_deg_ =
+            2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
+        fov_v_deg_ =
+            2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * BCE_RAD_TO_DEG; // [MATH §14.4]
     }
 
     // --- 5. Evaluate state and compute solution ---
@@ -189,14 +198,16 @@ void BCE_Engine::update(const SensorFrame* frame) {
 }
 
 void BCE_Engine::setBulletProfile(const BulletProfile* profile) {
-    if (!profile) return;
+    if (!profile)
+        return;
     bullet_ = *profile;
     has_bullet_ = true;
     zero_dirty_ = true;
 }
 
 void BCE_Engine::setZeroConfig(const ZeroConfig* config) {
-    if (!config) return;
+    if (!config)
+        return;
     zero_ = *config;
     has_zero_ = true;
     zero_dirty_ = true;
@@ -216,7 +227,8 @@ void BCE_Engine::setLatitude(float latitude_deg) {
 }
 
 void BCE_Engine::setDefaultOverrides(const BCE_DefaultOverrides* defaults) {
-    if (!defaults) return;
+    if (!defaults)
+        return;
     overrides_ = *defaults;
     has_overrides_ = true;
     atmo_.applyDefaults(overrides_);
@@ -240,11 +252,8 @@ void BCE_Engine::setIMUBias(const float accel_bias[3], const float gyro_bias[3])
 
 void BCE_Engine::setMagCalibration(const float hard_iron[3], const float soft_iron[9]) {
     const float zero_hi[3] = {0.0f, 0.0f, 0.0f};
-    const float identity_si[9] = {1.0f, 0.0f, 0.0f,
-                                  0.0f, 1.0f, 0.0f,
-                                  0.0f, 0.0f, 1.0f};
-    mag_.setCalibration(hard_iron ? hard_iron : zero_hi,
-                        soft_iron ? soft_iron : identity_si);
+    const float identity_si[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    mag_.setCalibration(hard_iron ? hard_iron : zero_hi, soft_iron ? soft_iron : identity_si);
 }
 
 void BCE_Engine::setBoresightOffset(float vertical_moa, float horizontal_moa) {
@@ -285,7 +294,8 @@ void BCE_Engine::getSolution(FiringSolution* out) const {
 }
 
 void BCE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
-    if (!out) return;
+    if (!out)
+        return;
 
     out->solution_mode = solution_.solution_mode;
     out->fault_flags = solution_.fault_flags;
@@ -298,9 +308,9 @@ void BCE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
     out->uncertainty_radius_moa = 0.0f;
     out->uncertainty_confidence = 0.682689f;
     if (solution_.uncertainty_valid) {
-        out->uncertainty_radius_moa = std::sqrt(
-            solution_.sigma_elevation_moa * solution_.sigma_elevation_moa +
-            solution_.sigma_windage_moa * solution_.sigma_windage_moa);
+        out->uncertainty_radius_moa =
+            std::sqrt(solution_.sigma_elevation_moa * solution_.sigma_elevation_moa +
+                      solution_.sigma_windage_moa * solution_.sigma_windage_moa);
     }
 
     out->range_m = solution_.range_m;
@@ -319,8 +329,7 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     // Check hard faults — SRS §13
     if (!has_range_) {
         fault_flags_ |= BCE_Fault::NO_RANGE;
-    } else if (now_us >= lrf_timestamp_us_ &&
-               (now_us - lrf_timestamp_us_) > BCE_LRF_STALE_US) {
+    } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > BCE_LRF_STALE_US) {
         // LRF stale — not a hard fault, but range is invalid
         has_range_ = false;
         fault_flags_ |= BCE_Fault::NO_RANGE;
@@ -366,12 +375,10 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     // Determine mode
     if (fault_flags_ != 0) {
         // Check which faults are actually hard faults
-        uint32_t hard_faults = fault_flags_ & (BCE_Fault::NO_RANGE |
-                                                 BCE_Fault::NO_BULLET |
-                                                 BCE_Fault::NO_MV |
-                                                 BCE_Fault::NO_BC |
-                                                 BCE_Fault::AHRS_UNSTABLE |
-                                                 BCE_Fault::ZERO_UNSOLVABLE);
+        uint32_t hard_faults =
+            fault_flags_ &
+            (BCE_Fault::NO_RANGE | BCE_Fault::NO_BULLET | BCE_Fault::NO_MV | BCE_Fault::NO_BC |
+             BCE_Fault::AHRS_UNSTABLE | BCE_Fault::ZERO_UNSOLVABLE);
         if (hard_faults != 0) {
             mode_ = BCE_Mode::FAULT;
             solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::FAULT);
@@ -382,8 +389,7 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     }
 
     // Have enough data — check if we can compute
-    if (has_range_ && has_bullet_ &&
-        bullet_.muzzle_velocity_ms > 1.0f && bullet_.bc > 0.001f) {
+    if (has_range_ && has_bullet_ && bullet_.muzzle_velocity_ms > 1.0f && bullet_.bc > 0.001f) {
         computeSolution();
         mode_ = BCE_Mode::SOLUTION_READY;
     } else {
@@ -414,8 +420,8 @@ void BCE_Engine::computeSolution() {
 
     // Get current pitch (bore elevation) and heading from AHRS
     float pitch = ahrs_.getPitch();
-    float roll  = ahrs_.getRoll();
-    float yaw   = ahrs_.getYaw();
+    float roll = ahrs_.getRoll();
+    float yaw = ahrs_.getYaw();
     float heading_true = mag_.computeHeading(yaw);
 
     // Build solver params
@@ -456,7 +462,7 @@ void BCE_Engine::computeSolution() {
         float relative_drop = result.drop_at_target_m - sight_line_drop; // [MATH §14.1]
 
         // Convert to angular adjustment in MOA    [MATH §14.2]
-        drop_moa = -(relative_drop / range) * BCE_RAD_TO_MOA;                       // [MATH §14.2]
+        drop_moa = -(relative_drop / range) * BCE_RAD_TO_MOA;                        // [MATH §14.2]
         wind_from_wind_moa = -(result.windage_at_target_m / range) * BCE_RAD_TO_MOA; // [MATH §14.2]
     }
 
@@ -552,14 +558,14 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
 
     // Muzzle velocity adjusted for barrel length (relative to SAAMI reference barrel).
     // If reference_barrel_length_in is unset (0), default to 24" (standard rifle barrel).
-    float ref_barrel_in = (bullet_.reference_barrel_length_in > 0.0f)
-                              ? bullet_.reference_barrel_length_in
-                              : 24.0f;
-    float base_mv_fps = bullet_.muzzle_velocity_ms * 3.28084f;              // [MATH §9]
+    float ref_barrel_in =
+        (bullet_.reference_barrel_length_in > 0.0f) ? bullet_.reference_barrel_length_in : 24.0f;
+    float base_mv_fps = bullet_.muzzle_velocity_ms * 3.28084f;               // [MATH §9]
     float barrel_length_delta_in = bullet_.barrel_length_in - ref_barrel_in; // [MATH §9]
     float mv_adjustment_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
-    float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjustment_fps_per_in); // [MATH §9]
-    p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;                       // [MATH §9]
+    float adjusted_mv_fps =
+        base_mv_fps + (barrel_length_delta_in * mv_adjustment_fps_per_in); // [MATH §9]
+    p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;                      // [MATH §9]
 
     p.bullet_mass_kg = bullet_.mass_grains * BCE_GRAINS_TO_KG;
     p.bullet_length_m = bullet_.length_mm * BCE_MM_TO_M;
@@ -567,9 +573,8 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
 
     p.air_density = atmo_.getAirDensity();
     p.speed_of_sound = atmo_.getSpeedOfSound();
-    p.drag_reference_scale = external_reference_mode_
-        ? BCE_EXTERNAL_REFERENCE_DRAG_SCALE
-        : BCE_DEFAULT_DRAG_REFERENCE_SCALE;
+    p.drag_reference_scale = external_reference_mode_ ? BCE_EXTERNAL_REFERENCE_DRAG_SCALE
+                                                      : BCE_DEFAULT_DRAG_REFERENCE_SCALE;
     p.target_range_m = range_m;
     p.launch_angle_rad = 0.0f; // set by caller
 
@@ -610,24 +615,25 @@ void BCE_Engine::setUncertaintyConfig(const UncertaintyConfig* config) {
 }
 
 void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
-    if (!out) return;
-    out->enabled                = true;
-    out->sigma_muzzle_velocity_ms = 1.5f;   // ~5 fps standard deviation
-    out->sigma_bc_fraction      = 0.02f;    // 2 % BC uncertainty
-    out->sigma_range_m          = 1.0f;     // 1 m range uncertainty
-    out->sigma_wind_speed_ms    = 0.894f;   // 2 mph wind speed
-    out->sigma_wind_heading_deg = 5.0f;     // 5 ° wind direction
-    out->sigma_temperature_c    = 1.111f;   // 2 °F temperature
-    out->sigma_pressure_pa      = 5.0f;     // 5 Pa pressure
-    out->sigma_humidity         = 0.05f;    // 5 % relative humidity
-    out->sigma_sight_height_mm  = 0.075f;   // updated default sight-height mounting error
-    out->sigma_cant_deg         = 1.5f;     // 1.5 ° cant / roll — RM3100 magnetometer default
-    out->sigma_latitude_deg     = 0.0f;     // latitude error (disabled by default)
-    out->sigma_mass_grains      = 0.5f;     // ~0.5 gr lot/measurement spread
-    out->sigma_length_mm        = 0.1f;     // ~0.1 mm OAL measurement spread
-    out->sigma_caliber_inches   = 0.001f;   // ~0.001" diameter spread
-    out->sigma_twist_rate_inches = 0.1f;    // 1% of default 10"/turn twist rate
-    out->sigma_zero_range_m     = 0.5f;     // ~0.5 m zero-range setup error
+    if (!out)
+        return;
+    out->enabled = true;
+    out->sigma_muzzle_velocity_ms = 1.5f;       // ~5 fps standard deviation
+    out->sigma_bc_fraction = 0.02f;             // 2 % BC uncertainty
+    out->sigma_range_m = 1.0f;                  // 1 m range uncertainty
+    out->sigma_wind_speed_ms = 0.44704f;        // 1 mph wind speed (0.44704 m/s)
+    out->sigma_wind_heading_deg = 2.0f;         // 2 ° wind direction
+    out->sigma_temperature_c = 1.111f;          // 2 °F temperature
+    out->sigma_pressure_pa = 5.0f;              // 5 Pa pressure
+    out->sigma_humidity = 0.05f;                // 5 % relative humidity
+    out->sigma_sight_height_mm = 0.075f;        // updated default sight-height mounting error
+    out->sigma_cant_deg = 1.5f;                 // 1.5 ° cant / roll — RM3100 magnetometer default
+    out->sigma_latitude_deg = 0.0f;             // latitude error (disabled by default)
+    out->sigma_mass_grains = 0.5f;              // ~0.5 gr lot/measurement spread
+    out->sigma_length_mm = 0.1f;                // ~0.1 mm OAL measurement spread
+    out->sigma_caliber_inches = 0.001f;         // ~0.001" diameter spread
+    out->sigma_twist_rate_inches = 0.1f;        // 1% of default 10"/turn twist rate
+    out->sigma_zero_range_m = 0.5f;             // ~0.5 m zero-range setup error
     out->sigma_mv_adjustment_fps_per_in = 1.0f; // ~1 fps/in barrel adjustment uncertainty
     out->use_range_error_table = false;
     out->range_error_table = {nullptr, 0};
@@ -644,20 +650,18 @@ void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
 void BCE_Engine::refreshDerivedSigmasFromProfiles() {
     if (uncertainty_config_.use_range_error_table &&
         uncertainty_config_.range_error_table.points != nullptr &&
-        uncertainty_config_.range_error_table.count > 0 &&
-        has_range_ && std::isfinite(lrf_range_m_)) {
-        uncertainty_config_.sigma_range_m = InterpolatePiecewiseSigma(
-            uncertainty_config_.range_error_table,
-            lrf_range_m_);
+        uncertainty_config_.range_error_table.count > 0 && has_range_ &&
+        std::isfinite(lrf_range_m_)) {
+        uncertainty_config_.sigma_range_m =
+            InterpolatePiecewiseSigma(uncertainty_config_.range_error_table, lrf_range_m_);
     }
 
     if (uncertainty_config_.use_temperature_error_table &&
         uncertainty_config_.temperature_error_table.points != nullptr &&
-        uncertainty_config_.temperature_error_table.count > 0 &&
-        has_baro_temp_ && std::isfinite(latest_baro_temp_c_)) {
+        uncertainty_config_.temperature_error_table.count > 0 && has_baro_temp_ &&
+        std::isfinite(latest_baro_temp_c_)) {
         uncertainty_config_.sigma_temperature_c = InterpolatePiecewiseSigma(
-            uncertainty_config_.temperature_error_table,
-            latest_baro_temp_c_);
+            uncertainty_config_.temperature_error_table, latest_baro_temp_c_);
     }
 
     if (!uncertainty_config_.use_pressure_delta_temp_error_table ||
@@ -677,7 +681,8 @@ void BCE_Engine::refreshDerivedSigmasFromProfiles() {
         return;
     }
 
-    // Engine-level enforcement: calibrated pressure profile requires calibration temperature metadata.
+    // Engine-level enforcement: calibrated pressure profile requires calibration temperature
+    // metadata.
     if (!uncertainty_config_.pressure_has_calibration_temp ||
         !std::isfinite(uncertainty_config_.pressure_calibration_temp_c)) {
         uncertainty_config_.pressure_is_calibrated = false;
@@ -691,10 +696,10 @@ void BCE_Engine::refreshDerivedSigmasFromProfiles() {
         return;
     }
 
-    const float delta_temp_c = std::fabs(latest_baro_temp_c_ - uncertainty_config_.pressure_calibration_temp_c);
+    const float delta_temp_c =
+        std::fabs(latest_baro_temp_c_ - uncertainty_config_.pressure_calibration_temp_c);
     uncertainty_config_.sigma_pressure_pa = InterpolatePiecewiseSigma(
-        uncertainty_config_.pressure_delta_temp_error_table,
-        delta_temp_c);
+        uncertainty_config_.pressure_delta_temp_error_table, delta_temp_c);
 }
 
 /**
@@ -712,25 +717,27 @@ void BCE_Engine::refreshDerivedSigmasFromProfiles() {
  * where ∂y/∂x ≈ Δy / (2σ_x), so σ_y² ≈ (Δy/2)² (the σ_x terms cancel).
  */
 void BCE_Engine::computeUncertainty() {
-    solution_.uncertainty_valid    = false;
-    solution_.sigma_elevation_moa  = 0.0f;
-    solution_.sigma_windage_moa    = 0.0f;
+    solution_.uncertainty_valid = false;
+    solution_.sigma_elevation_moa = 0.0f;
+    solution_.sigma_windage_moa = 0.0f;
     solution_.covariance_elev_wind = 0.0f;
 
-    if (!uncertainty_config_.enabled) return;
+    if (!uncertainty_config_.enabled)
+        return;
 
     // Must have a ready solution to propagate through
-    if (solution_.solution_mode != static_cast<uint32_t>(BCE_Mode::SOLUTION_READY)) return;
+    if (solution_.solution_mode != static_cast<uint32_t>(BCE_Mode::SOLUTION_READY))
+        return;
 
     const float range = lrf_range_m_;
-    if (range < 1.0f) return;
+    if (range < 1.0f)
+        return;
 
-    const float roll         = ahrs_.getRoll();
+    const float roll = ahrs_.getRoll();
     const float launch_angle = zero_angle_rad_ + ahrs_.getPitch();
-    const float sight_h      = has_zero_ ? zero_.sight_height_mm * BCE_MM_TO_M : 0.0f;
-    const float zero_r       = (has_zero_ && zero_.zero_range_m > 0.0f)
-                                   ? zero_.zero_range_m : range;
-    const float pitch        = ahrs_.getPitch();
+    const float sight_h = has_zero_ ? zero_.sight_height_mm * BCE_MM_TO_M : 0.0f;
+    const float zero_r = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : range;
+    const float pitch = ahrs_.getPitch();
 
     // Pre-build the nominal SolverParams once
     SolverParams base = buildSolverParams(range);
@@ -740,15 +747,19 @@ void BCE_Engine::computeUncertainty() {
     auto evalMOAWithZeroRange = [&](const SolverParams& p, float roll_rad, float zero_range_m,
                                     float& elev_moa, float& wind_moa) -> bool {
         SolverResult r = solver_.integrate(p);
-        if (!r.valid) { elev_moa = 0.0f; wind_moa = 0.0f; return false; }
+        if (!r.valid) {
+            elev_moa = 0.0f;
+            wind_moa = 0.0f;
+            return false;
+        }
 
         float safe_zero_r = std::fmax(1.0f, zero_range_m);
-        float sl_drop    = sight_h - (sight_h / safe_zero_r) * range;
-        float rel_drop   = r.drop_at_target_m - sl_drop;
+        float sl_drop = sight_h - (sight_h / safe_zero_r) * range;
+        float rel_drop = r.drop_at_target_m - sl_drop;
 
-        float em = -(rel_drop / range)               * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
-        float wm = -(r.windage_at_target_m / range)  * BCE_RAD_TO_MOA
-                   + r.coriolis_wind_moa + r.spin_drift_moa;
+        float em = -(rel_drop / range) * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
+        float wm = -(r.windage_at_target_m / range) * BCE_RAD_TO_MOA + r.coriolis_wind_moa +
+                   r.spin_drift_moa;
 
         float ce, cw;
         CantCorrection::apply(roll_rad, em, ce, cw);
@@ -757,15 +768,15 @@ void BCE_Engine::computeUncertainty() {
         return true;
     };
 
-    auto evalMOA = [&](const SolverParams& p, float roll_rad,
-                       float& elev_moa, float& wind_moa) -> bool {
+    auto evalMOA = [&](const SolverParams& p, float roll_rad, float& elev_moa,
+                       float& wind_moa) -> bool {
         return evalMOAWithZeroRange(p, roll_rad, zero_r, elev_moa, wind_moa);
     };
 
-    float var_e  = 0.0f;
-    float var_w  = 0.0f;
+    float var_e = 0.0f;
+    float var_w = 0.0f;
     float cov_ew = 0.0f;
-    int   input_idx = 0;   // tracks which input we're accumulating
+    int input_idx = 0; // tracks which input we're accumulating
 
     // Zero the per-input breakdown arrays
     for (int i = 0; i < FiringSolution::kNumUncertaintyInputs; ++i) {
@@ -777,12 +788,14 @@ void BCE_Engine::computeUncertainty() {
     // Records per-input contribution in uc_var_elev/uc_var_wind[input_idx].
     auto accumulate = [&](const SolverParams& pp, const SolverParams& pm) {
         float ep, wp, em, wm;
-        if (!evalMOA(pp, roll, ep, wp)) return;
-        if (!evalMOA(pm, roll, em, wm)) return;
+        if (!evalMOA(pp, roll, ep, wp))
+            return;
+        if (!evalMOA(pm, roll, em, wm))
+            return;
         float de = (ep - em) * 0.5f;
         float dw = (wp - wm) * 0.5f;
-        var_e  += de * de;
-        var_w  += dw * dw;
+        var_e += de * de;
+        var_w += dw * dw;
         cov_ew += de * dw;
         if (input_idx < FiringSolution::kNumUncertaintyInputs) {
             solution_.uc_var_elev[input_idx] += de * de;
@@ -813,28 +826,33 @@ void BCE_Engine::computeUncertainty() {
     // 2. Range (re-evaluate with different target distances + matching sight-line geometry)
     input_idx = 2;
     {
-        float h   = uncertainty_config_.sigma_range_m;
-        float rp  = range + h;
-        float rm  = std::fmax(1.0f, range - h);
+        float h = uncertainty_config_.sigma_range_m;
+        float rp = range + h;
+        float rm = std::fmax(1.0f, range - h);
 
         SolverParams pp = buildSolverParams(rp);
         SolverParams pm = buildSolverParams(rm);
         pp.launch_angle_rad = launch_angle;
         pm.launch_angle_rad = launch_angle;
 
-        auto evalRange = [&](const SolverParams& p, float rng,
-                             float& elev_moa, float& wind_moa) -> bool {
+        auto evalRange = [&](const SolverParams& p, float rng, float& elev_moa,
+                             float& wind_moa) -> bool {
             SolverResult r = solver_.integrate(p);
-            if (!r.valid) { elev_moa = 0.0f; wind_moa = 0.0f; return false; }
-            float zr      = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : rng;
+            if (!r.valid) {
+                elev_moa = 0.0f;
+                wind_moa = 0.0f;
+                return false;
+            }
+            float zr = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : rng;
             float sl_drop = sight_h - (sight_h / zr) * rng;
             float rel_drop = r.drop_at_target_m - sl_drop;
-            float em = -(rel_drop / rng)              * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
-            float wm = -(r.windage_at_target_m / rng) * BCE_RAD_TO_MOA
-                       + r.coriolis_wind_moa + r.spin_drift_moa;
+            float em = -(rel_drop / rng) * BCE_RAD_TO_MOA + r.coriolis_elev_moa;
+            float wm = -(r.windage_at_target_m / rng) * BCE_RAD_TO_MOA + r.coriolis_wind_moa +
+                       r.spin_drift_moa;
             float ce, cw2;
             CantCorrection::apply(roll, em, ce, cw2);
-            elev_moa = ce; wind_moa = wm + cw2;
+            elev_moa = ce;
+            wind_moa = wm + cw2;
             return true;
         };
 
@@ -842,8 +860,8 @@ void BCE_Engine::computeUncertainty() {
         if (evalRange(pp, rp, ep, wp) && evalRange(pm, rm, em, wm)) {
             float de = (ep - em) * 0.5f;
             float dw = (wp - wm) * 0.5f;
-            var_e  += de * de;
-            var_w  += dw * dw;
+            var_e += de * de;
+            var_w += dw * dw;
             cov_ew += de * dw;
             solution_.uc_var_elev[2] = de * de;
             solution_.uc_var_wind[2] = dw * dw;
@@ -854,15 +872,15 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 3;
     {
         SolverParams pp = base, pm = base;
-        float h     = uncertainty_config_.sigma_wind_speed_ms;
-        float total = std::sqrt(base.headwind_ms * base.headwind_ms
-                                + base.crosswind_ms * base.crosswind_ms);
+        float h = uncertainty_config_.sigma_wind_speed_ms;
+        float total =
+            std::sqrt(base.headwind_ms * base.headwind_ms + base.crosswind_ms * base.crosswind_ms);
         if (total > 0.01f) {
             float scale_p = (total + h) / total;
             float scale_m = (total - h) / total;
-            pp.headwind_ms  = base.headwind_ms  * scale_p;
+            pp.headwind_ms = base.headwind_ms * scale_p;
             pp.crosswind_ms = base.crosswind_ms * scale_p;
-            pm.headwind_ms  = base.headwind_ms  * scale_m;
+            pm.headwind_ms = base.headwind_ms * scale_m;
             pm.crosswind_ms = base.crosswind_ms * scale_m;
         } else {
             // No current wind — apply a pure crosswind perturbation
@@ -876,15 +894,15 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 4;
     {
         float h_rad = uncertainty_config_.sigma_wind_heading_deg * BCE_DEG_TO_RAD;
-        float hw    = base.headwind_ms;
-        float xw    = base.crosswind_ms;
+        float hw = base.headwind_ms;
+        float xw = base.crosswind_ms;
         float total = std::sqrt(hw * hw + xw * xw);
         if (total > 0.01f) {
             float base_angle = std::atan2(xw, hw);
             SolverParams pp = base, pm = base;
-            pp.headwind_ms  = total * std::cos(base_angle + h_rad);
+            pp.headwind_ms = total * std::cos(base_angle + h_rad);
             pp.crosswind_ms = total * std::sin(base_angle + h_rad);
-            pm.headwind_ms  = total * std::cos(base_angle - h_rad);
+            pm.headwind_ms = total * std::cos(base_angle - h_rad);
             pm.crosswind_ms = total * std::sin(base_angle - h_rad);
             accumulate(pp, pm);
         }
@@ -894,15 +912,14 @@ void BCE_Engine::computeUncertainty() {
     // 5–7. Atmospheric parameters (temperature, pressure, humidity).
     // Use a temporary copy of the Atmosphere to avoid mutating engine state.
     {
-        auto evalAtmo = [&](float dt, float dp, float dh,
-                            float& elev_moa, float& wind_moa) -> bool {
+        auto evalAtmo = [&](float dt, float dp, float dh, float& elev_moa,
+                            float& wind_moa) -> bool {
             Atmosphere tmp = atmo_;
-            tmp.updateFromBaro(atmo_.getPressure()    + dp,
-                               atmo_.getTemperature() + dt,
-                               atmo_.getHumidity()    + dh);
-            SolverParams p   = base;
-            p.bc             = tmp.correctBC(bullet_.bc);
-            p.air_density    = tmp.getAirDensity();
+            tmp.updateFromBaro(atmo_.getPressure() + dp, atmo_.getTemperature() + dt,
+                               atmo_.getHumidity() + dh);
+            SolverParams p = base;
+            p.bc = tmp.correctBC(bullet_.bc);
+            p.air_density = tmp.getAirDensity();
             p.speed_of_sound = tmp.getSpeedOfSound();
             return evalMOA(p, roll, elev_moa, wind_moa);
         };
@@ -912,10 +929,11 @@ void BCE_Engine::computeUncertainty() {
         {
             float h = uncertainty_config_.sigma_temperature_c;
             float ep, wp, em, wm;
-            if (evalAtmo(+h, 0.0f, 0.0f, ep, wp) &&
-                evalAtmo(-h, 0.0f, 0.0f, em, wm)) {
+            if (evalAtmo(+h, 0.0f, 0.0f, ep, wp) && evalAtmo(-h, 0.0f, 0.0f, em, wm)) {
                 float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+                var_e += de * de;
+                var_w += dw * dw;
+                cov_ew += de * dw;
                 solution_.uc_var_elev[5] = de * de;
                 solution_.uc_var_wind[5] = dw * dw;
             }
@@ -926,10 +944,11 @@ void BCE_Engine::computeUncertainty() {
         {
             float h = uncertainty_config_.sigma_pressure_pa;
             float ep, wp, em, wm;
-            if (evalAtmo(0.0f, +h, 0.0f, ep, wp) &&
-                evalAtmo(0.0f, -h, 0.0f, em, wm)) {
+            if (evalAtmo(0.0f, +h, 0.0f, ep, wp) && evalAtmo(0.0f, -h, 0.0f, em, wm)) {
                 float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+                var_e += de * de;
+                var_w += dw * dw;
+                cov_ew += de * dw;
                 solution_.uc_var_elev[6] = de * de;
                 solution_.uc_var_wind[6] = dw * dw;
             }
@@ -939,14 +958,15 @@ void BCE_Engine::computeUncertainty() {
         input_idx = 7;
         {
             float cur = atmo_.getHumidity();
-            float h   = uncertainty_config_.sigma_humidity;
-            float hp  = std::fmin(cur + h, 1.0f) - cur;
-            float hm  = cur - std::fmax(cur - h, 0.0f);
+            float h = uncertainty_config_.sigma_humidity;
+            float hp = std::fmin(cur + h, 1.0f) - cur;
+            float hm = cur - std::fmax(cur - h, 0.0f);
             float ep, wp, em, wm;
-            if (evalAtmo(0.0f, 0.0f, +hp, ep, wp) &&
-                evalAtmo(0.0f, 0.0f, -hm, em, wm)) {
+            if (evalAtmo(0.0f, 0.0f, +hp, ep, wp) && evalAtmo(0.0f, 0.0f, -hm, em, wm)) {
                 float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+                var_e += de * de;
+                var_w += dw * dw;
+                cov_ew += de * dw;
                 solution_.uc_var_elev[7] = de * de;
                 solution_.uc_var_wind[7] = dw * dw;
             }
@@ -968,10 +988,11 @@ void BCE_Engine::computeUncertainty() {
     {
         float h_rad = uncertainty_config_.sigma_cant_deg * BCE_DEG_TO_RAD;
         float ep, wp, em, wm;
-        if (evalMOA(base, roll + h_rad, ep, wp) &&
-            evalMOA(base, roll - h_rad, em, wm)) {
+        if (evalMOA(base, roll + h_rad, ep, wp) && evalMOA(base, roll - h_rad, em, wm)) {
             float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-            var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+            var_e += de * de;
+            var_w += dw * dw;
+            cov_ew += de * dw;
             solution_.uc_var_elev[9] = de * de;
             solution_.uc_var_wind[9] = dw * dw;
         }
@@ -987,7 +1008,9 @@ void BCE_Engine::computeUncertainty() {
         float ep, wp, em, wm;
         if (evalMOA(pp, roll, ep, wp) && evalMOA(pm, roll, em, wm)) {
             float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-            var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+            var_e += de * de;
+            var_w += dw * dw;
+            cov_ew += de * dw;
             solution_.uc_var_elev[10] = de * de;
             solution_.uc_var_wind[10] = dw * dw;
         }
@@ -1071,7 +1094,9 @@ void BCE_Engine::computeUncertainty() {
             if (evalMOAWithZeroRange(pp, roll, zp, ep, wp) &&
                 evalMOAWithZeroRange(pm, roll, zm, em, wm)) {
                 float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
-                var_e += de * de; var_w += dw * dw; cov_ew += de * dw;
+                var_e += de * de;
+                var_w += dw * dw;
+                cov_ew += de * dw;
                 solution_.uc_var_elev[15] = de * de;
                 solution_.uc_var_wind[15] = dw * dw;
             }
@@ -1098,8 +1123,8 @@ void BCE_Engine::computeUncertainty() {
         accumulate(pp, pm);
     }
 
-    solution_.sigma_elevation_moa  = std::sqrt(var_e); // [MATH §16.2]
-    solution_.sigma_windage_moa    = std::sqrt(var_w); // [MATH §16.2]
-    solution_.covariance_elev_wind = cov_ew;           // [MATH §16.2]
-    solution_.uncertainty_valid    = true;
+    solution_.sigma_elevation_moa = std::sqrt(var_e); // [MATH §16.2]
+    solution_.sigma_windage_moa = std::sqrt(var_w);   // [MATH §16.2]
+    solution_.covariance_elev_wind = cov_ew;          // [MATH §16.2]
+    solution_.uncertainty_valid = true;
 }

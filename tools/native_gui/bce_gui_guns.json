@@ -1,0 +1,47 @@
+[
+  {
+    "name": ".308 Default",
+    "caliber_inches": 0.308,
+    "barrel_length_in": 24.0,
+    "mv_adjustment_factor": 25.0,
+    "twist_rate_inches": 10.0,
+    "zero_range_m": 91.44,
+    "sight_height_mm": 38.1
+  },
+  {
+    "name": ".223 Default",
+    "caliber_inches": 0.223,
+    "barrel_length_in": 16.0,
+    "mv_adjustment_factor": 25.0,
+    "twist_rate_inches": 8.0,
+    "zero_range_m": 91.44,
+    "sight_height_mm": 38.1
+  },
+  {
+    "name": "6.5 CM Default",
+    "caliber_inches": 0.264,
+    "barrel_length_in": 24.0,
+    "mv_adjustment_factor": 25.0,
+    "twist_rate_inches": 8.0,
+    "zero_range_m": 91.44,
+    "sight_height_mm": 38.1
+  },
+  {
+    "name": ".300 WM Default",
+    "caliber_inches": 0.308,
+    "barrel_length_in": 24.0,
+    "mv_adjustment_factor": 30.0,
+    "twist_rate_inches": 10.0,
+    "zero_range_m": 91.44,
+    "sight_height_mm": 38.1
+  },
+  {
+    "name": "Carbine (8\")",
+    "caliber_inches": 0.355,
+    "barrel_length_in": 8.0,
+    "mv_adjustment_factor": 12.0,
+    "twist_rate_inches": 10.0,
+    "zero_range_m": 45.72,
+    "sight_height_mm": 38.1
+  }
+]
