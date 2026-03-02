@@ -247,7 +247,7 @@ struct GpsLatPreset {
 };
 
 static const GpsLatPreset kGpsLatPresets[] = {
-    {"None", 0.0f},
+    {"No GPS/GNSS Module", 0.0f},
     // Add GPS/GNSS module presets here as hardware is qualified
 };
 static const int kNumGpsLatPresets = sizeof(kGpsLatPresets) / sizeof(kGpsLatPresets[0]);
@@ -255,7 +255,7 @@ static const int kNumGpsLatPresets = sizeof(kGpsLatPresets) / sizeof(kGpsLatPres
 static const int kLrfDefaultIndex = 1;       // JRT D09C (2000 m)
 static const int kTempDefaultIndex = 1;      // Texas Instruments TMP117
 static const int kBarometerDefaultIndex = 0; // Bosch BMP581
-static const int kGpsDefaultIndex = 0;       // None
+static const int kGpsDefaultIndex = 0;       // No GPS/GNSS Module
 static const int kMagLatDefaultIndex = 1;    // PNI RM3100
 
 struct ErrorMultiplierPreset {

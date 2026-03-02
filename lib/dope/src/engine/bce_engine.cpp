@@ -671,7 +671,7 @@ void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     out->sigma_length_mm = 0.1f;                // ~0.1 mm OAL measurement spread
     out->sigma_caliber_inches = 0.001f;         // ~0.001" diameter spread
     out->sigma_twist_rate_inches = 0.1f;        // 1% of default 10"/turn twist rate
-    out->sigma_zero_range_m = 0.5f;             // ~0.5 m zero-range setup error
+    out->sigma_zero_range_m = 0.13716f;         // ~0.15 yd (0.137 m) zero-range setup error
     out->sigma_mv_adjustment_fps_per_in = 1.0f; // ~1 fps/in barrel adjustment uncertainty
     out->use_range_error_table = false;
     out->range_error_table = {nullptr, 0};

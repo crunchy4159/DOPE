@@ -10,7 +10,7 @@
       { "name": "Texas Instruments TMP117", "index": 0 }
     ],
     "gps": [
-      { "name": "Default GPS", "index": 0 }
+      { "name": "No GPS/GNSS Module", "index": 0 }
     ],
     "mag_lat": [
       { "name": "Default Mag Lat", "index": 0 }
