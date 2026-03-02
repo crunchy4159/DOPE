@@ -1,0 +1,26 @@
+# PlatformIO build artifacts
+.pio/
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Agent planning/notes (not for version control)
+AGENT_NOTES.md
+
+# Local native GUI/runtime artifacts
+imgui.ini
+build_out.txt
+build_stdout.txt
+build_stderr.txt
+
+# CMake/ESP-IDF build artifacts
+build/
+sdkconfig.esp32sim
+
+# Local test outputs and temp files
+diff.txt
+test_out.txt
+test_out_utf8.txt

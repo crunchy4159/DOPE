@@ -4,8 +4,10 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/drag/drag_model.h"
-#include "bce/bce_config.h"
+#include "../lib/dope/src/drag/drag_model.h"
+#include "dope/dope_config.h"
+#include <cmath>
+#include <limits>
 
 // G1 Cd at Mach 0 should match the first table entry
 TEST(DragTest, G1CdAtMachZero) {
@@ -89,4 +91,25 @@ TEST(DragTest, NegativeMachClamps) {
 TEST(DragTest, HighMachClamps) {
     float cd = DragModelLookup::getCd(DragModel::G1, 10.0f);
     EXPECT_GT(cd, 0.0f);
+}
+
+// Invalid speed of sound should be rejected safely
+TEST(DragTest, InvalidSpeedOfSoundReturnsZeroDecel) {
+    float decel_zero = DragModelLookup::getDeceleration(
+        800.0f, 0.0f, 0.505f, DragModel::G1, 1.225f);
+    float decel_nan = DragModelLookup::getDeceleration(
+        800.0f, std::numeric_limits<float>::quiet_NaN(), 0.505f, DragModel::G1, 1.225f);
+
+    EXPECT_FLOAT_EQ(decel_zero, 0.0f);
+    EXPECT_FLOAT_EQ(decel_nan, 0.0f);
+}
+
+// Non-finite density should sanitize to standard atmosphere
+TEST(DragTest, NonFiniteDensitySanitizesToStandard) {
+    float decel_standard = DragModelLookup::getDeceleration(
+        800.0f, 340.0f, 0.505f, DragModel::G1, BCE_STD_AIR_DENSITY);
+    float decel_nan_density = DragModelLookup::getDeceleration(
+        800.0f, 340.0f, 0.505f, DragModel::G1, std::numeric_limits<float>::quiet_NaN());
+
+    EXPECT_NEAR(decel_nan_density, decel_standard, 1e-6f);
 }

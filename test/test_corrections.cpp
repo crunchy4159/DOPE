@@ -4,9 +4,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/corrections/wind.h"
-#include "../lib/bce/src/corrections/cant.h"
-#include "bce/bce_config.h"
+#include "../lib/dope/src/corrections/wind.h"
+#include "../lib/dope/src/corrections/cant.h"
+#include "dope/dope_config.h"
 #include <cmath>
 
 // ---------------------------------------------------------------------------
