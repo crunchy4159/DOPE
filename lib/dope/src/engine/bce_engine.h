@@ -42,6 +42,8 @@ public:
     void calibrateBaro();
     void calibrateGyro();
     void setAHRSAlgorithm(AHRS_Algorithm algo);
+    void setAHRSConfig(const BCE_AHRSConfig* config);
+    void setLRFConfig(const BCE_LRFConfig* config);
     void setMagDeclination(float declination_deg);
     void setExternalReferenceMode(bool enabled);
 
@@ -118,6 +120,10 @@ private:
 
     // Optional solver calibration mode for external-reference alignment
     bool external_reference_mode_ = false;
+
+    // LRF runtime config (defaults match compile-time constants)
+    float    lrf_filter_alpha_       = 0.2f;
+    uint32_t lrf_stale_threshold_us_ = BCE_LRF_STALE_US;
 
     // Uncertainty / error propagation config — SRS §14
     UncertaintyConfig uncertainty_config_;

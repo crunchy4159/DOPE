@@ -111,4 +111,4 @@ if (-not (Test-Path $exe)) {
 }
 
 Write-Host "Launching GUI..." -ForegroundColor Green
-Start-Process -FilePath $exe
+Start-Process -FilePath $exe -WorkingDirectory $repoRoot

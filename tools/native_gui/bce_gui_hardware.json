@@ -1,13 +1,13 @@
 {
   "sensors": {
     "barometers": [
-      { "name": "Default Baro", "index": 0 }
+      { "name": "Bosch BMP581", "index": 0 }
     ],
     "lrfs": [
-      { "name": "Default LRF", "index": 0 }
+      { "name": "JRT D09C (2000 m)", "index": 0 }
     ],
     "temp_sensors": [
-      { "name": "Default Temp", "index": 0 }
+      { "name": "Texas Instruments TMP117", "index": 0 }
     ],
     "gps": [
       { "name": "Default GPS", "index": 0 }

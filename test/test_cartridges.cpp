@@ -7,9 +7,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/solver/solver.h"
-#include "bce/bce_config.h"
-#include "bce/bce_math_utils.h"
+#include "../lib/dope/src/solver/solver.h"
+#include "dope/dope_config.h"
+#include "dope/dope_math_utils.h"
 #include <cmath>
 
 class CartridgeTest : public ::testing::Test {

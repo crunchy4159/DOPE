@@ -146,3 +146,19 @@ constexpr float BCE_SENSOR_HALF_HEIGHT_MM = 2.3560f;
 
 // Minimum valid focal length (mm); readings at or below this are rejected.
 constexpr float BCE_ENCODER_MIN_FOCAL_LENGTH_MM = 1.0f;
+
+// ---------------------------------------------------------------------------
+// Math constant aliases — these moved to dope_math_utils.h under
+// namespace bce::math; BCE_-prefixed aliases are kept here so existing
+// call-sites (tests, harness) require no further changes.
+// ---------------------------------------------------------------------------
+#include "dope_math_utils.h"
+
+constexpr float BCE_PI           = bce::math::PI;
+constexpr float BCE_DEG_TO_RAD   = bce::math::DEG_TO_RAD;
+constexpr float BCE_RAD_TO_DEG   = bce::math::RAD_TO_DEG;
+constexpr float BCE_MOA_TO_RAD   = bce::math::MOA_TO_RAD;
+constexpr float BCE_RAD_TO_MOA   = bce::math::RAD_TO_MOA;
+constexpr float BCE_GRAINS_TO_KG = bce::math::GRAINS_TO_KG;
+constexpr float BCE_INCHES_TO_M  = bce::math::INCHES_TO_M;
+constexpr float BCE_MM_TO_M      = bce::math::MM_TO_M;

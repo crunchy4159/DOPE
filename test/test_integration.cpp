@@ -6,9 +6,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "bce/bce_api.h"
-#include "bce/bce_config.h"
-#include "bce/bce_math_utils.h"
+#include "dope/dope_api.h"
+#include "dope/dope_config.h"
+#include "dope/dope_math_utils.h"
 #include <cmath>
 #include <cstring>
 #include <limits>

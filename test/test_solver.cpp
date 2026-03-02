@@ -4,8 +4,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/solver/solver.h"
-#include "bce/bce_config.h"
+#include "../lib/dope/src/solver/solver.h"
+#include "dope/dope_config.h"
 #include <cmath>
 
 class SolverTest : public ::testing::Test {

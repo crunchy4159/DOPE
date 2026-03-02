@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/ahrs/ahrs_manager.h"
+#include "../lib/dope/src/ahrs/ahrs_manager.h"
 #include <cmath>
 
 class AHRSTest : public ::testing::Test {

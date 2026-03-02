@@ -66,6 +66,8 @@ static std::mutex g_display_mutex; // guards display snapshot (held briefly)
 static FiringSolution g_display_sol = {};
 static std::string g_display_output;
 static std::atomic<bool> g_ticker_running{false};
+static std::atomic<bool> g_run_batch_in_flight{false}; // prevents stacking background runs
+static std::atomic<bool> g_auto_tick_enabled{false};   // gate background BCE ticker
 
 constexpr uint64_t FRAME_STEP_US = 10000;
 constexpr int TARGET_RING_COUNT = 4;
@@ -752,10 +754,10 @@ float ClampValue(float value, float lo, float hi) {
 }
 
 int ClampPresetIndex(int value, int count, int fallback) {
-    if (value < 0 || value >= count) {
-        return fallback;
-    }
-    return value;
+    if (count <= 0) return 0;
+    if (value >= 0 && value < count) return value;
+    if (fallback >= 0 && fallback < count) return fallback;
+    return count - 1;
 }
 
 float GetPresetMultiplier(const ErrorMultiplierPreset* presets, int count, int default_index,
@@ -1527,6 +1529,64 @@ void RefreshOutput() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Barrel-length → MV helpers (glue layer only — engine not modified).
+// ---------------------------------------------------------------------------
+
+// Linear interpolation over a sorted (barrel_in, mv_fps) table.
+static float InterpolateBarrelMvProfile(const std::vector<std::pair<float,float>>& profile,
+                                        float barrel_in) {
+    if (profile.empty()) return 0.0f;
+    if (barrel_in <= profile.front().first) return profile.front().second;
+    if (barrel_in >= profile.back().first)  return profile.back().second;
+    for (size_t i = 1; i < profile.size(); ++i) {
+        if (barrel_in <= profile[i].first) {
+            const float t = (barrel_in - profile[i-1].first) /
+                            (profile[i].first - profile[i-1].first);
+            return profile[i-1].second + t * (profile[i].second - profile[i-1].second);
+        }
+    }
+    return profile.back().second;
+}
+
+// Tiered fps/in estimator — fallback when cartridge has no explicit value.
+static float FallbackMvAdjFpsPerIn(float ref_mv_ms) {
+    const float fps = ref_mv_ms * MPS_TO_FPS;
+    if (fps < 550.0f)  return 8.0f;    // pistol / subsonic
+    if (fps < 760.0f)  return 12.0f;   // pistol / SMG
+    if (fps < 915.0f)  return 20.0f;   // intermediate / carbine
+    if (fps < 1067.0f) return 28.0f;   // rifle carbine
+    return 38.0f;                       // full-power rifle
+}
+
+// Resolve MV for the current barrel length.  Three-tier priority:
+//   1. g_active_barrel_mv_profile non-empty  → profile table interpolation
+//   2. g_active_mv_adj_fps_per_in > 0        → linear fps/in from reference barrel
+//   3. fallback estimator                     → tier-based fps/in from ref MV
+void ComputeAdjustedMv() {
+    const float barrel_in = g_state.bullet.barrel_length_in;
+    g_mv_adjustment_estimated = false;
+
+    if (!g_active_barrel_mv_profile.empty()) {
+        // Tier 1: profile lookup — MV is fully determined by barrel length.
+        const float mv_fps = InterpolateBarrelMvProfile(g_active_barrel_mv_profile, barrel_in);
+        g_state.bullet.muzzle_velocity_ms        = mv_fps * FPS_TO_MPS;
+        g_state.bullet.reference_barrel_length_in = barrel_in; // no engine delta
+        g_state.bullet.mv_adjustment_factor       = 0.0f;
+    } else {
+        // Tier 2/3: linear adjustment from the cartridge's reference barrel.
+        float fps_per_in = g_active_mv_adj_fps_per_in;
+        if (fps_per_in <= 0.0f) {
+            fps_per_in = FallbackMvAdjFpsPerIn(g_reference_mv_ms);
+            g_mv_adjustment_estimated = true;
+        }
+        // Engine computes delta: actual_mv = muzzle_velocity_ms + (barrel - ref) * factor * FPS_TO_MPS
+        g_state.bullet.muzzle_velocity_ms  = g_reference_mv_ms;
+        g_state.bullet.mv_adjustment_factor = fps_per_in;
+        // reference_barrel_length_in was set in ApplyCartridgePreset; leave it alone here.
+    }
+}
+
 void ApplyCartridgePreset(const CartridgePreset& preset) {
     // Applying a preset intentionally enables manual drag override so the
     // exact saved BC is preserved instead of being recomputed heuristically.
@@ -1535,19 +1595,28 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
 
     g_state.bullet.bc = normalized.bc;
     g_state.drag_model_index = normalized.drag_model_index;
-    // apply first velocity profile point as muzzle velocity
+
+    // Capture reference MV from first velocity-profile point.
     if (!normalized.velocity_profile.empty()) {
-        g_state.bullet.muzzle_velocity_ms = normalized.velocity_profile[0].second;
+        g_reference_mv_ms = normalized.velocity_profile[0].second;
     } else {
-        g_state.bullet.muzzle_velocity_ms = normalized.muzzle_velocity_ms;
+        g_reference_mv_ms = normalized.muzzle_velocity_ms;
     }
-    g_state.bullet.mass_grains = normalized.mass_grains;
+
+    // Populate glue-layer barrel-MV state from the cartridge preset.
+    g_active_mv_adj_fps_per_in = normalized.mv_adjustment_fps_per_in;
+    g_active_barrel_mv_profile = normalized.barrel_mv_profile;
+
+    g_state.bullet.mass_grains    = normalized.mass_grains;
     g_state.bullet.caliber_inches = normalized.caliber_inches;
-    g_state.bullet.length_mm = normalized.length_mm;
-    // if cartridge has reference barrel info, prefer it when applying gun defaults
+    g_state.bullet.length_mm      = normalized.length_mm;
+
+    // Start with the reference barrel as both actual and reference length.
     if (normalized.reference_barrel_inches > 0.0f) {
-        g_state.bullet.barrel_length_in = normalized.reference_barrel_inches;
+        g_state.bullet.barrel_length_in           = normalized.reference_barrel_inches;
+        g_state.bullet.reference_barrel_length_in = normalized.reference_barrel_inches;
     }
+
     g_state.cartridge_cep_points.clear();
     for (const auto& pt : normalized.cep_table_moa) {
         g_state.cartridge_cep_points.push_back({pt.first, pt.second});
@@ -1555,7 +1624,11 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
     g_state.cartridge_cep_scale_floor = normalized.cep_scale_floor;
     g_state.uc_config.use_cartridge_cep_table = !g_state.cartridge_cep_points.empty();
     g_state.override_drag_coefficient = true;
-    g_state.manual_drag_coefficient = normalized.bc;
+    g_state.manual_drag_coefficient   = normalized.bc;
+
+    // Resolve MV for the reference barrel length.
+    ComputeAdjustedMv();
+
     EnsureSelectedGunPresetMatchesCurrentCaliber();
 }
 
@@ -1577,10 +1650,15 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
                     ? ClampValue(g_state.manual_drag_coefficient, 0.001f, 1.20f)
                     : ComputeAutoDragCoefficient(g_state.bullet);
     preset.drag_model_index = g_state.drag_model_index;
-    preset.muzzle_velocity_ms = g_state.bullet.muzzle_velocity_ms;
-    preset.reference_barrel_inches = g_state.bullet.barrel_length_in;
+    // Use reference MV and barrel from glue-layer state (not the adjusted/current values).
+    const float ref_mv = (g_reference_mv_ms > 0.0f) ? g_reference_mv_ms
+                                                      : g_state.bullet.muzzle_velocity_ms;
+    preset.muzzle_velocity_ms = ref_mv;
+    preset.reference_barrel_inches = (g_state.bullet.reference_barrel_length_in > 0.0f)
+                                         ? g_state.bullet.reference_barrel_length_in
+                                         : g_state.bullet.barrel_length_in;
     preset.velocity_profile.clear();
-    preset.velocity_profile.emplace_back(0.0f, preset.muzzle_velocity_ms);
+    preset.velocity_profile.emplace_back(0.0f, ref_mv);
     preset.trajectory_profile.clear();
     preset.mass_grains = g_state.bullet.mass_grains;
     preset.caliber_inches = g_state.bullet.caliber_inches;
@@ -1590,6 +1668,9 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
         preset.cep_table_moa.emplace_back(pt.range_m, pt.cep50_moa);
     }
     preset.cep_scale_floor = g_state.cartridge_cep_scale_floor;
+    // barrel-MV data from glue-layer globals
+    preset.mv_adjustment_fps_per_in = g_active_mv_adj_fps_per_in;
+    preset.barrel_mv_profile        = g_active_barrel_mv_profile;
     // attach tags from current UI selections where applicable
     preset.tags.clear();
     if (g_state.new_cartridge_tier_index >= 0 && g_state.new_cartridge_tier_index < kNumBulletTiers)
@@ -1800,7 +1881,9 @@ void SavePreset() {
     j["caliber_inches"] = g_state.bullet.caliber_inches;
     j["twist_rate_inches"] = g_state.bullet.twist_rate_inches;
     j["barrel_length_in"] = g_state.bullet.barrel_length_in;
-    j["mv_adjustment_factor"] = g_state.bullet.mv_adjustment_factor;
+    j["reference_mv_ms"] = g_reference_mv_ms;
+    j["mv_adj_fps_per_in_active"] = g_active_mv_adj_fps_per_in;
+    j["mv_adj_estimated"] = g_mv_adjustment_estimated;
     j["zero_range_m"] = g_state.zero.zero_range_m;
     j["sight_height_mm"] = g_state.zero.sight_height_mm;
     j["wind_speed_ms"] = g_state.wind_speed_ms;
@@ -1918,7 +2001,9 @@ void LoadPreset() {
         g_state.bullet.caliber_inches = j.value("caliber_inches", 0.0f);
         g_state.bullet.twist_rate_inches = j.value("twist_rate_inches", 0.0f);
         g_state.bullet.barrel_length_in = j.value("barrel_length_in", 24.0f);
-        g_state.bullet.mv_adjustment_factor = std::fabs(j.value("mv_adjustment_factor", 25.0f));
+        g_reference_mv_ms = j.value("reference_mv_ms", g_state.bullet.muzzle_velocity_ms);
+        g_active_mv_adj_fps_per_in = j.value("mv_adj_fps_per_in_active", 0.0f);
+        g_mv_adjustment_estimated = j.value("mv_adj_estimated", false);
         g_state.zero.zero_range_m = j.value("zero_range_m", 0.0f);
         g_state.zero.sight_height_mm = j.value("sight_height_mm", 0.0f);
 
@@ -2092,6 +2177,8 @@ void EngineTickerThread() {
         std::this_thread::sleep_until(next);
         if (!g_ticker_running.load(std::memory_order_relaxed))
             break;
+        if (!g_auto_tick_enabled.load(std::memory_order_relaxed))
+            continue; // disabled: keep window responsive without engine churn
         std::lock_guard<std::mutex> lk(g_engine_mutex);
         RunFrameUpdates(1);
         RefreshOutput();
@@ -2170,6 +2257,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             g_state.last_action = "Unit Mode Changed";
             // ticker will refresh output at next tick
         }
+
+        const bool is_imperial = (g_state.unit_system == UnitSystem::IMPERIAL);
+        const bool uc_on = g_state.uc_config.enabled;
 
         if (ImGui::CollapsingHeader("Cartridge Presets (GUI-only)")) {
             ImGui::TextUnformatted(
@@ -2294,6 +2384,103 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
                 ImGui::EndListBox();
             }
+            // Editable barrel-MV fields for the selected cartridge preset.
+            if (g_state.selected_cartridge_preset >= 0 &&
+                g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+                CartridgePreset& selected_cp =
+                    g_cartridge_presets[g_state.selected_cartridge_preset];
+                ImGui::Separator();
+                ImGui::TextDisabled("Cartridge Barrel-MV: %s", selected_cp.name.c_str());
+                ImGui::SetNextItemWidth(120.0f);
+                if (ImGui::InputFloat("Ref Barrel (in)##cp_ref_barrel",
+                                      &selected_cp.reference_barrel_inches, 0.5f, 1.0f, "%.1f")) {
+                    selected_cp.reference_barrel_inches =
+                        ClampValue(selected_cp.reference_barrel_inches, 1.0f, 40.0f);
+                }
+                if (!selected_cp.barrel_mv_profile.empty()) {
+                    ImGui::TextDisabled("Profile (%d pts — edit JSON to modify):",
+                                        static_cast<int>(selected_cp.barrel_mv_profile.size()));
+                    for (const auto& bp : selected_cp.barrel_mv_profile) {
+                        ImGui::TextDisabled("  %.0f\" \u2192 %.0f fps", bp.first, bp.second);
+                    }
+                } else {
+                    ImGui::SetNextItemWidth(120.0f);
+                    if (ImGui::InputFloat("MV Adj (fps/in)##cp_mv_adj",
+                                          &selected_cp.mv_adjustment_fps_per_in, 1.0f, 5.0f, "%.1f")) {
+                        selected_cp.mv_adjustment_fps_per_in =
+                            std::fmax(0.0f, selected_cp.mv_adjustment_fps_per_in);
+                    }
+                }
+            }
+            // -- Bullet geometry (mass, length, caliber) --
+            ImGui::Separator();
+            {
+                const float avail_mass = ImGui::GetContentRegionAvail().x;
+                ImGui::SetNextItemWidth(uc_on ? avail_mass * 0.45f : -1.0f);
+                ImGui::InputFloat("Mass (gr)", &g_state.bullet.mass_grains, 1.0f, 10.0f, "%.2f");
+                if (uc_on) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f);
+                    const char* mass_labels[8];
+                    for (int i = 0; i < kNumMassErrorPresets && i < 8; ++i)
+                        mass_labels[i] = kMassErrorPresets[i].name;
+                    ImGui::Combo("Mass Type", &g_state.mass_error_preset_index, mass_labels,
+                                 kNumMassErrorPresets);
+                    ImGui::Text("+/-Mass = %.3f gr", g_state.uc_config.sigma_mass_grains);
+                }
+            }
+            float length_display =
+                is_imperial ? (g_state.bullet.length_mm * MM_TO_IN) : g_state.bullet.length_mm;
+            {
+                const float avail_len = ImGui::GetContentRegionAvail().x;
+                ImGui::SetNextItemWidth(uc_on ? avail_len * 0.45f : -1.0f);
+                if (ImGui::InputFloat(is_imperial ? "Length (in)" : "Length (mm)", &length_display,
+                                      is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f,
+                                      is_imperial ? "%.3f" : "%.2f")) {
+                    g_state.bullet.length_mm =
+                        is_imperial ? (length_display * IN_TO_MM) : length_display;
+                }
+                if (uc_on) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f);
+                    const char* length_labels[8];
+                    for (int i = 0; i < kNumLengthErrorPresets && i < 8; ++i)
+                        length_labels[i] = kLengthErrorPresets[i].name;
+                    ImGui::Combo("Length Type", &g_state.length_error_preset_index, length_labels,
+                                 kNumLengthErrorPresets);
+                    const float length_sigma_display =
+                        is_imperial ? (g_state.uc_config.sigma_length_mm * MM_TO_IN)
+                                    : g_state.uc_config.sigma_length_mm;
+                    ImGui::Text(is_imperial ? "+/-Len = %.4f in" : "+/-Len = %.3f mm",
+                                length_sigma_display);
+                }
+            }
+            float caliber_display = is_imperial ? g_state.bullet.caliber_inches
+                                                : (g_state.bullet.caliber_inches * IN_TO_MM);
+            {
+                const float avail_cal = ImGui::GetContentRegionAvail().x;
+                ImGui::SetNextItemWidth(uc_on ? avail_cal * 0.45f : -1.0f);
+                if (ImGui::InputFloat(is_imperial ? "Caliber (in)" : "Caliber (mm)", &caliber_display,
+                                      is_imperial ? 0.001f : 0.01f, is_imperial ? 0.01f : 0.1f,
+                                      is_imperial ? "%.3f" : "%.2f")) {
+                    g_state.bullet.caliber_inches =
+                        is_imperial ? caliber_display : (caliber_display * MM_TO_IN);
+                }
+                if (uc_on) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f);
+                    const char* caliber_labels[8];
+                    for (int i = 0; i < kNumCaliberErrorPresets && i < 8; ++i)
+                        caliber_labels[i] = kCaliberErrorPresets[i].name;
+                    ImGui::Combo("Caliber Type", &g_state.caliber_error_preset_index, caliber_labels,
+                                 kNumCaliberErrorPresets);
+                    const float caliber_sigma_display =
+                        is_imperial ? g_state.uc_config.sigma_caliber_inches
+                                    : (g_state.uc_config.sigma_caliber_inches * IN_TO_MM);
+                    ImGui::Text(is_imperial ? "+/-Cal = %.5f in" : "+/-Cal = %.4f mm",
+                                caliber_sigma_display);
+                }
+            }
         }
 
         if (ImGui::CollapsingHeader("Gun Presets (GUI-only)")) {
@@ -2379,9 +2566,60 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
                 ImGui::EndListBox();
             }
+            // -- Gun geometry (twist rate, barrel length) --
+            ImGui::Separator();
+            float twist_display = is_imperial ? g_state.bullet.twist_rate_inches
+                                              : (g_state.bullet.twist_rate_inches * IN_TO_MM);
+            {
+                const float avail_tw = ImGui::GetContentRegionAvail().x;
+                ImGui::SetNextItemWidth(uc_on ? avail_tw * 0.45f : -1.0f);
+                if (ImGui::InputFloat(is_imperial ? "Twist (in/turn)" : "Twist (mm/turn)",
+                                      &twist_display, is_imperial ? 0.1f : 1.0f,
+                                      is_imperial ? 1.0f : 10.0f, is_imperial ? "%.2f" : "%.1f")) {
+                    g_state.bullet.twist_rate_inches =
+                        is_imperial ? twist_display : (twist_display * MM_TO_IN);
+                }
+                if (uc_on) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f);
+                    const float twist_sigma_display =
+                        is_imperial ? g_state.uc_config.sigma_twist_rate_inches
+                                    : (g_state.uc_config.sigma_twist_rate_inches * IN_TO_MM);
+                    ImGui::Text(is_imperial ? "+/-Twist (1%%) = %.2f in" : "+/-Twist (1%%) = %.1f mm",
+                                twist_sigma_display);
+                }
+            }
+            if (ImGui::InputFloat("Barrel Length (in)", &g_state.bullet.barrel_length_in, 0.1f, 1.0f,
+                                  "%.1f")) {
+                g_state.bullet.barrel_length_in = ClampValue(g_state.bullet.barrel_length_in, 2.0f, 40.0f);
+                ComputeAdjustedMv();
+            }
+            {
+                const float avail_mva = ImGui::GetContentRegionAvail().x;
+                // MV-per-inch is automatically computed from the active cartridge preset.
+                // Show read-only; append "(est.)" when the fallback tiered estimator is active.
+                const float active_fps_per_in = g_state.bullet.mv_adjustment_factor;
+                ImGui::SetNextItemWidth(uc_on ? avail_mva * 0.45f : -1.0f);
+                if (!g_active_barrel_mv_profile.empty()) {
+                    ImGui::TextDisabled("MV Adj: profile (curr %.0f fps)",
+                                        g_state.bullet.muzzle_velocity_ms * MPS_TO_FPS);
+                } else if (g_mv_adjustment_estimated) {
+                    ImGui::TextDisabled("MV Adj (fps/in): %.1f (est.)", active_fps_per_in);
+                } else {
+                    ImGui::TextDisabled("MV Adj (fps/in): %.1f", active_fps_per_in);
+                }
+                if (uc_on) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (ImGui::InputFloat("+/-MVAdj(fps/in)##mva",
+                                          &g_state.uc_config.sigma_mv_adjustment_fps_per_in, 0.0f, 0.0f,
+                                          "%.2f")) {
+                        if (g_state.uc_config.sigma_mv_adjustment_fps_per_in < 0.0f)
+                            g_state.uc_config.sigma_mv_adjustment_fps_per_in = 0.0f;
+                    }
+                }
+            }
         }
-
-        const bool is_imperial = (g_state.unit_system == UnitSystem::IMPERIAL);
 
         ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
         if (g_state.uc_config.enabled) {
@@ -2407,8 +2645,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             ImGui::SameLine();
             ImGui::TextDisabled("(+/- shown inline with each value)");
         }
-
-        const bool uc_on = g_state.uc_config.enabled;
 
         ImGui::TextUnformatted("Manual Inputs");
         ImGui::Checkbox("Override Drag Coefficient", &g_state.override_drag_coefficient);
@@ -2459,116 +2695,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
             }
         }
-        {
-            const float avail_mass = ImGui::GetContentRegionAvail().x;
-            ImGui::SetNextItemWidth(uc_on ? avail_mass * 0.45f : -1.0f);
-            ImGui::InputFloat("Mass (gr)", &g_state.bullet.mass_grains, 1.0f, 10.0f, "%.2f");
-            if (uc_on) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(-1.0f);
-                const char* mass_labels[8];
-                for (int i = 0; i < kNumMassErrorPresets && i < 8; ++i)
-                    mass_labels[i] = kMassErrorPresets[i].name;
-                ImGui::Combo("Mass Type", &g_state.mass_error_preset_index, mass_labels,
-                             kNumMassErrorPresets);
-                ImGui::Text("+/-Mass = %.3f gr", g_state.uc_config.sigma_mass_grains);
-            }
-        }
-        float length_display =
-            is_imperial ? (g_state.bullet.length_mm * MM_TO_IN) : g_state.bullet.length_mm;
-        {
-            const float avail_len = ImGui::GetContentRegionAvail().x;
-            ImGui::SetNextItemWidth(uc_on ? avail_len * 0.45f : -1.0f);
-            if (ImGui::InputFloat(is_imperial ? "Length (in)" : "Length (mm)", &length_display,
-                                  is_imperial ? 0.01f : 0.1f, is_imperial ? 0.1f : 1.0f,
-                                  is_imperial ? "%.3f" : "%.2f")) {
-                g_state.bullet.length_mm =
-                    is_imperial ? (length_display * IN_TO_MM) : length_display;
-            }
-            if (uc_on) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(-1.0f);
-                const char* length_labels[8];
-                for (int i = 0; i < kNumLengthErrorPresets && i < 8; ++i)
-                    length_labels[i] = kLengthErrorPresets[i].name;
-                ImGui::Combo("Length Type", &g_state.length_error_preset_index, length_labels,
-                             kNumLengthErrorPresets);
-                const float length_sigma_display =
-                    is_imperial ? (g_state.uc_config.sigma_length_mm * MM_TO_IN)
-                                : g_state.uc_config.sigma_length_mm;
-                ImGui::Text(is_imperial ? "+/-Len = %.4f in" : "+/-Len = %.3f mm",
-                            length_sigma_display);
-            }
-        }
-        float caliber_display = is_imperial ? g_state.bullet.caliber_inches
-                                            : (g_state.bullet.caliber_inches * IN_TO_MM);
-        {
-            const float avail_cal = ImGui::GetContentRegionAvail().x;
-            ImGui::SetNextItemWidth(uc_on ? avail_cal * 0.45f : -1.0f);
-            if (ImGui::InputFloat(is_imperial ? "Caliber (in)" : "Caliber (mm)", &caliber_display,
-                                  is_imperial ? 0.001f : 0.01f, is_imperial ? 0.01f : 0.1f,
-                                  is_imperial ? "%.3f" : "%.2f")) {
-                g_state.bullet.caliber_inches =
-                    is_imperial ? caliber_display : (caliber_display * MM_TO_IN);
-            }
-            if (uc_on) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(-1.0f);
-                const char* caliber_labels[8];
-                for (int i = 0; i < kNumCaliberErrorPresets && i < 8; ++i)
-                    caliber_labels[i] = kCaliberErrorPresets[i].name;
-                ImGui::Combo("Caliber Type", &g_state.caliber_error_preset_index, caliber_labels,
-                             kNumCaliberErrorPresets);
-                const float caliber_sigma_display =
-                    is_imperial ? g_state.uc_config.sigma_caliber_inches
-                                : (g_state.uc_config.sigma_caliber_inches * IN_TO_MM);
-                ImGui::Text(is_imperial ? "+/-Cal = %.5f in" : "+/-Cal = %.4f mm",
-                            caliber_sigma_display);
-            }
-        }
-        float twist_display = is_imperial ? g_state.bullet.twist_rate_inches
-                                          : (g_state.bullet.twist_rate_inches * IN_TO_MM);
-        {
-            const float avail_tw = ImGui::GetContentRegionAvail().x;
-            ImGui::SetNextItemWidth(uc_on ? avail_tw * 0.45f : -1.0f);
-            if (ImGui::InputFloat(is_imperial ? "Twist (in/turn)" : "Twist (mm/turn)",
-                                  &twist_display, is_imperial ? 0.1f : 1.0f,
-                                  is_imperial ? 1.0f : 10.0f, is_imperial ? "%.2f" : "%.1f")) {
-                g_state.bullet.twist_rate_inches =
-                    is_imperial ? twist_display : (twist_display * MM_TO_IN);
-            }
-            if (uc_on) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(-1.0f);
-                const float twist_sigma_display =
-                    is_imperial ? g_state.uc_config.sigma_twist_rate_inches
-                                : (g_state.uc_config.sigma_twist_rate_inches * IN_TO_MM);
-                ImGui::Text(is_imperial ? "+/-Twist (1%%) = %.2f in" : "+/-Twist (1%%) = %.1f mm",
-                            twist_sigma_display);
-            }
-        }
-        ImGui::InputFloat("Barrel Length (in)", &g_state.bullet.barrel_length_in, 0.1f, 1.0f,
-                          "%.1f");
-        {
-            const float avail_mva = ImGui::GetContentRegionAvail().x;
-            ImGui::SetNextItemWidth(uc_on ? avail_mva * 0.45f : -1.0f);
-            if (ImGui::InputFloat("MV Adjustment (fps/in)", &g_state.bullet.mv_adjustment_factor,
-                                  1.0f, 10.0f, "%.1f")) {
-                g_state.bullet.mv_adjustment_factor =
-                    std::fabs(g_state.bullet.mv_adjustment_factor);
-            }
-            if (uc_on) {
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(-1.0f);
-                if (ImGui::InputFloat("+/-MVAdj(fps/in)##mva",
-                                      &g_state.uc_config.sigma_mv_adjustment_fps_per_in, 0.0f, 0.0f,
-                                      "%.2f")) {
-                    if (g_state.uc_config.sigma_mv_adjustment_fps_per_in < 0.0f)
-                        g_state.uc_config.sigma_mv_adjustment_fps_per_in = 0.0f;
-                }
-            }
-        }
-
         ImGui::Separator();
         float zero_display =
             is_imperial ? (g_state.zero.zero_range_m * M_TO_YD) : g_state.zero.zero_range_m;
@@ -2977,14 +3103,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
         }
 
-        ImGui::Checkbox("IMU Valid", &g_state.imu_valid);
-        ImGui::SameLine();
-        ImGui::Checkbox("Mag Valid", &g_state.mag_valid);
-        ImGui::SameLine();
-        ImGui::Checkbox("Baro Valid", &g_state.baro_valid);
-        ImGui::Checkbox("Humidity Valid", &g_state.baro_humidity_valid);
-        ImGui::SameLine();
-        ImGui::Checkbox("LRF Valid", &g_state.lrf_valid);
+        if (ImGui::CollapsingHeader("Sensor Fault Simulation (Dev)")) {
+            ImGui::TextDisabled("Uncheck to simulate a missing/failed sensor.");
+            ImGui::Checkbox("IMU Valid", &g_state.imu_valid);
+            ImGui::SameLine();
+            ImGui::Checkbox("Mag Valid", &g_state.mag_valid);
+            ImGui::SameLine();
+            ImGui::Checkbox("Baro Valid", &g_state.baro_valid);
+            ImGui::Checkbox("Humidity Valid", &g_state.baro_humidity_valid);
+            ImGui::SameLine();
+            ImGui::Checkbox("LRF Valid", &g_state.lrf_valid);
+        }
 
         if (uc_on) {
             ImGui::Separator();
@@ -3033,12 +3162,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             RefreshOutput();
         }
         ImGui::SameLine();
+        const bool run_100_busy = g_run_batch_in_flight.load(std::memory_order_relaxed);
+        ImGui::BeginDisabled(run_100_busy);
         if (ImGui::Button("Run 100")) {
-            g_state.last_action = "Run 100";
-            std::lock_guard<std::mutex> lk(g_engine_mutex);
-            ApplyConfig();
-            RunFrameUpdates(100);
-            RefreshOutput();
+            // Kick off the heavier batch on a worker so the render loop stays responsive.
+            g_run_batch_in_flight.store(true, std::memory_order_relaxed);
+            std::thread([] {
+                std::lock_guard<std::mutex> lk(g_engine_mutex);
+                g_state.last_action = "Run 100";
+                ApplyConfig();
+                RunFrameUpdates(100);
+                RefreshOutput();
+                g_run_batch_in_flight.store(false, std::memory_order_relaxed);
+            }).detach();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        bool auto_tick = g_auto_tick_enabled.load(std::memory_order_relaxed);
+        if (ImGui::Checkbox("Auto Tick", &auto_tick)) {
+            g_auto_tick_enabled.store(auto_tick, std::memory_order_relaxed);
         }
         ImGui::SameLine();
         if (ImGui::Button("Reset Engine")) {

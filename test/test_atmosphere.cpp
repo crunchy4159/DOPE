@@ -4,8 +4,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/atmo/atmosphere.h"
-#include "bce/bce_config.h"
+#include "../lib/dope/src/atmo/atmosphere.h"
+#include "dope/dope_config.h"
 #include <cmath>
 
 class AtmosphereTest : public ::testing::Test {

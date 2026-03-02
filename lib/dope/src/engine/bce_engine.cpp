@@ -16,7 +16,6 @@
 #include <cstring>
 
 namespace {
-constexpr float BCE_LRF_FILTER_ALPHA = 0.2f;
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
 
@@ -197,8 +196,8 @@ void BCE_Engine::update(const SensorFrame* frame) {
             } else {
                 // Apply IIR filter    [MATH §14.3]
                 lrf_range_filtered_m_ =
-                    BCE_LRF_FILTER_ALPHA * lrf_range_m +
-                    (1.0f - BCE_LRF_FILTER_ALPHA) * lrf_range_filtered_m_; // [MATH §14.3]
+                    lrf_filter_alpha_ * lrf_range_m +
+                    (1.0f - lrf_filter_alpha_) * lrf_range_filtered_m_; // [MATH §14.3]
             }
             lrf_range_m_ = lrf_range_m;
             lrf_timestamp_us_ = frame->lrf_timestamp_us;
@@ -303,6 +302,19 @@ void BCE_Engine::setAHRSAlgorithm(AHRS_Algorithm algo) {
     ahrs_.setAlgorithm(algo);
 }
 
+void BCE_Engine::setAHRSConfig(const BCE_AHRSConfig* config) {
+    if (config) {
+        ahrs_.applyConfig(*config);
+    }
+}
+
+void BCE_Engine::setLRFConfig(const BCE_LRFConfig* config) {
+    if (config) {
+        lrf_filter_alpha_       = config->filter_alpha;
+        lrf_stale_threshold_us_ = config->stale_threshold_us;
+    }
+}
+
 void BCE_Engine::setMagDeclination(float declination_deg) {
     mag_.setDeclination(declination_deg);
 }
@@ -353,7 +365,7 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     // Check hard faults — SRS §13
     if (!has_range_) {
         fault_flags_ |= BCE_Fault::NO_RANGE;
-    } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > BCE_LRF_STALE_US) {
+    } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > lrf_stale_threshold_us_) {
         // LRF stale — not a hard fault, but range is invalid
         has_range_ = false;
         fault_flags_ |= BCE_Fault::NO_RANGE;

@@ -7,10 +7,10 @@
  */
 
 // Placeholder for ESP32 application main
-// The BCE library lives in lib/bce/ and is platform-agnostic.
-// This file is only compiled for the esp32p4 environment.
+// The DOPE library lives in lib/dope/ and is platform-agnostic.
+// This file is only compiled for the esp32sim environment.
 
-#include "bce/bce_api.h"
+#include "dope/dope_api.h"
 
 #if defined(BCE_PLATFORM_NATIVE)
 int main() {

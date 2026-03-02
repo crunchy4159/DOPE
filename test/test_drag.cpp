@@ -4,8 +4,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "../lib/bce/src/drag/drag_model.h"
-#include "bce/bce_config.h"
+#include "../lib/dope/src/drag/drag_model.h"
+#include "dope/dope_config.h"
 #include <cmath>
 #include <limits>
 
