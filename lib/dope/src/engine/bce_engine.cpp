@@ -478,7 +478,9 @@ void BCE_Engine::computeSolution() {
     }
 
     // Convert drop/windage to MOA holds
-    float range = lrf_range_m_;
+    // Use the filtered range consistently for both the solver inputs and hold math to avoid
+    // mixing a smoothed trajectory with an unfiltered denominator at very short ranges.
+    float range = lrf_range_filtered_m_;
     float drop_moa = 0.0f;
     float wind_from_wind_moa = 0.0f;
 
