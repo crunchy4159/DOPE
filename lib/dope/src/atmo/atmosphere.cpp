@@ -25,10 +25,10 @@ static constexpr float C_TO_F_OFFSET = 32.0f;
 static constexpr float C_TO_F_SCALE  = 1.8f;
 
 void Atmosphere::init() {
-    pressure_pa_     = BCE_DEFAULT_PRESSURE_PA;
-    temperature_c_   = BCE_DEFAULT_TEMPERATURE_C;
-    humidity_        = BCE_DEFAULT_HUMIDITY;
-    altitude_m_      = BCE_DEFAULT_ALTITUDE_M;
+    pressure_pa_     = DOPE_DEFAULT_PRESSURE_PA;
+    temperature_c_   = DOPE_DEFAULT_TEMPERATURE_C;
+    humidity_        = DOPE_DEFAULT_HUMIDITY;
+    altitude_m_      = DOPE_DEFAULT_ALTITUDE_M;
     baro_offset_pa_  = 0.0f;
 
     has_baro_pressure_    = false;
@@ -62,7 +62,7 @@ void Atmosphere::updateFromBaro(float pressure_pa, float temperature_c, float hu
     // Apply calibration offset
     float corrected_pressure = pressure_pa + baro_offset_pa_;
     if (!std::isfinite(corrected_pressure)) {
-        corrected_pressure = BCE_DEFAULT_PRESSURE_PA;
+        corrected_pressure = DOPE_DEFAULT_PRESSURE_PA;
         had_invalid_input_ = true;
     }
     if (corrected_pressure < 1000.0f) {
@@ -77,7 +77,7 @@ void Atmosphere::updateFromBaro(float pressure_pa, float temperature_c, float hu
 
     float safe_temp = temperature_c;
     if (!std::isfinite(safe_temp)) {
-        safe_temp = BCE_DEFAULT_TEMPERATURE_C;
+        safe_temp = DOPE_DEFAULT_TEMPERATURE_C;
         had_invalid_input_ = true;
     }
     if (safe_temp < -80.0f) {
@@ -103,14 +103,14 @@ void Atmosphere::updateFromBaro(float pressure_pa, float temperature_c, float hu
                 humidity_ = 1.0f;
             }
         } else {
-            humidity_ = BCE_DEFAULT_HUMIDITY;
+            humidity_ = DOPE_DEFAULT_HUMIDITY;
         }
     }
 
     recompute();
 }
 
-void Atmosphere::applyDefaults(const BCE_DefaultOverrides& ovr) {
+void Atmosphere::applyDefaults(const DOPE_DefaultOverrides& ovr) {
     if (ovr.use_altitude) {
         has_override_altitude_ = true;
         altitude_m_ = ovr.altitude_m;
@@ -140,7 +140,7 @@ void Atmosphere::applyDefaults(const BCE_DefaultOverrides& ovr) {
 void Atmosphere::calibrateBaro() {
     // Store offset so current pressure reads as standard sea-level
     // This is a simplistic field calibration
-    baro_offset_pa_ = BCE_STD_PRESSURE_PA - (pressure_pa_ - baro_offset_pa_);
+    baro_offset_pa_ = DOPE_STD_PRESSURE_PA - (pressure_pa_ - baro_offset_pa_);
     recompute();
 }
 
@@ -152,20 +152,20 @@ void Atmosphere::recompute() {
     // Update diagnostic flags
     diag_flags_ = 0;
     if (!has_baro_pressure_ && !has_override_pressure_) {
-        diag_flags_ |= BCE_Diag::DEFAULT_PRESSURE;
+        diag_flags_ |= DOPE_Diag::DEFAULT_PRESSURE;
     }
     if (!has_baro_temperature_ && !has_override_temp_) {
-        diag_flags_ |= BCE_Diag::DEFAULT_TEMP;
+        diag_flags_ |= DOPE_Diag::DEFAULT_TEMP;
     }
     if (!has_baro_humidity_ && !has_override_humidity_) {
-        diag_flags_ |= BCE_Diag::DEFAULT_HUMIDITY;
+        diag_flags_ |= DOPE_Diag::DEFAULT_HUMIDITY;
     }
     if (!has_override_altitude_) {
-        diag_flags_ |= BCE_Diag::DEFAULT_ALTITUDE;
+        diag_flags_ |= DOPE_Diag::DEFAULT_ALTITUDE;
     }
 
     // Temperature in Kelvin
-    float T_kelvin = temperature_c_ + BCE_KELVIN_OFFSET;
+    float T_kelvin = temperature_c_ + DOPE_KELVIN_OFFSET;
     if (T_kelvin < 1.0f) T_kelvin = 1.0f; // safety
 
     float pressure_pa = pressure_pa_;
@@ -176,7 +176,7 @@ void Atmosphere::recompute() {
 
     float humidity = humidity_;
     if (!std::isfinite(humidity)) {
-        humidity = BCE_DEFAULT_HUMIDITY;
+        humidity = DOPE_DEFAULT_HUMIDITY;
         had_invalid_input_ = true;
     }
     if (humidity < 0.0f) {
@@ -202,15 +202,15 @@ void Atmosphere::recompute() {
     }
 
     // Air density via ideal gas law with virtual temperature    [MATH §3.3]
-    air_density_ = pressure_pa / (BCE_R_DRY_AIR * T_virtual); // [MATH §3.3]
+    air_density_ = pressure_pa / (DOPE_R_DRY_AIR * T_virtual); // [MATH §3.3]
 
     // Speed of sound (approximation for moist air)    [MATH §3.4]
     speed_of_sound_ = 20.05f * std::sqrt(T_virtual); // [MATH §3.4]
 
     float current_bc_factor = correctBC(1.0f);
-    if (std::fabs(current_bc_factor - prev_bc_factor) >= BCE_ZERO_RECOMPUTE_BC_FACTOR_DELTA ||
-        std::fabs(air_density_ - prev_density) >= BCE_ZERO_RECOMPUTE_DENSITY_DELTA ||
-        std::fabs(speed_of_sound_ - prev_sos) >= BCE_ZERO_RECOMPUTE_SOS_DELTA) {
+    if (std::fabs(current_bc_factor - prev_bc_factor) >= DOPE_ZERO_RECOMPUTE_BC_FACTOR_DELTA ||
+        std::fabs(air_density_ - prev_density) >= DOPE_ZERO_RECOMPUTE_DENSITY_DELTA ||
+        std::fabs(speed_of_sound_ - prev_sos) >= DOPE_ZERO_RECOMPUTE_SOS_DELTA) {
         zero_recompute_hint_ = true;
     }
     last_bc_factor_ = current_bc_factor;

@@ -2,7 +2,7 @@
  * @file dope_types.h
  * @brief All data structures for the Ballistic Core Engine.
  *
- * BCE SRS v1.3 — Sections 3, 5.2, 7, 8, 12, 13
+ * DOPE SRS v1.3 — Sections 3, 5.2, 7, 8, 12, 13
  */
 
 #pragma once
@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 // Operating Modes — SRS §3
 // ---------------------------------------------------------------------------
-enum class BCE_Mode : uint32_t {
+enum class DOPE_Mode : uint32_t {
     IDLE           = 0,  // Insufficient data for solution
     SOLUTION_READY = 1,  // Valid firing solution available
     FAULT          = 2   // Required inputs missing or invalid
@@ -21,7 +21,7 @@ enum class BCE_Mode : uint32_t {
 // ---------------------------------------------------------------------------
 // Fault Flags (bitfield) — SRS §13
 // ---------------------------------------------------------------------------
-namespace BCE_Fault {
+namespace DOPE_Fault {
     constexpr uint32_t NONE            = 0;
     constexpr uint32_t NO_RANGE        = (1u << 0);
     constexpr uint32_t NO_BULLET       = (1u << 1);
@@ -30,12 +30,12 @@ namespace BCE_Fault {
     constexpr uint32_t ZERO_UNSOLVABLE = (1u << 4);
     constexpr uint32_t AHRS_UNSTABLE   = (1u << 5);
     constexpr uint32_t SENSOR_INVALID  = (1u << 6);
-} // namespace BCE_Fault
+} // namespace DOPE_Fault
 
 // ---------------------------------------------------------------------------
 // Diagnostic Flags (bitfield) — informational, not faults
 // ---------------------------------------------------------------------------
-namespace BCE_Diag {
+namespace DOPE_Diag {
     constexpr uint32_t NONE               = 0;
     constexpr uint32_t CORIOLIS_DISABLED  = (1u << 0);
     constexpr uint32_t DEFAULT_PRESSURE   = (1u << 1);
@@ -45,7 +45,7 @@ namespace BCE_Diag {
     constexpr uint32_t DEFAULT_WIND       = (1u << 5);
     constexpr uint32_t MAG_SUPPRESSED     = (1u << 6);
     constexpr uint32_t LRF_STALE          = (1u << 7);
-} // namespace BCE_Diag
+} // namespace DOPE_Diag
 
 // ---------------------------------------------------------------------------
 // Drag Model Enum — SRS §8
@@ -105,7 +105,7 @@ struct SensorFrame {
 // ---------------------------------------------------------------------------
 // Default Overrides — SRS §5.2
 // ---------------------------------------------------------------------------
-struct BCE_DefaultOverrides {
+struct DOPE_DefaultOverrides {
     bool  use_altitude;
     float altitude_m;
 
@@ -154,10 +154,10 @@ struct ZeroConfig {
 // AHRS Tuning Configuration
 //
 // IMU-hardware-specific parameters that must be supplied by the application
-// layer (GUI / firmware) from its hardware preset tables.  If BCE_SetAHRSConfig
+// layer (GUI / firmware) from its hardware preset tables.  If DOPE_SetAHRSConfig
 // is never called the engine starts with built-in neutral defaults.
 // ---------------------------------------------------------------------------
-struct BCE_AHRSConfig {
+struct DOPE_AHRSConfig {
     float    madgwick_beta;           // Madgwick gradient-descent gain (hardware-tuned)
     float    mahony_kp;               // Mahony proportional gain       (hardware-tuned)
     float    mahony_ki;               // Mahony integral gain           (hardware-tuned)
@@ -169,9 +169,9 @@ struct BCE_AHRSConfig {
 // LRF Hardware Configuration
 //
 // LRF-hardware-specific parameters supplied by the application layer.
-// If BCE_SetLRFConfig is never called the engine uses built-in defaults.
+// If DOPE_SetLRFConfig is never called the engine uses built-in defaults.
 // ---------------------------------------------------------------------------
-struct BCE_LRFConfig {
+struct DOPE_LRFConfig {
     float    filter_alpha;            // IIR smoothing weight [0–1]; higher = less smoothing
     uint32_t stale_threshold_us;      // Range reading marked stale after this many µs
 };
@@ -180,9 +180,9 @@ struct BCE_LRFConfig {
 // Firing Solution — SRS §12
 // ---------------------------------------------------------------------------
 struct FiringSolution {
-    uint32_t solution_mode;           // BCE_Mode cast to uint32
-    uint32_t fault_flags;             // BCE_Fault bitfield
-    uint32_t defaults_active;         // BCE_Diag bitfield
+    uint32_t solution_mode;           // DOPE_Mode cast to uint32
+    uint32_t fault_flags;             // DOPE_Fault bitfield
+    uint32_t defaults_active;         // DOPE_Diag bitfield
 
     float hold_elevation_moa;         // Total elevation hold (MOA)
     float hold_windage_moa;           // Total windage hold (MOA)
@@ -228,9 +228,9 @@ struct FiringSolution {
 // Realtime Solution (minimal hot-path output)
 // ---------------------------------------------------------------------------
 struct RealtimeSolution {
-    uint32_t solution_mode;           // BCE_Mode cast to uint32
-    uint32_t fault_flags;             // BCE_Fault bitfield
-    uint32_t defaults_active;         // BCE_Diag bitfield
+    uint32_t solution_mode;           // DOPE_Mode cast to uint32
+    uint32_t fault_flags;             // DOPE_Fault bitfield
+    uint32_t defaults_active;         // DOPE_Diag bitfield
 
     float hold_elevation_moa;         // Final elevation hold (MOA)
     float hold_windage_moa;           // Final windage hold (MOA)
@@ -254,23 +254,23 @@ struct RealtimeSolution {
  *          temperature_c for a thermometer).
  * `sigma` is the 1-sigma uncertainty at that x value.
  */
-struct BCE_ErrorPoint {
+struct DOPE_ErrorPoint {
     float x;
     float sigma;
 };
 
 /**
- * @brief A reference to an array of BCE_ErrorPoint breakpoints.
+ * @brief A reference to an array of DOPE_ErrorPoint breakpoints.
  *
- * Pass to BCE_InterpolateSigma() to obtain piecewise-linearly interpolated
+ * Pass to DOPE_InterpolateSigma() to obtain piecewise-linearly interpolated
  * sigma values at arbitrary x positions.  Clamps to the first/last sigma
  * outside the table range.
  *
- * Set {nullptr, 0} for a "Custom / manual" entry (BCE_InterpolateSigma
+ * Set {nullptr, 0} for a "Custom / manual" entry (DOPE_InterpolateSigma
  * returns 0.0f for a null table, leaving the caller's sigma unchanged).
  */
-struct BCE_ErrorTable {
-    const BCE_ErrorPoint* points;
+struct DOPE_ErrorTable {
+    const DOPE_ErrorPoint* points;
     int                   count;
 };
 
@@ -280,7 +280,7 @@ struct BCE_ErrorTable {
 /**
  * @brief A single breakpoint mapping range to CEP50 radius in MOA.
  */
-struct BCE_CEPPoint {
+struct DOPE_CEPPoint {
     float range_m;
     float cep50_moa; // CEP50 radius (MOA)
 };
@@ -291,8 +291,8 @@ struct BCE_CEPPoint {
  * The engine treats CEP50 radii as a target dispersion envelope and scales the
  * computed uncertainty to match, preserving directional variance ratios.
  */
-struct BCE_CEPTable {
-    const BCE_CEPPoint* points;
+struct DOPE_CEPTable {
+    const DOPE_CEPPoint* points;
     int                 count;
 };
 
@@ -302,11 +302,11 @@ struct BCE_CEPTable {
 /**
  * @brief Per-input 1-sigma uncertainties for Gaussian error propagation.
  *
- * When enabled, BCE_Engine runs central finite differences over each input
+ * When enabled, DOPE_Engine runs central finite differences over each input
  * and accumulates the resulting MOA variance into sigma_elevation_moa,
  * sigma_windage_moa, and covariance_elev_wind in the FiringSolution.
  *
- * Use BCE_GetDefaultUncertaintyConfig() to obtain sensible starting values.
+ * Use DOPE_GetDefaultUncertaintyConfig() to obtain sensible starting values.
  */
 
 struct UncertaintyConfig {
@@ -333,13 +333,13 @@ struct UncertaintyConfig {
     // When enabled, engine derives sigma values from live sensor inputs instead
     // of trusting GUI/manual scalar sigma entry for those channels.
     bool          use_range_error_table;
-    BCE_ErrorTable range_error_table;                // x = range_m, sigma = sigma_range_m
+    DOPE_ErrorTable range_error_table;                // x = range_m, sigma = sigma_range_m
 
     bool          use_temperature_error_table;
-    BCE_ErrorTable temperature_error_table;          // x = temp_c, sigma = sigma_temperature_c
+    DOPE_ErrorTable temperature_error_table;          // x = temp_c, sigma = sigma_temperature_c
 
     bool          use_pressure_delta_temp_error_table;
-    BCE_ErrorTable pressure_delta_temp_error_table;  // x = |delta_temp_c_since_cal|, sigma = sigma_pressure_pa
+    DOPE_ErrorTable pressure_delta_temp_error_table;  // x = |delta_temp_c_since_cal|, sigma = sigma_pressure_pa
     float         pressure_uncalibrated_sigma_pa;    // fallback when not calibrated or invalid calibration metadata
     bool          pressure_is_calibrated;
     bool          pressure_has_calibration_temp;
@@ -348,7 +348,7 @@ struct UncertaintyConfig {
     // Optional cartridge-specific dispersion model (CEP50 in MOA) to scale
     // propagated uncertainty at each range.  Disabled when table is null/empty.
     bool         use_cartridge_cep_table;
-    BCE_CEPTable cartridge_cep_table; // x = range_m, cep50_moa = CEP radius (MOA)
+    DOPE_CEPTable cartridge_cep_table; // x = range_m, cep50_moa = CEP radius (MOA)
     float        cartridge_cep_scale_floor; // minimum multiplicative scale (>=1 recommended)
 };
 

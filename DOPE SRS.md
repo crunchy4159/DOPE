@@ -70,7 +70,7 @@ If LiDAR mapping or vision processing exists, it is handled by the Application l
 
 DOPE computes one firing solution at a time.
 
-For this repository, the production DOPE engine scope is `lib/bce/`; desktop GUI harness code (`tools/native_gui/gui_main.cpp`, `tools/native_gui/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
+For this repository, the production DOPE engine scope is `lib/dope/`; desktop GUI harness code (`tools/native_gui/gui_main.cpp`, `tools/native_gui/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
 
 ---
 
@@ -164,7 +164,7 @@ Defaults never trigger FAULT.
 ## 5.2 Default Override Mechanism
 
 ```cpp
-struct BCE_DefaultOverrides {
+struct DOPE_DefaultOverrides {
     bool use_altitude;
     float altitude_m;
 
@@ -187,7 +187,7 @@ struct BCE_DefaultOverrides {
 ```
 
 ```cpp
-void BCE_SetDefaultOverrides(const BCE_DefaultOverrides* defaults);
+void DOPE_SetDefaultOverrides(const DOPE_DefaultOverrides* defaults);
 ```
 
 Application may load user profile defaults at startup.
@@ -199,7 +199,7 @@ Application may load user profile defaults at startup.
 Compile-time constant:
 
 ```cpp
-constexpr uint32_t BCE_MAX_RANGE_M = 2500;
+constexpr uint32_t DOPE_MAX_RANGE_M = 2500;
 ```
 
 - Supports current 2km LRF
@@ -220,7 +220,7 @@ Application may configure a lower operational limit.
 All inputs enter through:
 
 ```cpp
-void BCE_Update(const SensorFrame* frame);
+void DOPE_Update(const SensorFrame* frame);
 ```
 
 ---
@@ -313,7 +313,7 @@ Computes:
 Supports:
 
 ```cpp
-void BCE_CalibrateBaro(void);
+void DOPE_CalibrateBaro(void);
 ```
 
 ---
@@ -346,7 +346,7 @@ Engine behavior:
 
 ## 7.5 GPS / GNSS Receiver (optional)
 
-Latitude may be fed directly from an external GPS/GNSS receiver by the Application layer. DOPE does not ingest raw NMEA or satellite data; the Application provides a single resolved latitude value via `BCE_Update` or `BCE_SetDefaultOverrides`.
+Latitude may be fed directly from an external GPS/GNSS receiver by the Application layer. DOPE does not ingest raw NMEA or satellite data; the Application provides a single resolved latitude value via `DOPE_Update` or `DOPE_SetDefaultOverrides`.
 
 When a GPS/GNSS latitude is available it takes the highest priority in the latitude hierarchy (see §11.4). A manually entered latitude should be used to verify/calibrate GPS accuracy at a known benchmark point.
 
@@ -410,12 +410,12 @@ Manual zero recompute API removed.
 # 10. Calibration APIs
 
 ```cpp
-void BCE_SetIMUBias(const float accel_bias[3], const float gyro_bias[3]);
-void BCE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
-void BCE_SetBoresightOffset(const BoresightOffset* offset);
-void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
-void BCE_CalibrateBaro(void);
-void BCE_CalibrateGyro(void);
+void DOPE_SetIMUBias(const float accel_bias[3], const float gyro_bias[3]);
+void DOPE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
+void DOPE_SetBoresightOffset(const BoresightOffset* offset);
+void DOPE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
+void DOPE_CalibrateBaro(void);
+void DOPE_CalibrateGyro(void);
 ```
 
 These correct physical alignment errors.
@@ -663,7 +663,7 @@ All intelligence above trajectory math lives outside it.
 
 Coriolis and Eötvös corrections require latitude. DOPE supports three independent latitude sources with a well-defined priority hierarchy:
 
-**GPS / GNSS (highest priority):** The Application layer may attach any GNSS receiver and pass resolved latitude through the existing scalar input interface (`BCE_Update` / `BCE_SetDefaultOverrides`). DOPE is hardware-agnostic — it does not ingest NMEA or satellite data directly. GPS provides the most accurate latitude (<0.001° typical) and is the preferred source when hardware permits.
+**GPS / GNSS (highest priority):** The Application layer may attach any GNSS receiver and pass resolved latitude through the existing scalar input interface (`DOPE_Update` / `DOPE_SetDefaultOverrides`). DOPE is hardware-agnostic — it does not ingest NMEA or satellite data directly. GPS provides the most accurate latitude (<0.001° typical) and is the preferred source when hardware permits.
 
 **Manual entry (intermediate priority):** The user enters a known latitude at setup time. This is the intended primary workflow when GPS hardware is absent. Manual entry also serves a dual role: it **calibrates the magnetometer dip-angle estimator** by providing a ground-truth value at a known position, improving the accuracy of autonomous estimation in subsequent use at or near the same location.
 

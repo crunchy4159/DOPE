@@ -1,6 +1,6 @@
 /**
  * @file test_main.cpp
- * @brief GoogleTest entry point for the BCE test suite.
+ * @brief GoogleTest entry point for the DOPE test suite.
  */
 
 #include <gtest/gtest.h>

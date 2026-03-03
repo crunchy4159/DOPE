@@ -15,7 +15,7 @@
 class UncertaintyTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        BCE_Init();
+        DOPE_Init();
     }
 
     void configureStandard308() {
@@ -30,14 +30,14 @@ protected:
         bullet.barrel_length_in = 24.0f;
         bullet.reference_barrel_length_in = 24.0f;
         bullet.mv_adjustment_factor = 25.0f;
-        BCE_SetBulletProfile(&bullet);
+        DOPE_SetBulletProfile(&bullet);
 
         ZeroConfig zero = {};
         zero.zero_range_m = 100.0f;
         zero.sight_height_mm = 38.1f;
-        BCE_SetZeroConfig(&zero);
+        DOPE_SetZeroConfig(&zero);
 
-        BCE_SetLatitude(37.0f);
+        DOPE_SetLatitude(37.0f);
     }
 
     SensorFrame makeDefaultFrame(uint64_t timestamp_us) {
@@ -73,7 +73,7 @@ protected:
     void stabilizeAHRS() {
         for (int i = 0; i < 200; ++i) {
             SensorFrame f = makeDefaultFrame(10000 * (i + 1));
-            BCE_Update(&f);
+            DOPE_Update(&f);
         }
     }
 
@@ -82,12 +82,12 @@ protected:
         f.lrf_range_m = range_m;
         f.lrf_timestamp_us = f.timestamp_us;
         f.lrf_valid = true;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution getSolution() {
         FiringSolution sol = {};
-        BCE_GetSolution(&sol);
+        DOPE_GetSolution(&sol);
         return sol;
     }
 };
@@ -98,15 +98,15 @@ TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
     feedRange(500.0f);
 
     UncertaintyConfig uc = {};
-    BCE_GetDefaultUncertaintyConfig(&uc);
+    DOPE_GetDefaultUncertaintyConfig(&uc);
     uc.enabled = true;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution base = getSolution();
     ASSERT_TRUE(base.uncertainty_valid);
@@ -117,17 +117,17 @@ TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
 
     const float target_factor = 1.8f;
     const float target_cep50_moa = base_radius * target_factor * 1.17741f; // CEP50 -> 1-sigma
-    BCE_CEPPoint cep_point = {500.0f, target_cep50_moa};
+    DOPE_CEPPoint cep_point = {500.0f, target_cep50_moa};
     uc.use_cartridge_cep_table = true;
     uc.cartridge_cep_table = {&cep_point, 1};
     uc.cartridge_cep_scale_floor = 1.0f;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f2 = makeDefaultFrame(10000 * 500);
     f2.lrf_range_m = 500.0f;
     f2.lrf_timestamp_us = f2.timestamp_us;
     f2.lrf_valid = true;
-    BCE_Update(&f2);
+    DOPE_Update(&f2);
 
     FiringSolution scaled = getSolution();
     ASSERT_TRUE(scaled.uncertainty_valid);
@@ -147,14 +147,14 @@ TEST_F(UncertaintyTest, AllZeroSigmaProducesZeroUncertainty) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     // All sigmas are zero (default-initialized)
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     // Re-run to get updated solution
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -169,15 +169,15 @@ TEST_F(UncertaintyTest, DisabledProducesNoUncertainty) {
     feedRange(500.0f);
 
     UncertaintyConfig uc = {};
-    BCE_GetDefaultUncertaintyConfig(&uc);
+    DOPE_GetDefaultUncertaintyConfig(&uc);
     uc.enabled = false;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_FALSE(sol.uncertainty_valid);
@@ -195,13 +195,13 @@ TEST_F(UncertaintyTest, MVSigmaAffectsElevation) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_muzzle_velocity_ms = 3.0f; // ~10 fps
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -213,20 +213,20 @@ TEST_F(UncertaintyTest, MVSigmaAffectsElevation) {
 
 TEST_F(UncertaintyTest, WindSpeedSigmaAffectsWindage) {
     configureStandard308();
-    BCE_SetWindManual(3.0f, 90.0f); // 3 m/s crosswind from right
+    DOPE_SetWindManual(3.0f, 90.0f); // 3 m/s crosswind from right
     stabilizeAHRS();
     feedRange(500.0f);
 
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_wind_speed_ms = 2.0f;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -236,20 +236,20 @@ TEST_F(UncertaintyTest, WindSpeedSigmaAffectsWindage) {
 
 TEST_F(UncertaintyTest, RangeSigmaAffectsBothAxes) {
     configureStandard308();
-    BCE_SetWindManual(3.0f, 90.0f);
+    DOPE_SetWindManual(3.0f, 90.0f);
     stabilizeAHRS();
     feedRange(500.0f);
 
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_range_m = 5.0f;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -271,18 +271,18 @@ TEST_F(UncertaintyTest, LargerMVSigmaProducesLargerUncertainty) {
         UncertaintyConfig uc = {};
         uc.enabled = true;
         uc.sigma_muzzle_velocity_ms = 1.0f;
-        BCE_SetUncertaintyConfig(&uc);
+        DOPE_SetUncertaintyConfig(&uc);
 
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
         f.lrf_valid = true;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
     FiringSolution small_sol = getSolution();
 
     // Large sigma — reinit to get clean state
-    BCE_Init();
+    DOPE_Init();
     configureStandard308();
     stabilizeAHRS();
     {
@@ -290,13 +290,13 @@ TEST_F(UncertaintyTest, LargerMVSigmaProducesLargerUncertainty) {
         UncertaintyConfig uc = {};
         uc.enabled = true;
         uc.sigma_muzzle_velocity_ms = 5.0f;
-        BCE_SetUncertaintyConfig(&uc);
+        DOPE_SetUncertaintyConfig(&uc);
 
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
         f.lrf_valid = true;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
     FiringSolution large_sol = getSolution();
 
@@ -307,7 +307,7 @@ TEST_F(UncertaintyTest, LargerMVSigmaProducesLargerUncertainty) {
 
 TEST_F(UncertaintyTest, DefaultConfigHasSensibleValues) {
     UncertaintyConfig uc = {};
-    BCE_GetDefaultUncertaintyConfig(&uc);
+    DOPE_GetDefaultUncertaintyConfig(&uc);
 
     EXPECT_TRUE(uc.enabled);
     EXPECT_GT(uc.sigma_muzzle_velocity_ms, 0.0f);
@@ -326,19 +326,19 @@ TEST_F(UncertaintyTest, DefaultConfigHasSensibleValues) {
 
 TEST_F(UncertaintyTest, FullDefaultSigmasAt500mProducePlausibleCEP) {
     configureStandard308();
-    BCE_SetWindManual(3.0f, 90.0f);
+    DOPE_SetWindManual(3.0f, 90.0f);
     stabilizeAHRS();
     feedRange(457.2f); // ~500 yd
 
     UncertaintyConfig uc = {};
-    BCE_GetDefaultUncertaintyConfig(&uc);
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_GetDefaultUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 457.2f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -369,17 +369,17 @@ TEST_F(UncertaintyTest, UncertaintyScalesRoughlyLinearlyWithInputSigma) {
         UncertaintyConfig uc = {};
         uc.enabled = true;
         uc.sigma_muzzle_velocity_ms = 1.0f;
-        BCE_SetUncertaintyConfig(&uc);
+        DOPE_SetUncertaintyConfig(&uc);
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
         f.lrf_valid = true;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
     FiringSolution sol1 = getSolution();
 
     // sigma=2 m/s — reinit
-    BCE_Init();
+    DOPE_Init();
     configureStandard308();
     stabilizeAHRS();
     feedRange(500.0f);
@@ -387,12 +387,12 @@ TEST_F(UncertaintyTest, UncertaintyScalesRoughlyLinearlyWithInputSigma) {
         UncertaintyConfig uc = {};
         uc.enabled = true;
         uc.sigma_muzzle_velocity_ms = 2.0f;
-        BCE_SetUncertaintyConfig(&uc);
+        DOPE_SetUncertaintyConfig(&uc);
         SensorFrame f = makeDefaultFrame(10000 * 400);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
         f.lrf_valid = true;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
     FiringSolution sol2 = getSolution();
 
@@ -415,13 +415,13 @@ TEST_F(UncertaintyTest, BCSigmaAffectsElevation) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_bc_fraction = 0.05f; // 5% — large
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -436,13 +436,13 @@ TEST_F(UncertaintyTest, LengthSigmaContributesToUncertainty) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_length_mm = 1.0f;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 1000.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -454,15 +454,15 @@ TEST_F(UncertaintyTest, LengthSigmaContributesToUncertainty) {
 
 TEST_F(UncertaintyTest, LatitudeSigmaAffectsBothAxesWhenCoriolisActive) {
     configureStandard308();
-    BCE_SetLatitude(45.0f); // Coriolis active
-    BCE_SetWindManual(0.0f, 0.0f);
+    DOPE_SetLatitude(45.0f); // Coriolis active
+    DOPE_SetWindManual(0.0f, 0.0f);
     
     // Stabilize AHRS pointing North-East to ensure both vertical (Eotvos) 
     // and horizontal Coriolis effects are active.
     for (int i = 0; i < 200; ++i) {
         SensorFrame f = makeDefaultFrame(10000 * (i + 1));
         f.mag_y = 25.0f; // Y component gives an Eastward heading
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     feedRange(1000.0f); // Longer range makes Coriolis more apparent
@@ -470,14 +470,14 @@ TEST_F(UncertaintyTest, LatitudeSigmaAffectsBothAxesWhenCoriolisActive) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_latitude_deg = 5.0f; // 5 degrees of latitude uncertainty
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.mag_y = 25.0f;
     f.lrf_range_m = 1000.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
@@ -490,8 +490,8 @@ TEST_F(UncertaintyTest, LatitudeSigmaAffectsBothAxesWhenCoriolisActive) {
 }
 
 TEST_F(UncertaintyTest, LatitudeSigmaIsIgnoredIfCoriolisInactive) {
-    BCE_Init();
-    // Configure standard bullet and zero, but omit BCE_SetLatitude
+    DOPE_Init();
+    // Configure standard bullet and zero, but omit DOPE_SetLatitude
     BulletProfile bullet = {};
     bullet.bc = 0.505f;
     bullet.drag_model = DragModel::G1;
@@ -503,12 +503,12 @@ TEST_F(UncertaintyTest, LatitudeSigmaIsIgnoredIfCoriolisInactive) {
     bullet.barrel_length_in = 24.0f;
     bullet.reference_barrel_length_in = 24.0f;
     bullet.mv_adjustment_factor = 25.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     stabilizeAHRS();
     feedRange(1000.0f);
@@ -516,13 +516,13 @@ TEST_F(UncertaintyTest, LatitudeSigmaIsIgnoredIfCoriolisInactive) {
     UncertaintyConfig uc = {};
     uc.enabled = true;
     uc.sigma_latitude_deg = 5.0f;
-    BCE_SetUncertaintyConfig(&uc);
+    DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 1000.0f;
     f.lrf_timestamp_us = f.timestamp_us;
     f.lrf_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);

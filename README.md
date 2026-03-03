@@ -133,7 +133,7 @@ GUI controls include:
 - Bullet/zero/wind/latitude manual inputs
 - Cartridge preset manager (add/update/apply/remove from current inputs)
 - Rifle preset manager (add/update/apply/remove from current inputs)
-- Shared profile library save/load (`bce_gui_profile_library.json` by default)
+- Shared profile library save/load (`dope_gui_profile_library.json` by default)
 - Sensor validity toggles + baro/LRF fields
 - `Apply Config`, `Step Update`, `Run 100`, `Reset Engine`
 - Live solution panel (`mode`, `fault`, `diag`, holds, TOF, velocity, energy)
@@ -156,7 +156,7 @@ pio run -e esp32p4
 #include "dope/dope_api.h"
 
 // Initialize
-BCE_Init();
+DOPE_Init();
 
 // Configure bullet
 BulletProfile bullet = {};
@@ -166,26 +166,26 @@ bullet.muzzle_velocity_ms = 792.0f;
 bullet.mass_grains = 175.0f;
 bullet.caliber_inches = 0.308f;
 bullet.twist_rate_inches = 10.0f;
-BCE_SetBulletProfile(&bullet);
+DOPE_SetBulletProfile(&bullet);
 
 // Set zero
 ZeroConfig zero = {};
 zero.zero_range_m = 100.0f;
 zero.sight_height_mm = 38.1f;
-BCE_SetZeroConfig(&zero);
+DOPE_SetZeroConfig(&zero);
 
 // Feed sensor data each cycle
-BCE_Update(&sensorFrame);
+DOPE_Update(&sensorFrame);
 
 // Read solution
-if (BCE_GetMode() == BCE_Mode::SOLUTION_READY) {
+if (DOPE_GetMode() == DOPE_Mode::SOLUTION_READY) {
     RealtimeSolution rt;
-    BCE_GetRealtimeSolution(&rt);
+    DOPE_GetRealtimeSolution(&rt);
     // rt.hold_elevation_moa, rt.hold_windage_moa, rt.uncertainty_radius_moa
 
     // Optional: full diagnostics payload
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
 }
 ```
 
@@ -215,7 +215,7 @@ Suggested order for safe tuning:
 ## Cartridge Reference Data Scope
 
 - Cartridge tables/presets are for validation and harness convenience only.
-- BCE engine internals do not look up named cartridge tables; they solve from the active `BulletProfile`, `ZeroConfig`, and sensor inputs.
+- DOPE engine internals do not look up named cartridge tables; they solve from the active `BulletProfile`, `ZeroConfig`, and sensor inputs.
 - Current table-like cartridge presets live in:
     - GUI harness: `tools/native_gui/gui_main.cpp` (input prefill only)
     - Tests: `test/test_cartridges.cpp` and reference-envelope integration tests

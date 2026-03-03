@@ -72,7 +72,7 @@ TEST_F(AHRSTest, QuaternionStaysNormalized) {
 
 // After enough stable samples, isStable() should return true
 TEST_F(AHRSTest, StabilityAfterConvergence) {
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW + 10; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW + 10; ++i) {
         ahrs.update(0.0f, 0.0f, 9.81f,
                     0.0f, 0.0f, 0.0f,
                     0.0f, 0.0f, 0.0f,
@@ -83,7 +83,7 @@ TEST_F(AHRSTest, StabilityAfterConvergence) {
 
 // Static detection: steady accel should report static
 TEST_F(AHRSTest, StaticDetectionWhenStill) {
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW + 10; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW + 10; ++i) {
         ahrs.update(0.0f, 0.0f, 9.81f,
                     0.0f, 0.0f, 0.0f,
                     0.0f, 0.0f, 0.0f,
@@ -94,7 +94,7 @@ TEST_F(AHRSTest, StaticDetectionWhenStill) {
 
 // Static detection: varying accel should not be static
 TEST_F(AHRSTest, NotStaticWhenMoving) {
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW + 10; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW + 10; ++i) {
         float noise = (i % 2 == 0) ? 5.0f : -5.0f;
         ahrs.update(noise, noise, 9.81f + noise,
                     0.0f, 0.0f, 0.0f,
@@ -125,7 +125,7 @@ TEST_F(AHRSTest, GyroBiasCorrection) {
 
 // Stability should drop if the platform is dynamic/noisy after convergence
 TEST_F(AHRSTest, StabilityDropsWhenDynamic) {
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW + 10; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW + 10; ++i) {
         ahrs.update(0.0f, 0.0f, 9.81f,
                     0.0f, 0.0f, 0.0f,
                     0.0f, 0.0f, 0.0f,
@@ -133,7 +133,7 @@ TEST_F(AHRSTest, StabilityDropsWhenDynamic) {
     }
     EXPECT_TRUE(ahrs.isStable());
 
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW + 10; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW + 10; ++i) {
         float noise = (i % 2 == 0) ? 5.0f : -5.0f;
         ahrs.update(noise, noise, 9.81f + noise,
                     0.0f, 0.0f, 0.0f,

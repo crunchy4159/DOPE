@@ -2,7 +2,7 @@
  * @file mag_calibration.h
  * @brief Magnetometer calibration, disturbance detection, and heading computation.
  *
- * BCE SRS v1.3 — Sections 7.2, 10
+ * DOPE SRS v1.3 — Sections 7.2, 10
  */
 
 #pragma once

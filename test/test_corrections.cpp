@@ -76,7 +76,7 @@ TEST(CantTest, ZeroCantNoChange) {
 // 90° cant should turn all elevation into windage
 TEST(CantTest, NinetyDegreeCant) {
     float elev_out, wind_out;
-    float cant_90 = BCE_PI / 2.0f;
+    float cant_90 = DOPE_PI / 2.0f;
     CantCorrection::apply(cant_90, 10.0f, elev_out, wind_out);
 
     EXPECT_NEAR(elev_out, 0.0f, 0.01f);
@@ -86,7 +86,7 @@ TEST(CantTest, NinetyDegreeCant) {
 // 45° cant should split equally
 TEST(CantTest, FortyFiveDegreeCant) {
     float elev_out, wind_out;
-    float cant_45 = BCE_PI / 4.0f;
+    float cant_45 = DOPE_PI / 4.0f;
     CantCorrection::apply(cant_45, 10.0f, elev_out, wind_out);
 
     float expected = 10.0f * std::cos(cant_45);
@@ -97,7 +97,7 @@ TEST(CantTest, FortyFiveDegreeCant) {
 // Small cant should mostly preserve elevation
 TEST(CantTest, SmallCantMostlyPreservesElevation) {
     float elev_out, wind_out;
-    float cant_5deg = 5.0f * BCE_DEG_TO_RAD;
+    float cant_5deg = 5.0f * DOPE_DEG_TO_RAD;
     CantCorrection::apply(cant_5deg, 30.0f, elev_out, wind_out);
 
     EXPECT_NEAR(elev_out, 30.0f, 0.5f); // barely changes

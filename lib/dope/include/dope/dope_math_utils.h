@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bce {
+namespace dope {
 namespace math {
 
 constexpr float PI = 3.14159265358979323846f;
@@ -34,4 +34,4 @@ constexpr float GRAINS_TO_KG = 6.479891e-5f;
 constexpr float BALLISTIC_DRAG_CONSTANT = 900.0f;
 
 } // namespace math
-} // namespace bce
+} // namespace dope

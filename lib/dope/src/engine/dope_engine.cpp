@@ -1,8 +1,8 @@
 /**
- * @file bce_engine.cpp
- * @brief BCE engine implementation — the top-level orchestrator.
+ * @file dope_engine.cpp
+ * @brief DOPE engine implementation — the top-level orchestrator.
  *
- * Pipeline per BCE_Update:
+ * Pipeline per DOPE_Update:
  *   1. Feed IMU/mag → AHRS
  *   2. Feed baro → Atmosphere
  *   3. Store LRF range + quaternion snapshot
@@ -10,7 +10,7 @@
  *   5. If data sufficient → run solver → apply corrections → populate FiringSolution
  */
 
-#include "bce_engine.h"
+#include "dope_engine.h"
 #include "dope/dope_math_utils.h"
 #include <cmath>
 #include <cstring>
@@ -19,7 +19,7 @@ namespace {
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
 
-float InterpolatePiecewiseSigma(const BCE_ErrorTable& table, float x) {
+float InterpolatePiecewiseSigma(const DOPE_ErrorTable& table, float x) {
     if (!table.points || table.count <= 0)
         return 0.0f;
     if (table.count == 1)
@@ -40,7 +40,7 @@ float InterpolatePiecewiseSigma(const BCE_ErrorTable& table, float x) {
     return table.points[table.count - 1].sigma;
 }
 
-float InterpolateCEP(const BCE_CEPTable& table, float range_m) {
+float InterpolateCEP(const DOPE_CEPTable& table, float range_m) {
     if (!table.points || table.count <= 0)
         return 0.0f;
     if (table.count == 1)
@@ -63,13 +63,13 @@ float InterpolateCEP(const BCE_CEPTable& table, float range_m) {
 }
 } // namespace
 
-void BCE_Engine::init() {
+void DOPE_Engine::init() {
     ahrs_.init();
     mag_.init();
     atmo_.init();
     solver_.init();
 
-    mode_ = BCE_Mode::IDLE;
+    mode_ = DOPE_Mode::IDLE;
     fault_flags_ = 0;
     diag_flags_ = 0;
 
@@ -107,10 +107,10 @@ void BCE_Engine::init() {
     fov_h_deg_ = 0.0f;
     fov_v_deg_ = 0.0f;
 
-    solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::IDLE);
+    solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::IDLE);
 }
 
-void BCE_Engine::update(const SensorFrame* frame) {
+void DOPE_Engine::update(const SensorFrame* frame) {
     if (!frame)
         return;
 
@@ -187,7 +187,7 @@ void BCE_Engine::update(const SensorFrame* frame) {
         }
 
         bool range_valid = range_finite && lrf_range_m > 0.0f &&
-                           lrf_range_m <= static_cast<float>(BCE_MAX_RANGE_M);
+                           lrf_range_m <= static_cast<float>(DOPE_MAX_RANGE_M);
 
         if (range_valid) {
             if (!has_range_) {
@@ -208,19 +208,19 @@ void BCE_Engine::update(const SensorFrame* frame) {
     }
 
     // --- 4. Zoom encoder → FOV computation — SRS §7.5    [MATH §14.4]
-    if (frame->encoder_valid && frame->encoder_focal_length_mm > BCE_ENCODER_MIN_FOCAL_LENGTH_MM) {
+    if (frame->encoder_valid && frame->encoder_focal_length_mm > DOPE_ENCODER_MIN_FOCAL_LENGTH_MM) {
         float f = frame->encoder_focal_length_mm;
         fov_h_deg_ =
-            2.0f * std::atan(BCE_SENSOR_HALF_WIDTH_MM / f) * bce::math::RAD_TO_DEG; // [MATH §14.4]
+            2.0f * std::atan(DOPE_SENSOR_HALF_WIDTH_MM / f) * dope::math::RAD_TO_DEG; // [MATH §14.4]
         fov_v_deg_ =
-            2.0f * std::atan(BCE_SENSOR_HALF_HEIGHT_MM / f) * bce::math::RAD_TO_DEG; // [MATH §14.4]
+            2.0f * std::atan(DOPE_SENSOR_HALF_HEIGHT_MM / f) * dope::math::RAD_TO_DEG; // [MATH §14.4]
     }
 
     // --- 5. Evaluate state and compute solution ---
     evaluateState(now_us);
 }
 
-void BCE_Engine::setBulletProfile(const BulletProfile* profile) {
+void DOPE_Engine::setBulletProfile(const BulletProfile* profile) {
     if (!profile)
         return;
     bullet_ = *profile;
@@ -228,7 +228,7 @@ void BCE_Engine::setBulletProfile(const BulletProfile* profile) {
     zero_dirty_ = true;
 }
 
-void BCE_Engine::setZeroConfig(const ZeroConfig* config) {
+void DOPE_Engine::setZeroConfig(const ZeroConfig* config) {
     if (!config)
         return;
     zero_ = *config;
@@ -236,11 +236,11 @@ void BCE_Engine::setZeroConfig(const ZeroConfig* config) {
     zero_dirty_ = true;
 }
 
-void BCE_Engine::setWindManual(float speed_ms, float heading_deg) {
+void DOPE_Engine::setWindManual(float speed_ms, float heading_deg) {
     wind_.setWind(speed_ms, heading_deg);
 }
 
-void BCE_Engine::setLatitude(float latitude_deg) {
+void DOPE_Engine::setLatitude(float latitude_deg) {
     if (std::isnan(latitude_deg)) {
         has_latitude_ = false;
     } else {
@@ -249,7 +249,7 @@ void BCE_Engine::setLatitude(float latitude_deg) {
     }
 }
 
-void BCE_Engine::setDefaultOverrides(const BCE_DefaultOverrides* defaults) {
+void DOPE_Engine::setDefaultOverrides(const DOPE_DefaultOverrides* defaults) {
     if (!defaults)
         return;
     overrides_ = *defaults;
@@ -267,69 +267,69 @@ void BCE_Engine::setDefaultOverrides(const BCE_DefaultOverrides* defaults) {
     zero_dirty_ = true; // atmosphere changed → zero must recompute
 }
 
-void BCE_Engine::setIMUBias(const float accel_bias[3], const float gyro_bias[3]) {
+void DOPE_Engine::setIMUBias(const float accel_bias[3], const float gyro_bias[3]) {
     const float zero[3] = {0.0f, 0.0f, 0.0f};
     ahrs_.setAccelBias(accel_bias ? accel_bias : zero);
     ahrs_.setGyroBias(gyro_bias ? gyro_bias : zero);
 }
 
-void BCE_Engine::setMagCalibration(const float hard_iron[3], const float soft_iron[9]) {
+void DOPE_Engine::setMagCalibration(const float hard_iron[3], const float soft_iron[9]) {
     const float zero_hi[3] = {0.0f, 0.0f, 0.0f};
     const float identity_si[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     mag_.setCalibration(hard_iron ? hard_iron : zero_hi, soft_iron ? soft_iron : identity_si);
 }
 
-void BCE_Engine::setBoresightOffset(float vertical_moa, float horizontal_moa) {
+void DOPE_Engine::setBoresightOffset(float vertical_moa, float horizontal_moa) {
     boresight_.vertical_moa = vertical_moa;
     boresight_.horizontal_moa = horizontal_moa;
 }
 
-void BCE_Engine::setReticleOffset(float vertical_moa, float horizontal_moa) {
+void DOPE_Engine::setReticleOffset(float vertical_moa, float horizontal_moa) {
     reticle_.vertical_moa = vertical_moa;
     reticle_.horizontal_moa = horizontal_moa;
 }
 
-void BCE_Engine::calibrateBaro() {
+void DOPE_Engine::calibrateBaro() {
     atmo_.calibrateBaro();
     zero_dirty_ = true;
 }
 
-void BCE_Engine::calibrateGyro() {
+void DOPE_Engine::calibrateGyro() {
     ahrs_.captureGyroBias(last_gyro_[0], last_gyro_[1], last_gyro_[2]);
 }
 
-void BCE_Engine::setAHRSAlgorithm(AHRS_Algorithm algo) {
+void DOPE_Engine::setAHRSAlgorithm(AHRS_Algorithm algo) {
     ahrs_.setAlgorithm(algo);
 }
 
-void BCE_Engine::setAHRSConfig(const BCE_AHRSConfig* config) {
+void DOPE_Engine::setAHRSConfig(const DOPE_AHRSConfig* config) {
     if (config) {
         ahrs_.applyConfig(*config);
     }
 }
 
-void BCE_Engine::setLRFConfig(const BCE_LRFConfig* config) {
+void DOPE_Engine::setLRFConfig(const DOPE_LRFConfig* config) {
     if (config) {
         lrf_filter_alpha_       = config->filter_alpha;
         lrf_stale_threshold_us_ = config->stale_threshold_us;
     }
 }
 
-void BCE_Engine::setMagDeclination(float declination_deg) {
+void DOPE_Engine::setMagDeclination(float declination_deg) {
     mag_.setDeclination(declination_deg);
 }
 
-void BCE_Engine::setExternalReferenceMode(bool enabled) {
+void DOPE_Engine::setExternalReferenceMode(bool enabled) {
     external_reference_mode_ = enabled;
 }
 
-void BCE_Engine::getSolution(FiringSolution* out) const {
+void DOPE_Engine::getSolution(FiringSolution* out) const {
     if (out) {
         *out = solution_;
     }
 }
 
-void BCE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
+void DOPE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
     if (!out)
         return;
 
@@ -358,54 +358,54 @@ void BCE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
 // Internal: state machine evaluation
 // ---------------------------------------------------------------------------
 
-void BCE_Engine::evaluateState(uint64_t now_us) {
+void DOPE_Engine::evaluateState(uint64_t now_us) {
     fault_flags_ = 0;
     diag_flags_ = atmo_.getDiagFlags();
 
     // Check hard faults — SRS §13
     if (!has_range_) {
-        fault_flags_ |= BCE_Fault::NO_RANGE;
+        fault_flags_ |= DOPE_Fault::NO_RANGE;
     } else if (now_us >= lrf_timestamp_us_ && (now_us - lrf_timestamp_us_) > lrf_stale_threshold_us_) {
         // LRF stale — not a hard fault, but range is invalid
         has_range_ = false;
-        fault_flags_ |= BCE_Fault::NO_RANGE;
-        diag_flags_ |= BCE_Diag::LRF_STALE;
+        fault_flags_ |= DOPE_Fault::NO_RANGE;
+        diag_flags_ |= DOPE_Diag::LRF_STALE;
     }
 
     if (!has_bullet_) {
-        fault_flags_ |= BCE_Fault::NO_BULLET;
+        fault_flags_ |= DOPE_Fault::NO_BULLET;
     } else {
         if (bullet_.muzzle_velocity_ms < 1.0f) {
-            fault_flags_ |= BCE_Fault::NO_MV;
+            fault_flags_ |= DOPE_Fault::NO_MV;
         }
         if (bullet_.bc < 0.001f) {
-            fault_flags_ |= BCE_Fault::NO_BC;
+            fault_flags_ |= DOPE_Fault::NO_BC;
         }
 
         if (has_zero_ && (zero_.zero_range_m < 1.0f ||
-                          zero_.zero_range_m > static_cast<float>(BCE_MAX_RANGE_M))) {
-            fault_flags_ |= BCE_Fault::ZERO_UNSOLVABLE;
+                          zero_.zero_range_m > static_cast<float>(DOPE_MAX_RANGE_M))) {
+            fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
         }
     }
 
     if (!ahrs_.isStable()) {
-        fault_flags_ |= BCE_Fault::AHRS_UNSTABLE;
+        fault_flags_ |= DOPE_Fault::AHRS_UNSTABLE;
     }
 
     if (!has_latitude_) {
-        diag_flags_ |= BCE_Diag::CORIOLIS_DISABLED;
+        diag_flags_ |= DOPE_Diag::CORIOLIS_DISABLED;
     }
 
     if (mag_.isDisturbed()) {
-        diag_flags_ |= BCE_Diag::MAG_SUPPRESSED;
+        diag_flags_ |= DOPE_Diag::MAG_SUPPRESSED;
     }
 
     if (!wind_.isSet()) {
-        diag_flags_ |= BCE_Diag::DEFAULT_WIND;
+        diag_flags_ |= DOPE_Diag::DEFAULT_WIND;
     }
 
     if (atmo_.hadInvalidInput() || had_invalid_sensor_input_) {
-        fault_flags_ |= BCE_Fault::SENSOR_INVALID;
+        fault_flags_ |= DOPE_Fault::SENSOR_INVALID;
     }
 
     // Determine mode
@@ -413,11 +413,11 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
         // Check which faults are actually hard faults
         uint32_t hard_faults =
             fault_flags_ &
-            (BCE_Fault::NO_RANGE | BCE_Fault::NO_BULLET | BCE_Fault::NO_MV | BCE_Fault::NO_BC |
-             BCE_Fault::AHRS_UNSTABLE | BCE_Fault::ZERO_UNSOLVABLE);
+            (DOPE_Fault::NO_RANGE | DOPE_Fault::NO_BULLET | DOPE_Fault::NO_MV | DOPE_Fault::NO_BC |
+             DOPE_Fault::AHRS_UNSTABLE | DOPE_Fault::ZERO_UNSOLVABLE);
         if (hard_faults != 0) {
-            mode_ = BCE_Mode::FAULT;
-            solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::FAULT);
+            mode_ = DOPE_Mode::FAULT;
+            solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::FAULT);
             solution_.fault_flags = fault_flags_;
             solution_.defaults_active = diag_flags_;
             return;
@@ -427,10 +427,10 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
     // Have enough data — check if we can compute
     if (has_range_ && has_bullet_ && bullet_.muzzle_velocity_ms > 1.0f && bullet_.bc > 0.001f) {
         computeSolution();
-        mode_ = BCE_Mode::SOLUTION_READY;
+        mode_ = DOPE_Mode::SOLUTION_READY;
     } else {
-        mode_ = BCE_Mode::IDLE;
-        solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::IDLE);
+        mode_ = DOPE_Mode::IDLE;
+        solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::IDLE);
         solution_.fault_flags = fault_flags_;
         solution_.defaults_active = diag_flags_;
     }
@@ -440,15 +440,15 @@ void BCE_Engine::evaluateState(uint64_t now_us) {
 // Internal: compute firing solution
 // ---------------------------------------------------------------------------
 
-void BCE_Engine::computeSolution() {
+void DOPE_Engine::computeSolution() {
     // Recompute zero if dirty
     if (zero_dirty_) {
         recomputeZero();
     }
 
-    if (fault_flags_ & BCE_Fault::ZERO_UNSOLVABLE) {
-        mode_ = BCE_Mode::FAULT;
-        solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::FAULT);
+    if (fault_flags_ & DOPE_Fault::ZERO_UNSOLVABLE) {
+        mode_ = DOPE_Mode::FAULT;
+        solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::FAULT);
         solution_.fault_flags = fault_flags_;
         solution_.defaults_active = diag_flags_;
         return;
@@ -469,9 +469,9 @@ void BCE_Engine::computeSolution() {
 
     if (!result.valid) {
         // Zero may be unsolvable
-        fault_flags_ |= BCE_Fault::ZERO_UNSOLVABLE;
-        mode_ = BCE_Mode::FAULT;
-        solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::FAULT);
+        fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
+        mode_ = DOPE_Mode::FAULT;
+        solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::FAULT);
         solution_.fault_flags = fault_flags_;
         solution_.defaults_active = diag_flags_;
         return;
@@ -492,7 +492,7 @@ void BCE_Engine::computeSolution() {
         // Simplification: the zero angle already accounts for this.
         // The solver gives drop from bore line. We need drop from sight line.
 
-        float sight_h = has_zero_ ? zero_.sight_height_mm * bce::math::MM_TO_M : 0.0f;
+        float sight_h = has_zero_ ? zero_.sight_height_mm * dope::math::MM_TO_M : 0.0f;
         float zero_range_m = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : range;
         float sight_line_drop = sight_h - (sight_h / zero_range_m) * range; // [MATH §14.1]
 
@@ -500,8 +500,8 @@ void BCE_Engine::computeSolution() {
         float relative_drop = result.drop_at_target_m - sight_line_drop; // [MATH §14.1]
 
         // Convert to angular adjustment in MOA    [MATH §14.2]
-        drop_moa = -(relative_drop / range) * bce::math::RAD_TO_MOA;                        // [MATH §14.2]
-        wind_from_wind_moa = -(result.windage_at_target_m / range) * bce::math::RAD_TO_MOA; // [MATH §14.2]
+        drop_moa = -(relative_drop / range) * dope::math::RAD_TO_MOA;                        // [MATH §14.2]
+        wind_from_wind_moa = -(result.windage_at_target_m / range) * dope::math::RAD_TO_MOA; // [MATH §14.2]
     }
 
     // Build directional windage components
@@ -525,7 +525,7 @@ void BCE_Engine::computeSolution() {
     const float windage_cant_moa = windage_moa - windage_before_cant_moa;
 
     // Populate firing solution
-    solution_.solution_mode = static_cast<uint32_t>(BCE_Mode::SOLUTION_READY);
+    solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY);
     solution_.fault_flags = fault_flags_;
     solution_.defaults_active = diag_flags_;
 
@@ -546,7 +546,7 @@ void BCE_Engine::computeSolution() {
     solution_.offsets_windage_moa = windage_offsets_moa;
     solution_.cant_windage_moa = windage_cant_moa;
 
-    solution_.cant_angle_deg = roll * bce::math::RAD_TO_DEG;
+    solution_.cant_angle_deg = roll * dope::math::RAD_TO_DEG;
     solution_.heading_deg_true = heading_true;
     solution_.air_density_kgm3 = atmo_.getAirDensity();
 
@@ -557,7 +557,7 @@ void BCE_Engine::computeSolution() {
 // Internal: recompute zero angle
 // ---------------------------------------------------------------------------
 
-void BCE_Engine::recomputeZero() {
+void DOPE_Engine::recomputeZero() {
     zero_dirty_ = false;
 
     if (!has_bullet_ || !has_zero_) {
@@ -565,8 +565,8 @@ void BCE_Engine::recomputeZero() {
         return;
     }
 
-    if (zero_.zero_range_m < 1.0f || zero_.zero_range_m > BCE_MAX_RANGE_M) {
-        fault_flags_ |= BCE_Fault::ZERO_UNSOLVABLE;
+    if (zero_.zero_range_m < 1.0f || zero_.zero_range_m > DOPE_MAX_RANGE_M) {
+        fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
         zero_angle_rad_ = 0.0f;
         return;
     }
@@ -575,7 +575,7 @@ void BCE_Engine::recomputeZero() {
     float angle = solver_.solveZeroAngle(params, zero_.zero_range_m);
 
     if (std::isnan(angle)) {
-        fault_flags_ |= BCE_Fault::ZERO_UNSOLVABLE;
+        fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
         zero_angle_rad_ = 0.0f;
     } else {
         zero_angle_rad_ = angle;
@@ -586,7 +586,7 @@ void BCE_Engine::recomputeZero() {
 // Internal: build solver parameters
 // ---------------------------------------------------------------------------
 
-SolverParams BCE_Engine::buildSolverParams(float range_m) const {
+SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
     SolverParams p;
     std::memset(&p, 0, sizeof(p));
 
@@ -605,14 +605,14 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
         base_mv_fps + (barrel_length_delta_in * mv_adjustment_fps_per_in); // [MATH §9]
     p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;                      // [MATH §9]
 
-    p.bullet_mass_kg = bullet_.mass_grains * bce::math::GRAINS_TO_KG;
-    p.bullet_length_m = bullet_.length_mm * bce::math::MM_TO_M;
-    p.sight_height_m = has_zero_ ? zero_.sight_height_mm * bce::math::MM_TO_M : 0.0f;
+    p.bullet_mass_kg = bullet_.mass_grains * dope::math::GRAINS_TO_KG;
+    p.bullet_length_m = bullet_.length_mm * dope::math::MM_TO_M;
+    p.sight_height_m = has_zero_ ? zero_.sight_height_mm * dope::math::MM_TO_M : 0.0f;
 
     p.air_density = atmo_.getAirDensity();
     p.speed_of_sound = atmo_.getSpeedOfSound();
-    p.drag_reference_scale = external_reference_mode_ ? BCE_EXTERNAL_REFERENCE_DRAG_SCALE
-                                                      : BCE_DEFAULT_DRAG_REFERENCE_SCALE;
+    p.drag_reference_scale = external_reference_mode_ ? DOPE_EXTERNAL_REFERENCE_DRAG_SCALE
+                                                      : DOPE_DEFAULT_DRAG_REFERENCE_SCALE;
     p.target_range_m = range_m;
     p.launch_angle_rad = 0.0f; // set by caller
 
@@ -623,8 +623,8 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
     // Coriolis
     if (has_latitude_) {
         p.coriolis_enabled = true;
-        p.coriolis_lat_rad = latitude_deg_ * bce::math::DEG_TO_RAD;
-        p.azimuth_rad = heading * bce::math::DEG_TO_RAD;
+        p.coriolis_lat_rad = latitude_deg_ * dope::math::DEG_TO_RAD;
+        p.azimuth_rad = heading * dope::math::DEG_TO_RAD;
     } else {
         p.coriolis_enabled = false;
     }
@@ -633,7 +633,7 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
     if (std::fabs(bullet_.twist_rate_inches) > 0.1f) {
         p.spin_drift_enabled = true;
         p.twist_rate_inches = bullet_.twist_rate_inches;
-        p.caliber_m = bullet_.caliber_inches * bce::math::INCHES_TO_M;
+        p.caliber_m = bullet_.caliber_inches * dope::math::INCHES_TO_M;
     } else {
         p.spin_drift_enabled = false;
     }
@@ -645,14 +645,14 @@ SolverParams BCE_Engine::buildSolverParams(float range_m) const {
 // Uncertainty / error propagation — SRS §14
 // ---------------------------------------------------------------------------
 
-void BCE_Engine::setUncertaintyConfig(const UncertaintyConfig* config) {
+void DOPE_Engine::setUncertaintyConfig(const UncertaintyConfig* config) {
     if (config) {
         uncertainty_config_ = *config;
         refreshDerivedSigmasFromProfiles();
     }
 }
 
-void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
+void DOPE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     if (!out)
         return;
     out->enabled = true;
@@ -688,7 +688,7 @@ void BCE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     out->cartridge_cep_scale_floor = 1.0f;
 }
 
-void BCE_Engine::refreshDerivedSigmasFromProfiles() {
+void DOPE_Engine::refreshDerivedSigmasFromProfiles() {
     if (uncertainty_config_.use_range_error_table &&
         uncertainty_config_.range_error_table.points != nullptr &&
         uncertainty_config_.range_error_table.count > 0 && has_range_ &&
@@ -757,7 +757,7 @@ void BCE_Engine::refreshDerivedSigmasFromProfiles() {
  *   σ_y² = (∂y/∂x)² σ_x²
  * where ∂y/∂x ≈ Δy / (2σ_x), so σ_y² ≈ (Δy/2)² (the σ_x terms cancel).
  */
-void BCE_Engine::computeUncertainty() {
+void DOPE_Engine::computeUncertainty() {
     solution_.uncertainty_valid = false;
     solution_.sigma_elevation_moa = 0.0f;
     solution_.sigma_windage_moa = 0.0f;
@@ -767,7 +767,7 @@ void BCE_Engine::computeUncertainty() {
         return;
 
     // Must have a ready solution to propagate through
-    if (solution_.solution_mode != static_cast<uint32_t>(BCE_Mode::SOLUTION_READY))
+    if (solution_.solution_mode != static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY))
         return;
 
     const float range = lrf_range_m_;
@@ -776,7 +776,7 @@ void BCE_Engine::computeUncertainty() {
 
     const float roll = ahrs_.getRoll();
     const float launch_angle = zero_angle_rad_ + ahrs_.getPitch();
-    const float sight_h = has_zero_ ? zero_.sight_height_mm * bce::math::MM_TO_M : 0.0f;
+    const float sight_h = has_zero_ ? zero_.sight_height_mm * dope::math::MM_TO_M : 0.0f;
     const float zero_r = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : range;
     const float pitch = ahrs_.getPitch();
 
@@ -798,8 +798,8 @@ void BCE_Engine::computeUncertainty() {
         float sl_drop = sight_h - (sight_h / safe_zero_r) * range;
         float rel_drop = r.drop_at_target_m - sl_drop;
 
-        float em = -(rel_drop / range) * bce::math::RAD_TO_MOA + r.coriolis_elev_moa;
-        float wm = -(r.windage_at_target_m / range) * bce::math::RAD_TO_MOA + r.coriolis_wind_moa +
+        float em = -(rel_drop / range) * dope::math::RAD_TO_MOA + r.coriolis_elev_moa;
+        float wm = -(r.windage_at_target_m / range) * dope::math::RAD_TO_MOA + r.coriolis_wind_moa +
                    r.spin_drift_moa;
 
         float ce, cw;
@@ -887,8 +887,8 @@ void BCE_Engine::computeUncertainty() {
             float zr = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : rng;
             float sl_drop = sight_h - (sight_h / zr) * rng;
             float rel_drop = r.drop_at_target_m - sl_drop;
-            float em = -(rel_drop / rng) * bce::math::RAD_TO_MOA + r.coriolis_elev_moa;
-            float wm = -(r.windage_at_target_m / rng) * bce::math::RAD_TO_MOA + r.coriolis_wind_moa +
+            float em = -(rel_drop / rng) * dope::math::RAD_TO_MOA + r.coriolis_elev_moa;
+            float wm = -(r.windage_at_target_m / rng) * dope::math::RAD_TO_MOA + r.coriolis_wind_moa +
                        r.spin_drift_moa;
             float ce, cw2;
             CantCorrection::apply(roll, em, ce, cw2);
@@ -934,7 +934,7 @@ void BCE_Engine::computeUncertainty() {
     // 4. Wind heading (rotate wind vector by ±sigma degrees)
     input_idx = 4;
     {
-        float h_rad = uncertainty_config_.sigma_wind_heading_deg * bce::math::DEG_TO_RAD;
+        float h_rad = uncertainty_config_.sigma_wind_heading_deg * dope::math::DEG_TO_RAD;
         float hw = base.headwind_ms;
         float xw = base.crosswind_ms;
         float total = std::sqrt(hw * hw + xw * xw);
@@ -1018,7 +1018,7 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 8;
     {
         SolverParams pp = base, pm = base;
-        float h_m = uncertainty_config_.sigma_sight_height_mm * bce::math::MM_TO_M;
+        float h_m = uncertainty_config_.sigma_sight_height_mm * dope::math::MM_TO_M;
         pp.sight_height_m += h_m;
         pm.sight_height_m = std::fmax(0.0f, pm.sight_height_m - h_m);
         accumulate(pp, pm);
@@ -1027,7 +1027,7 @@ void BCE_Engine::computeUncertainty() {
     // 9. Cant angle (perturb roll without changing trajectory calculation)
     input_idx = 9;
     {
-        float h_rad = uncertainty_config_.sigma_cant_deg * bce::math::DEG_TO_RAD;
+        float h_rad = uncertainty_config_.sigma_cant_deg * dope::math::DEG_TO_RAD;
         float ep, wp, em, wm;
         if (evalMOA(base, roll + h_rad, ep, wp) && evalMOA(base, roll - h_rad, em, wm)) {
             float de = (ep - em) * 0.5f, dw = (wp - wm) * 0.5f;
@@ -1042,7 +1042,7 @@ void BCE_Engine::computeUncertainty() {
     // 10. Latitude (Coriolis effect) — only meaningful when Coriolis is active
     input_idx = 10;
     if (has_latitude_ && uncertainty_config_.sigma_latitude_deg > 0.0f) {
-        float h_rad = uncertainty_config_.sigma_latitude_deg * bce::math::DEG_TO_RAD;
+        float h_rad = uncertainty_config_.sigma_latitude_deg * dope::math::DEG_TO_RAD;
         SolverParams pp = base, pm = base;
         pp.coriolis_lat_rad = base.coriolis_lat_rad + h_rad;
         pm.coriolis_lat_rad = base.coriolis_lat_rad - h_rad;
@@ -1061,7 +1061,7 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 11;
     {
         SolverParams pp = base, pm = base;
-        float h_kg = uncertainty_config_.sigma_mass_grains * bce::math::GRAINS_TO_KG;
+        float h_kg = uncertainty_config_.sigma_mass_grains * dope::math::GRAINS_TO_KG;
         pp.bullet_mass_kg += h_kg;
         pm.bullet_mass_kg = std::fmax(1e-6f, pm.bullet_mass_kg - h_kg);
         accumulate(pp, pm);
@@ -1071,7 +1071,7 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 12;
     {
         SolverParams pp = base, pm = base;
-        float h_m = uncertainty_config_.sigma_length_mm * bce::math::MM_TO_M;
+        float h_m = uncertainty_config_.sigma_length_mm * dope::math::MM_TO_M;
         pp.bullet_length_m = std::fmax(0.0f, pp.bullet_length_m + h_m);
         pm.bullet_length_m = std::fmax(0.0f, pm.bullet_length_m - h_m);
         accumulate(pp, pm);
@@ -1081,7 +1081,7 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 13;
     {
         SolverParams pp = base, pm = base;
-        float h_m = uncertainty_config_.sigma_caliber_inches * bce::math::INCHES_TO_M;
+        float h_m = uncertainty_config_.sigma_caliber_inches * dope::math::INCHES_TO_M;
         pp.caliber_m = std::fmax(0.0f, pp.caliber_m + h_m);
         pm.caliber_m = std::fmax(0.0f, pm.caliber_m - h_m);
         accumulate(pp, pm);
@@ -1118,7 +1118,7 @@ void BCE_Engine::computeUncertainty() {
     input_idx = 15;
     if (has_zero_ && zero_.zero_range_m > 1.0f && uncertainty_config_.sigma_zero_range_m > 0.0f) {
         float h = uncertainty_config_.sigma_zero_range_m;
-        float zp = std::fmin(static_cast<float>(BCE_MAX_RANGE_M), zero_.zero_range_m + h);
+        float zp = std::fmin(static_cast<float>(DOPE_MAX_RANGE_M), zero_.zero_range_m + h);
         float zm = std::fmax(1.0f, zero_.zero_range_m - h);
 
         SolverParams pz = buildSolverParams(zp);

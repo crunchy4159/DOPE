@@ -24,14 +24,14 @@ float EstimateDynamicStabilitySG(const SolverParams& params, float velocity_ms) 
     // SG = (30*m)/(t^2*d^3*l*(1+l^2)) * cbrt(v/2800) * (rho_std/rho)
     // m [gr], d [in], l [calibers], t [calibers/turn], v [fps].
     float sg = 1.5f;
-    const float caliber_in = params.caliber_m / bce::math::INCHES_TO_M;
-    const float length_in = params.bullet_length_m / bce::math::INCHES_TO_M;
+    const float caliber_in = params.caliber_m / dope::math::INCHES_TO_M;
+    const float length_in = params.bullet_length_m / dope::math::INCHES_TO_M;
     const float length_cal = (caliber_in > 1e-6f) ? (length_in / caliber_in) : 0.0f;
     const float twist_cal = (caliber_in > 1e-6f) ? (std::fabs(params.twist_rate_inches) / caliber_in) : 0.0f;
-    const float mass_grains = params.bullet_mass_kg / bce::math::GRAINS_TO_KG;
+    const float mass_grains = params.bullet_mass_kg / dope::math::GRAINS_TO_KG;
     const float vel_fps = velocity_ms * 3.28084f;
     const float density_ratio = (params.air_density > 1e-6f)
-        ? (BCE_STD_AIR_DENSITY / params.air_density)
+        ? (DOPE_STD_AIR_DENSITY / params.air_density)
         : 1.0f;
 
     if (caliber_in > 0.05f && length_cal > 0.1f && twist_cal > 0.1f && mass_grains > 10.0f && vel_fps > 300.0f) {
@@ -58,9 +58,9 @@ float StabilityDragScale(float sg) {
     // Coupled-stability drag adjustment.
     // Low SG -> slightly higher drag, high SG -> slightly lower drag.
     // Bounded so this remains a small correction over BC-driven drag.
-    float scale = 1.0f + BCE_SG_DRAG_COUPLING_GAIN * (BCE_SG_REFERENCE - sg);
-    if (scale < BCE_SG_DRAG_SCALE_MIN) scale = BCE_SG_DRAG_SCALE_MIN;
-    if (scale > BCE_SG_DRAG_SCALE_MAX) scale = BCE_SG_DRAG_SCALE_MAX;
+    float scale = 1.0f + DOPE_SG_DRAG_COUPLING_GAIN * (DOPE_SG_REFERENCE - sg);
+    if (scale < DOPE_SG_DRAG_SCALE_MIN) scale = DOPE_SG_DRAG_SCALE_MIN;
+    if (scale > DOPE_SG_DRAG_SCALE_MAX) scale = DOPE_SG_DRAG_SCALE_MAX;
     return scale;
 }
 
@@ -72,7 +72,7 @@ void BallisticSolver::init() {
 }
 
 float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
-    if (zero_range_m < 1.0f || zero_range_m > BCE_MAX_RANGE_M) {
+    if (zero_range_m < 1.0f || zero_range_m > DOPE_MAX_RANGE_M) {
         return NAN;
     }
 
@@ -83,8 +83,8 @@ float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
     // line from the sight to the target. The barrel must be angled slightly
     // upward for the bullet to follow an arc that intersects this line.
 
-    float lo = -5.0f * bce::math::DEG_TO_RAD;        // -5 degrees (bore pointing down)
-    float hi = 5.0f * bce::math::DEG_TO_RAD;         // +5 degrees (bore pointing up)
+    float lo = -5.0f * dope::math::DEG_TO_RAD;        // -5 degrees (bore pointing down)
+    float hi = 5.0f * dope::math::DEG_TO_RAD;         // +5 degrees (bore pointing up)
 
     float sight_h = params.sight_height_m;
 
@@ -109,7 +109,7 @@ float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
     float best_angle = 0.0f;
     bool solved = false;
 
-    for (uint32_t i = 0; i < BCE_ZERO_MAX_ITERATIONS; ++i) {
+    for (uint32_t i = 0; i < DOPE_ZERO_MAX_ITERATIONS; ++i) {
         float mid = (lo + hi) * 0.5f;
         params.launch_angle_rad = mid;
 
@@ -131,7 +131,7 @@ float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
 
         best_angle = mid;
 
-        if (std::fabs(drop - target_drop) < BCE_ZERO_TOLERANCE_M) {
+        if (std::fabs(drop - target_drop) < DOPE_ZERO_TOLERANCE_M) {
             solved = true;
             break;
         }
@@ -142,7 +142,7 @@ float BallisticSolver::solveZeroAngle(SolverParams params, float zero_range_m) {
     if (!solved) {
         params.launch_angle_rad = best_angle;
         float final_drop = integrateToRange(params, zero_range_m, false);
-        if (!std::isnan(final_drop) && std::fabs(final_drop - target_drop) < BCE_ZERO_TOLERANCE_M) {
+        if (!std::isnan(final_drop) && std::fabs(final_drop - target_drop) < DOPE_ZERO_TOLERANCE_M) {
             solved = true;
         }
     }
@@ -155,7 +155,7 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
     std::memset(&result, 0, sizeof(result));
     result.valid = false;
 
-    if (params.target_range_m < 1.0f || params.target_range_m > BCE_MAX_RANGE_M) {
+    if (params.target_range_m < 1.0f || params.target_range_m > DOPE_MAX_RANGE_M) {
         return result;
     }
 
@@ -166,7 +166,7 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
     }
 
     int target_idx = static_cast<int>(params.target_range_m);
-    if (target_idx < 0 || target_idx >= BCE_TRAJ_TABLE_SIZE) {
+    if (target_idx < 0 || target_idx >= DOPE_TRAJ_TABLE_SIZE) {
         return result;
     }
 
@@ -195,7 +195,7 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
         // Convert to MOA
         float range = params.target_range_m;
         if (range > 0.0f) {
-            result.spin_drift_moa = (drift_m / range) * bce::math::RAD_TO_MOA;
+            result.spin_drift_moa = (drift_m / range) * dope::math::RAD_TO_MOA;
         }
     }
 
@@ -215,15 +215,15 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
         // deflection = ω × v × tof × sin(lat)  (simplified)
         // More precisely for a bullet:
         // Δz = ω × range × tof × sin(lat)  (horizontal)
-        float coriolis_hz = BCE_OMEGA_EARTH * range * tof * std::sin(lat); // [MATH §13]
+        float coriolis_hz = DOPE_OMEGA_EARTH * range * tof * std::sin(lat); // [MATH §13]
 
         // Vertical (Eötvös) component:    [MATH §13]
         // Δy = ω × range × tof × cos(lat) × sin(azi)
-        float coriolis_vt = BCE_OMEGA_EARTH * range * tof * std::cos(lat) * std::sin(azi); // [MATH §13]
+        float coriolis_vt = DOPE_OMEGA_EARTH * range * tof * std::cos(lat) * std::sin(azi); // [MATH §13]
 
         if (range > 0.0f) {
-            result.coriolis_wind_moa = (coriolis_hz / range) * bce::math::RAD_TO_MOA; // [MATH §13]
-            result.coriolis_elev_moa = (coriolis_vt / range) * bce::math::RAD_TO_MOA; // [MATH §13]
+            result.coriolis_wind_moa = (coriolis_hz / range) * dope::math::RAD_TO_MOA; // [MATH §13]
+            result.coriolis_elev_moa = (coriolis_vt / range) * dope::math::RAD_TO_MOA; // [MATH §13]
         }
     }
 
@@ -231,7 +231,7 @@ SolverResult BallisticSolver::integrate(const SolverParams& params) {
 }
 
 const TrajectoryPoint* BallisticSolver::getPointAt(int range_m) const {
-    if (range_m < 0 || range_m > max_valid_range_ || range_m >= BCE_TRAJ_TABLE_SIZE) {
+    if (range_m < 0 || range_m > max_valid_range_ || range_m >= DOPE_TRAJ_TABLE_SIZE) {
         return nullptr;
     }
     return &table_[range_m];
@@ -272,7 +272,7 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
 
         if (v_rel < 1.0f) {
             ax = 0.0f;
-            ay = -BCE_GRAVITY;
+            ay = -DOPE_GRAVITY;
             az = 0.0f;
             return;
         }
@@ -293,15 +293,15 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         const float stability_drag_scale = StabilityDragScale(sg);
         decel *= (drag_scale * stability_drag_scale);
         ax = -decel * (vx_rel / v_rel);             // [MATH §11.3]
-        ay = -decel * (vyn  / v_rel) - BCE_GRAVITY; // [MATH §11.3] gravity always downward
+        ay = -decel * (vyn  / v_rel) - DOPE_GRAVITY; // [MATH §11.3] gravity always downward
         az = -decel * (vz_rel / v_rel);             // [MATH §11.3]
     };
 
-    while (x < range_m && iteration < BCE_MAX_SOLVER_ITERATIONS) {
+    while (x < range_m && iteration < DOPE_MAX_SOLVER_ITERATIONS) {
         iteration++;
 
         float v = std::sqrt(vx * vx + vy * vy + vz * vz);
-        if (v < BCE_MIN_VELOCITY) break;
+        if (v < DOPE_MIN_VELOCITY) break;
 
         // Adaptive timestep: smaller near transonic, larger at supersonic.    [MATH §11.4]
         // The constant 0.5 is a tuning parameter that balances performance
@@ -310,17 +310,17 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         float mach = v / params.speed_of_sound; // [MATH §11.4]
         float dt;
         if (mach > 0.9f && mach < 1.2f) {
-            dt = BCE_DT_MIN; // [MATH §11.4] transonic region — use smallest step
+            dt = DOPE_DT_MIN; // [MATH §11.4] transonic region — use smallest step
         } else {
             // Scale dt with velocity — faster bullet covers more ground per step
             dt = 0.5f / v; // [MATH §11.4]
         }
 
         // Bound per-step downrange travel for stability and table fidelity    [MATH §11.4]
-        float dt_from_step = BCE_MAX_STEP_DISTANCE_M / v; // [MATH §11.4]
+        float dt_from_step = DOPE_MAX_STEP_DISTANCE_M / v; // [MATH §11.4]
         if (dt > dt_from_step) dt = dt_from_step;
-        if (dt < BCE_DT_MIN) dt = BCE_DT_MIN;
-        if (dt > BCE_DT_MAX) dt = BCE_DT_MAX;
+        if (dt < DOPE_DT_MIN) dt = DOPE_DT_MIN;
+        if (dt > DOPE_DT_MAX) dt = DOPE_DT_MAX;
 
         // --- RK4 integration ---
         float ax1, ay1, az1;
@@ -387,7 +387,7 @@ float BallisticSolver::integrateToRange(const SolverParams& params, float range_
         if (fill_table) {
             int current_range = static_cast<int>(x);
             while (last_range_index < current_range &&
-                   last_range_index < BCE_TRAJ_TABLE_SIZE - 1) {
+                   last_range_index < DOPE_TRAJ_TABLE_SIZE - 1) {
                 last_range_index++;
                 float v_current = std::sqrt(vx * vx + vy * vy + vz * vz);
                 table_[last_range_index].drop_m = y;

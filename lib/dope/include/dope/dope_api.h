@@ -5,7 +5,7 @@
  * DOPE SRS v1.3 — All external entry points.
  *
  * This header is the ONLY file application code needs to include.
- * All functions use static internal state — no heap allocation after BCE_Init().
+ * All functions use static internal state — no heap allocation after DOPE_Init().
  */
 
 #pragma once
@@ -22,10 +22,10 @@ extern "C" {
 // ---------------------------------------------------------------------------
 
 /**
- * Initialize the BCE. Zeros all state, applies ISA defaults.
- * Must be called once before any other BCE function.
+ * Initialize the DOPE engine. Zeros all state, applies ISA defaults.
+ * Must be called once before any other DOPE function.
  */
-void BCE_Init(void);
+void DOPE_Init(void);
 
 // ---------------------------------------------------------------------------
 // Sensor Ingestion — SRS §7
@@ -36,7 +36,7 @@ void BCE_Init(void);
  * This is the primary update entry point — drives AHRS, atmosphere,
  * range tracking, and solution recomputation.
  */
-void BCE_Update(const SensorFrame* frame);
+void DOPE_Update(const SensorFrame* frame);
 
 // ---------------------------------------------------------------------------
 // Manual Inputs — SRS §8
@@ -45,25 +45,25 @@ void BCE_Update(const SensorFrame* frame);
 /**
  * Set the bullet profile. Triggers zero recomputation.
  */
-void BCE_SetBulletProfile(const BulletProfile* profile);
+void DOPE_SetBulletProfile(const BulletProfile* profile);
 
 /**
  * Set zero configuration (zero range + sight height). Triggers zero recomputation.
  */
-void BCE_SetZeroConfig(const ZeroConfig* config);
+void DOPE_SetZeroConfig(const ZeroConfig* config);
 
 /**
  * Set manual wind. Persists until changed.
  * @param speed_ms   Wind speed in m/s
  * @param heading_deg Wind heading in degrees true
  */
-void BCE_SetWindManual(float speed_ms, float heading_deg);
+void DOPE_SetWindManual(float speed_ms, float heading_deg);
 
 /**
  * Set latitude for Coriolis/Eötvös correction.
  * Pass NAN or do not call to leave Coriolis disabled.
  */
-void BCE_SetLatitude(float latitude_deg);
+void DOPE_SetLatitude(float latitude_deg);
 
 // ---------------------------------------------------------------------------
 // Default Overrides — SRS §5.2
@@ -73,7 +73,7 @@ void BCE_SetLatitude(float latitude_deg);
  * Apply default overrides (e.g. from user profile).
  * Any field with its use_* flag set replaces the ISA default.
  */
-void BCE_SetDefaultOverrides(const BCE_DefaultOverrides* defaults);
+void DOPE_SetDefaultOverrides(const DOPE_DefaultOverrides* defaults);
 
 // ---------------------------------------------------------------------------
 // Calibration — SRS §10
@@ -83,35 +83,35 @@ void BCE_SetDefaultOverrides(const BCE_DefaultOverrides* defaults);
  * Set accelerometer and gyroscope bias offsets.
  * Applied before AHRS fusion.
  */
-void BCE_SetIMUBias(const float accel_bias[3], const float gyro_bias[3]);
+void DOPE_SetIMUBias(const float accel_bias[3], const float gyro_bias[3]);
 
 /**
  * Set magnetometer hard-iron and soft-iron calibration.
  * hard_iron[3]: offset vector to subtract.
  * soft_iron[9]: 3×3 correction matrix (row-major).
  */
-void BCE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
+void DOPE_SetMagCalibration(const float hard_iron[3], const float soft_iron[9]);
 
 /**
  * Capture current gyroscope readings to establish a bias offset.
  * The rifle must be held perfectly still for ~1 second.
  */
-void BCE_CalibrateGyro(void);
+void DOPE_CalibrateGyro(void);
 
 /**
  * Set boresight offset (mechanical misalignment between optic and bore).
  */
-void BCE_SetBoresightOffset(const BoresightOffset* offset);
+void DOPE_SetBoresightOffset(const BoresightOffset* offset);
 
 /**
  * Set reticle mechanical offset.
  */
-void BCE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
+void DOPE_SetReticleMechanicalOffset(float vertical_moa, float horizontal_moa);
 
 /**
  * Capture current barometric pressure as the reference baseline.
  */
-void BCE_CalibrateBaro(void);
+void DOPE_CalibrateBaro(void);
 
 // ---------------------------------------------------------------------------
 // AHRS Configuration
@@ -121,7 +121,7 @@ void BCE_CalibrateBaro(void);
  * Select the AHRS fusion algorithm.
  * Default is MADGWICK.
  */
-void BCE_SetAHRSAlgorithm(AHRS_Algorithm algo);
+void DOPE_SetAHRSAlgorithm(AHRS_Algorithm algo);
 
 /**
  * Set AHRS filter tuning parameters (filter gains + static-detection thresholds).
@@ -130,28 +130,28 @@ void BCE_SetAHRSAlgorithm(AHRS_Algorithm algo);
  * layer from its hardware preset tables.  If not called the engine uses built-in
  * neutral defaults suitable for initial integration.
  */
-void BCE_SetAHRSConfig(const BCE_AHRSConfig* config);
+void DOPE_SetAHRSConfig(const DOPE_AHRSConfig* config);
 
 /**
  * Set LRF hardware parameters (IIR filter weight and staleness threshold).
  *
- * Should be called after BCE_Init() once the LRF hardware type is known.
+ * Should be called after DOPE_Init() once the LRF hardware type is known.
  * If not called the engine uses built-in defaults.
  */
-void BCE_SetLRFConfig(const BCE_LRFConfig* config);
+void DOPE_SetLRFConfig(const DOPE_LRFConfig* config);
 
 /**
  * Set magnetic declination for heading correction.
  * @param declination_deg  Declination in degrees (east positive).
  */
-void BCE_SetMagDeclination(float declination_deg);
+void DOPE_SetMagDeclination(float declination_deg);
 
 /**
  * Enable/disable external-reference calibration mode.
  * When enabled, solver drag is scaled for closer alignment to external
  * reference calculators while preserving default legacy behavior when off.
  */
-void BCE_SetExternalReferenceMode(bool enabled);
+void DOPE_SetExternalReferenceMode(bool enabled);
 
 // ---------------------------------------------------------------------------
 // Uncertainty Configuration
@@ -165,33 +165,33 @@ void BCE_SetExternalReferenceMode(bool enabled);
  * above the last breakpoint the last sigma is returned.  Returns 0.0f if
  * `table` is null or empty ("Custom / manual" sentinel).
  *
- * This utility lives in the BCE library so that top-level deployment
+ * This utility lives in the DOPE library so that top-level deployment
  * applications can use the same interpolation implementation as the GUI
  * without carrying their own copy.
  *
- * @param table  Pointer to a populated BCE_ErrorTable (may be null/empty).
+ * @param table  Pointer to a populated DOPE_ErrorTable (may be null/empty).
  * @param x      Independent variable (e.g. range_m, temperature_c).
  * @return       1-sigma estimate at x, or 0.0f for a null/empty table.
  */
-float BCE_InterpolateSigma(const BCE_ErrorTable* table, float x);
+float DOPE_InterpolateSigma(const DOPE_ErrorTable* table, float x);
 
 /**
  * Set the uncertainty (1σ) configuration for Gaussian error propagation.
  * When enabled, the engine runs perturbed solver passes and computes a
  * 2×2 covariance matrix (elevation × windage) on the firing solution.
  *
- * Application-layer sensor profiles (BCE_ErrorTable) can be supplied here
+ * Application-layer sensor profiles (DOPE_ErrorTable) can be supplied here
  * so the engine derives sigma values from live sensor state (range, baro temp,
  * pressure-vs-delta-temp calibration drift) rather than relying on GUI-side
  * interpolation logic.
  */
-void BCE_SetUncertaintyConfig(const UncertaintyConfig* config);
+void DOPE_SetUncertaintyConfig(const UncertaintyConfig* config);
 
 /**
  * Retrieve the default uncertainty configuration with sensible hardware
- * defaults pre-populated. Caller can adjust and pass to BCE_SetUncertaintyConfig.
+ * defaults pre-populated. Caller can adjust and pass to DOPE_SetUncertaintyConfig.
  */
-void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
+void DOPE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
 
 // ---------------------------------------------------------------------------
 // Output — SRS §12
@@ -201,40 +201,40 @@ void BCE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
  * Retrieve the latest firing solution.
  * @param out  Pointer to caller-owned FiringSolution struct to fill.
  */
-void BCE_GetSolution(FiringSolution* out);
+void DOPE_GetSolution(FiringSolution* out);
 
 /**
  * Retrieve the latest minimal realtime solution payload.
  * @param out  Pointer to caller-owned RealtimeSolution struct to fill.
  */
-void BCE_GetRealtimeSolution(RealtimeSolution* out);
+void DOPE_GetRealtimeSolution(RealtimeSolution* out);
 
 /**
  * Get the current engine operating mode.
  */
-BCE_Mode BCE_GetMode(void);
+DOPE_Mode DOPE_GetMode(void);
 
 /**
  * Get current fault flags.
  */
-uint32_t BCE_GetFaultFlags(void);
+uint32_t DOPE_GetFaultFlags(void);
 
 /**
  * Get current diagnostic flags (defaults active, etc.).
  */
-uint32_t BCE_GetDiagFlags(void);
+uint32_t DOPE_GetDiagFlags(void);
 
 /**
  * Get the horizontal field-of-view (degrees) computed from the latest valid
  * zoom encoder reading.  Returns 0 if no valid encoder frame has been received.
  */
-float BCE_GetHFOV(void);
+float DOPE_GetHFOV(void);
 
 /**
  * Get the vertical field-of-view (degrees) computed from the latest valid
  * zoom encoder reading.  Returns 0 if no valid encoder frame has been received.
  */
-float BCE_GetVFOV(void);
+float DOPE_GetVFOV(void);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -22,7 +22,7 @@ void AHRSManager::setAlgorithm(AHRS_Algorithm algo) {
     algorithm_ = algo;
 }
 
-void AHRSManager::applyConfig(const BCE_AHRSConfig& config) {
+void AHRSManager::applyConfig(const DOPE_AHRSConfig& config) {
     madgwick_.setBeta(config.madgwick_beta);
     mahony_.setGains(config.mahony_kp, config.mahony_ki);
     static_threshold_ = config.static_threshold_mss2;
@@ -96,9 +96,9 @@ float AHRSManager::getYaw() const {
 void AHRSManager::updateStaticDetection(float ax, float ay, float az) {
     float mag = std::sqrt(ax * ax + ay * ay + az * az);
     accel_mag_buf_[buf_index_] = mag;
-    buf_index_ = (buf_index_ + 1) % BCE_AHRS_STATIC_WINDOW;
+    buf_index_ = (buf_index_ + 1) % DOPE_AHRS_STATIC_WINDOW;
 
-    if (sample_count_ < static_cast<uint32_t>(BCE_AHRS_STATIC_WINDOW)) {
+    if (sample_count_ < static_cast<uint32_t>(DOPE_AHRS_STATIC_WINDOW)) {
         sample_count_++;
         is_static_ = false;
         return;
@@ -106,18 +106,18 @@ void AHRSManager::updateStaticDetection(float ax, float ay, float az) {
 
     // Compute mean
     float sum = 0.0f;
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW; ++i) {
         sum += accel_mag_buf_[i];
     }
-    float mean = sum / static_cast<float>(BCE_AHRS_STATIC_WINDOW);
+    float mean = sum / static_cast<float>(DOPE_AHRS_STATIC_WINDOW);
 
     // Compute variance
     float var = 0.0f;
-    for (int i = 0; i < BCE_AHRS_STATIC_WINDOW; ++i) {
+    for (int i = 0; i < DOPE_AHRS_STATIC_WINDOW; ++i) {
         float diff = accel_mag_buf_[i] - mean;
         var += diff * diff;
     }
-    var /= static_cast<float>(BCE_AHRS_STATIC_WINDOW);
+    var /= static_cast<float>(DOPE_AHRS_STATIC_WINDOW);
 
     is_static_ = (var < static_threshold_);
 }

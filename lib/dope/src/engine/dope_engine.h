@@ -1,8 +1,8 @@
 /**
- * @file bce_engine.h
- * @brief Top-level BCE engine — orchestrates all subsystems.
+ * @file dope_engine.h
+ * @brief Top-level DOPE engine — orchestrates all subsystems.
  *
- * BCE SRS v1.3 — Sections 3, 9, 12, 13
+ * DOPE SRS v1.3 — Sections 3, 9, 12, 13
  *
  * Owns all module instances (AHRS, atmosphere, solver, corrections) as
  * static objects. Implements the state machine (IDLE / SOLUTION_READY / FAULT)
@@ -20,7 +20,7 @@
 #include "../corrections/wind.h"
 #include "../corrections/cant.h"
 
-class BCE_Engine {
+class DOPE_Engine {
 public:
     void init();
 
@@ -32,7 +32,7 @@ public:
     void setZeroConfig(const ZeroConfig* config);
     void setWindManual(float speed_ms, float heading_deg);
     void setLatitude(float latitude_deg);
-    void setDefaultOverrides(const BCE_DefaultOverrides* defaults);
+    void setDefaultOverrides(const DOPE_DefaultOverrides* defaults);
 
     // --- Calibration ---
     void setIMUBias(const float accel_bias[3], const float gyro_bias[3]);
@@ -42,15 +42,15 @@ public:
     void calibrateBaro();
     void calibrateGyro();
     void setAHRSAlgorithm(AHRS_Algorithm algo);
-    void setAHRSConfig(const BCE_AHRSConfig* config);
-    void setLRFConfig(const BCE_LRFConfig* config);
+    void setAHRSConfig(const DOPE_AHRSConfig* config);
+    void setLRFConfig(const DOPE_LRFConfig* config);
     void setMagDeclination(float declination_deg);
     void setExternalReferenceMode(bool enabled);
 
     // --- Output ---
     void getSolution(FiringSolution* out) const;
     void getRealtimeSolution(RealtimeSolution* out) const;
-    BCE_Mode getMode() const { return mode_; }
+    DOPE_Mode getMode() const { return mode_; }
     uint32_t getFaultFlags() const { return fault_flags_; }
     uint32_t getDiagFlags() const { return diag_flags_; }
 
@@ -72,7 +72,7 @@ private:
     WindCorrection wind_;
 
     // State
-    BCE_Mode mode_ = BCE_Mode::IDLE;
+    DOPE_Mode mode_ = DOPE_Mode::IDLE;
     uint32_t fault_flags_ = 0;
     uint32_t diag_flags_ = 0;
 
@@ -105,7 +105,7 @@ private:
     BoresightOffset reticle_   = {0.0f, 0.0f};
 
     // Default overrides
-    BCE_DefaultOverrides overrides_;
+    DOPE_DefaultOverrides overrides_;
     bool has_overrides_ = false;
 
     // Last gyro reading for calibration capture
@@ -123,7 +123,7 @@ private:
 
     // LRF runtime config (defaults match compile-time constants)
     float    lrf_filter_alpha_       = 0.2f;
-    uint32_t lrf_stale_threshold_us_ = BCE_LRF_STALE_US;
+    uint32_t lrf_stale_threshold_us_ = DOPE_LRF_STALE_US;
 
     // Uncertainty / error propagation config — SRS §14
     UncertaintyConfig uncertainty_config_;

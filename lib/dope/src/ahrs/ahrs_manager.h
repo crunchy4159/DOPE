@@ -17,7 +17,7 @@ class AHRSManager {
 public:
     void init();
     void setAlgorithm(AHRS_Algorithm algo);
-    void applyConfig(const BCE_AHRSConfig& config);
+    void applyConfig(const DOPE_AHRSConfig& config);
 
     /**
      * Feed raw (uncorrected) IMU and mag data. Applies biases internally.
@@ -45,7 +45,7 @@ public:
 
     /** True if AHRS has converged enough for a valid solution. */
     bool isStable() const {
-        return sample_count_ >= BCE_AHRS_STATIC_WINDOW && is_static_;
+        return sample_count_ >= DOPE_AHRS_STATIC_WINDOW && is_static_;
     }
 
 private:
@@ -57,11 +57,11 @@ private:
     float gyro_bias_[3]  = {0, 0, 0};
 
     // Static detection ring buffer
-    float accel_mag_buf_[BCE_AHRS_STATIC_WINDOW] = {};
+    float accel_mag_buf_[DOPE_AHRS_STATIC_WINDOW] = {};
     int buf_index_ = 0;
     uint32_t sample_count_ = 0;
     bool is_static_ = false;
-    float static_threshold_ = BCE_AHRS_STATIC_THRESHOLD;
+    float static_threshold_ = DOPE_AHRS_STATIC_THRESHOLD;
 
     AHRS_Interface* activeFilter();
     const AHRS_Interface* activeFilter() const;

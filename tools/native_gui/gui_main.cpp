@@ -1,8 +1,8 @@
 /**
  * @file gui_main.cpp
- * @brief Native Windows + ImGui desktop harness for BCE validation.
+ * @brief Native Windows + ImGui desktop harness for DOPE validation.
  *
- * This executable is a manual test console around the BCE C API.
+ * This executable is a manual test console around the DOPE C API.
  * It owns window/device setup, editable presets, synthetic SensorFrame input,
  * and live rendering of solution output/target hold visualization.
  */
@@ -54,20 +54,20 @@ static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-using namespace bce::math;
+using namespace dope::math;
 
 // ---------------------------------------------------------------------------
 // Engine ticker thread ΓÇö mirrors the FreeRTOS task pattern on the ESP32-P4.
-// The ticker owns BCE_Update() and RefreshOutput(). The render loop reads
+// The ticker owns DOPE_Update() and RefreshOutput(). The render loop reads
 // only the cached display snapshot, so it never blocks on the solver.
 // ---------------------------------------------------------------------------
-static std::mutex g_engine_mutex;  // guards all BCE_* API calls
+static std::mutex g_engine_mutex;  // guards all DOPE_* API calls
 static std::mutex g_display_mutex; // guards display snapshot (held briefly)
 static FiringSolution g_display_sol = {};
 static std::string g_display_output;
 static std::atomic<bool> g_ticker_running{false};
 static std::atomic<bool> g_run_batch_in_flight{false}; // prevents stacking background runs
-static std::atomic<bool> g_auto_tick_enabled{false};   // gate background BCE ticker
+static std::atomic<bool> g_auto_tick_enabled{false};   // gate background DOPE ticker
 
 constexpr uint64_t FRAME_STEP_US = 10000;
 constexpr int TARGET_RING_COUNT = 4;
@@ -87,7 +87,7 @@ struct CartridgeProfile {
     float caliber_inches;
     float length_mm;
 };
-// Cartridge demo profiles removed; use external JSON `bce_gui_cartridges.json`.
+// Cartridge demo profiles removed; use external JSON `dope_gui_cartridges.json`.
 
 struct CartridgePreset {
     std::string name;
@@ -127,16 +127,16 @@ struct GunPreset {
 // points; the effective sigma is interpolated at the current LRF range.
 
 // ---------------------------------------------------------------------------
-// Generic sensor preset ΓÇö name + BCE_ErrorTable (x = sensor-specific unit,
+// Generic sensor preset ΓÇö name + DOPE_ErrorTable (x = sensor-specific unit,
 // sigma = 1-sigma uncertainty in the same unit as x).
 // index 0 is always the "Custom / manual" sentinel: {nullptr, 0}.
 // ---------------------------------------------------------------------------
 struct SensorPreset {
     const char* name;
-    BCE_ErrorTable table; // {nullptr, 0} for Custom
+    DOPE_ErrorTable table; // {nullptr, 0} for Custom
 };
 
-// Helper macro: build a BCE_ErrorTable from a static array.
+// Helper macro: build a DOPE_ErrorTable from a static array.
 #define SENSOR_TABLE(arr) {arr, (int)(sizeof(arr) / sizeof(arr[0]))}
 #define SENSOR_CUSTOM {nullptr, 0}
 
@@ -149,7 +149,7 @@ struct SensorPreset {
 //   5ΓÇô400 m    : Γëñ ┬▒1 m
 //   400ΓÇô1000 m : ┬▒1.2 m to ┬▒3 m
 //   1000ΓÇô2000 m: ┬▒3 m to ┬▒6 m
-static const BCE_ErrorPoint kLRF_D09C[] = {
+static const DOPE_ErrorPoint kLRF_D09C[] = {
     {0.15f, 0.0002f}, // 0.2 mm
     {22.0f, 0.001f},  // 1 mm (end of precision band)
     {400.0f, 1.0f},   // Γëñ ┬▒1 m
@@ -172,7 +172,7 @@ static const int kNumLRFPresets = sizeof(kLRFPresets) / sizeof(kLRFPresets[0]);
 //   ΓêÆ40 to ΓêÆ20 ┬░C : ┬▒0.15 ┬░C  (extended edge)
 //   ΓêÆ20 to +50 ┬░C : ┬▒0.10 ┬░C  (main calibrated range)
 //   +50 to +70 ┬░C : ┬▒0.15 ┬░C  (extended edge)
-static const BCE_ErrorPoint kTemp_TMP117[] = {
+static const DOPE_ErrorPoint kTemp_TMP117[] = {
     {-40.0f, 0.15f}, {-20.0f, 0.15f}, {-19.9f, 0.10f}, // step at ΓêÆ20 ┬░C lower edge of main range
     {50.0f, 0.10f},  {50.1f, 0.15f},                   // step at +50 ┬░C upper edge of main range
     {70.0f, 0.15f},
@@ -181,7 +181,7 @@ static const BCE_ErrorPoint kTemp_TMP117[] = {
 // Bosch BMP581 ΓÇö onboard temperature sensor
 //    ΓêÆ5 to +55 ┬░C : ┬▒0.52 ┬░C  (calibrated operating range)
 //   outside range  : ┬▒1.52 ┬░C
-static const BCE_ErrorPoint kTemp_BMP581[] = {
+static const DOPE_ErrorPoint kTemp_BMP581[] = {
     {-40.0f, 1.52f}, {-5.0f, 1.52f}, {-4.9f, 0.52f}, // step at ΓêÆ5 ┬░C lower edge of cal range
     {55.0f, 0.52f},  {55.1f, 1.52f},                 // step at +55 ┬░C upper edge of cal range
     {85.0f, 1.52f},
@@ -198,7 +198,7 @@ static const int kNumTempSensorPresets = sizeof(kTempSensorPresets) / sizeof(kTe
 // Barometer pressure drift tables  (x = |delta_temp_c_since_cal|, sigma = Pa)
 // Source: BMP581 profile specified by project requirements.
 // ===========================================================================
-static const BCE_ErrorPoint kBaroPressure_BMP581[] = {
+static const DOPE_ErrorPoint kBaroPressure_BMP581[] = {
     {0.0f, 0.10f},  {0.5f, 0.25f},   {1.0f, 0.51f},   {2.0f, 1.01f},
     {3.0f, 1.50f},  {5.0f, 2.50f},   {8.0f, 4.00f},   {10.0f, 5.00f},
     {15.0f, 7.50f}, {20.0f, 10.00f}, {30.0f, 15.00f}, {40.0f, 20.00f},
@@ -317,8 +317,8 @@ struct GuiState {
     int drag_model_index = 0;
     uint64_t now_us = 0;
 
-    char preset_path[260] = "bce_gui_preset.json";
-    char profile_library_path[260] = "bce_gui_profile_library.json";
+    char preset_path[260] = "dope_gui_preset.json";
+    char profile_library_path[260] = "dope_gui_profile_library.json";
     char new_cartridge_preset_name[64] = "";
     char new_gun_preset_name[64] = "";
     int selected_cartridge_preset = -1;
@@ -331,9 +331,9 @@ struct GuiState {
     std::string output_text;
     std::string last_action;
 
-    // Uncertainty / error-margin config (initialized from BCE_GetDefaultUncertaintyConfig).
+    // Uncertainty / error-margin config (initialized from DOPE_GetDefaultUncertaintyConfig).
     UncertaintyConfig uc_config = {};
-    std::vector<BCE_CEPPoint> cartridge_cep_points; // range_m, cep50_moa
+    std::vector<DOPE_CEPPoint> cartridge_cep_points; // range_m, cep50_moa
     float cartridge_cep_scale_floor = 1.0f;
 
     // Hardware sensor preset indices (0 = Custom/manual).
@@ -456,9 +456,9 @@ inline const char* GetCantLabel(int i) { return g_cant_labels.empty() ? ((i>=0 &
 inline const char* GetMagLatLabel(int i) { return g_maglat_labels.empty() ? ((i>=0 && i<kNumMagLatPresets) ? kMagLatPresets[i].name : "") : g_maglat_labels[i].c_str(); }
 inline const char* GetGpsLabel(int i) { return g_gps_labels.empty() ? ((i>=0 && i<kNumGpsLatPresets) ? kGpsLatPresets[i].name : "") : g_gps_labels[i].c_str(); }
 
-inline const BCE_ErrorTable* GetLRFTable(int i) { return (i>=0 && i<kNumLRFPresets) ? &kLRFPresets[i].table : nullptr; }
-inline const BCE_ErrorTable* GetTempTable(int i) { return (i>=0 && i<kNumTempSensorPresets) ? &kTempSensorPresets[i].table : nullptr; }
-inline const BCE_ErrorTable* GetBarometerTable(int i) { return (i>=0 && i<kNumBarometerPresets) ? &kBarometerPresets[i].table : nullptr; }
+inline const DOPE_ErrorTable* GetLRFTable(int i) { return (i>=0 && i<kNumLRFPresets) ? &kLRFPresets[i].table : nullptr; }
+inline const DOPE_ErrorTable* GetTempTable(int i) { return (i>=0 && i<kNumTempSensorPresets) ? &kTempSensorPresets[i].table : nullptr; }
+inline const DOPE_ErrorTable* GetBarometerTable(int i) { return (i>=0 && i<kNumBarometerPresets) ? &kBarometerPresets[i].table : nullptr; }
 inline float GetCantSigma(int i) { return g_cant_sigmas.empty() ? ((i>=0 && i<kNumCantPresets) ? kCantPresets[i].sigma_cant_deg : 0.0f) : g_cant_sigmas[i]; }
 
 // Implementation: load cartridge presets from a JSON array file
@@ -681,18 +681,18 @@ void EnsureProfileDefaults() {
     // and the current working directory so the GUI works when launched either
     // from the repo root or from the tools/native_gui folder.
     const std::string rel_dir = "tools/native_gui/";
-    const std::string cartridge_file_repo = rel_dir + "bce_gui_cartridges.json";
-    const std::string tol_file_repo = rel_dir + "bce_gui_bullet_tolerances.json";
-    const std::string gun_file_repo = rel_dir + "bce_gui_guns.json";
-    const std::string hw_file_repo = rel_dir + "bce_gui_hardware.json";
+    const std::string cartridge_file_repo = rel_dir + "dope_gui_cartridges.json";
+    const std::string tol_file_repo = rel_dir + "dope_gui_bullet_tolerances.json";
+    const std::string gun_file_repo = rel_dir + "dope_gui_guns.json";
+    const std::string hw_file_repo = rel_dir + "dope_gui_hardware.json";
     // Load optional tolerances first so cartridge tag parsing can use them.
     (void)LoadBulletTolerancesFromFile(tol_file_repo);
-    (void)LoadBulletTolerancesFromFile("bce_gui_bullet_tolerances.json");
+    (void)LoadBulletTolerancesFromFile("dope_gui_bullet_tolerances.json");
 
-    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo) || LoadCartridgePresetsFromFile("bce_gui_cartridges.json");
-    bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo) || LoadGunPresetsFromFile("bce_gui_guns.json");
+    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo) || LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
+    bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo) || LoadGunPresetsFromFile("dope_gui_guns.json");
     (void)LoadHardwarePresetsFromFile(hw_file_repo);
-    (void)LoadHardwarePresetsFromFile("bce_gui_hardware.json");
+    (void)LoadHardwarePresetsFromFile("dope_gui_hardware.json");
 
     if (!loaded_cartridges && g_cartridge_presets.empty()) {
         CartridgePreset fallback;
@@ -851,17 +851,17 @@ void SyncDerivedInputUncertaintySigmas() {
     }
     g_state.uc_config.sigma_twist_rate_inches = std::fabs(g_state.bullet.twist_rate_inches) * 0.01f;
 
-    const BCE_ErrorTable* lrf_table = GetLRFTable(g_state.hw_lrf_index);
+    const DOPE_ErrorTable* lrf_table = GetLRFTable(g_state.hw_lrf_index);
     g_state.uc_config.use_range_error_table = (g_state.hw_lrf_index > 0 && lrf_table && lrf_table->points != nullptr);
-    g_state.uc_config.range_error_table = g_state.uc_config.use_range_error_table ? *lrf_table : BCE_ErrorTable{nullptr, 0};
+    g_state.uc_config.range_error_table = g_state.uc_config.use_range_error_table ? *lrf_table : DOPE_ErrorTable{nullptr, 0};
 
-    const BCE_ErrorTable* tmp_table = GetTempTable(g_state.hw_temp_sensor_index);
+    const DOPE_ErrorTable* tmp_table = GetTempTable(g_state.hw_temp_sensor_index);
     g_state.uc_config.use_temperature_error_table = (g_state.hw_temp_sensor_index > 0 && tmp_table && tmp_table->points != nullptr);
-    g_state.uc_config.temperature_error_table = g_state.uc_config.use_temperature_error_table ? *tmp_table : BCE_ErrorTable{nullptr, 0};
+    g_state.uc_config.temperature_error_table = g_state.uc_config.use_temperature_error_table ? *tmp_table : DOPE_ErrorTable{nullptr, 0};
 
-    const BCE_ErrorTable* baro_table = GetBarometerTable(g_state.hw_barometer_index);
+    const DOPE_ErrorTable* baro_table = GetBarometerTable(g_state.hw_barometer_index);
     g_state.uc_config.use_pressure_delta_temp_error_table = (g_state.hw_barometer_index >= 0 && g_state.hw_barometer_index < GetNumBarometerPresets()) && (baro_table && baro_table->points != nullptr);
-    g_state.uc_config.pressure_delta_temp_error_table = g_state.uc_config.use_pressure_delta_temp_error_table ? *baro_table : BCE_ErrorTable{nullptr, 0};
+    g_state.uc_config.pressure_delta_temp_error_table = g_state.uc_config.use_pressure_delta_temp_error_table ? *baro_table : DOPE_ErrorTable{nullptr, 0};
     g_state.uc_config.pressure_uncalibrated_sigma_pa = 50.0f;
     g_state.uc_config.pressure_is_calibrated = g_state.baro_is_calibrated;
     g_state.uc_config.pressure_has_calibration_temp = g_state.baro_has_calibration_temp;
@@ -881,25 +881,25 @@ void SyncDerivedInputUncertaintySigmas() {
 
     // Sync interpolated sigmas for hardware with error tables
     if (g_state.uc_config.use_range_error_table) {
-        g_state.uc_config.sigma_range_m = BCE_InterpolateSigma(lrf_table, g_state.lrf_range);
+        g_state.uc_config.sigma_range_m = DOPE_InterpolateSigma(lrf_table, g_state.lrf_range);
     }
     if (g_state.uc_config.use_temperature_error_table) {
-        g_state.uc_config.sigma_temperature_c = BCE_InterpolateSigma(tmp_table, g_state.baro_temp);
+        g_state.uc_config.sigma_temperature_c = DOPE_InterpolateSigma(tmp_table, g_state.baro_temp);
     }
     if (g_state.uc_config.use_pressure_delta_temp_error_table && g_state.baro_is_calibrated && g_state.baro_has_calibration_temp) {
         const float delta_temp_c = std::fabs(g_state.baro_temp - g_state.baro_calibration_temp_c);
-        g_state.uc_config.sigma_pressure_pa = BCE_InterpolateSigma(baro_table, delta_temp_c);
+        g_state.uc_config.sigma_pressure_pa = DOPE_InterpolateSigma(baro_table, delta_temp_c);
     }
 
     g_state.cartridge_cep_points.erase(
         std::remove_if(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
-                       [](const BCE_CEPPoint& p) { return p.range_m <= 0.0f || p.cep50_moa <= 0.0f; }),
+                       [](const DOPE_CEPPoint& p) { return p.range_m <= 0.0f || p.cep50_moa <= 0.0f; }),
         g_state.cartridge_cep_points.end());
     std::sort(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
-              [](const BCE_CEPPoint& a, const BCE_CEPPoint& b) { return a.range_m < b.range_m; });
+              [](const DOPE_CEPPoint& a, const DOPE_CEPPoint& b) { return a.range_m < b.range_m; });
     g_state.cartridge_cep_points.erase(
         std::unique(g_state.cartridge_cep_points.begin(), g_state.cartridge_cep_points.end(),
-                    [](const BCE_CEPPoint& a, const BCE_CEPPoint& b) { return a.range_m == b.range_m; }),
+                    [](const DOPE_CEPPoint& a, const DOPE_CEPPoint& b) { return a.range_m == b.range_m; }),
         g_state.cartridge_cep_points.end());
 
     if (!std::isfinite(g_state.cartridge_cep_scale_floor) || g_state.cartridge_cep_scale_floor <= 0.0f)
@@ -1241,16 +1241,16 @@ void ResetStateDefaults() {
     g_state.mass_error_preset_index = kMassErrorDefaultIndex;
     g_state.length_error_preset_index = kLengthErrorDefaultIndex;
     g_state.caliber_error_preset_index = kCaliberErrorDefaultIndex;
-    BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
+    DOPE_GetDefaultUncertaintyConfig(&g_state.uc_config);
     g_state.cartridge_cep_points.clear();
     g_state.cartridge_cep_scale_floor = 1.0f;
     g_state.uc_config.use_cartridge_cep_table = false;
     g_state.uc_config.cartridge_cep_table = {nullptr, 0};
     g_state.uc_config.cartridge_cep_scale_floor = 1.0f;
     SyncDerivedInputUncertaintySigmas();
-    std::snprintf(g_state.preset_path, sizeof(g_state.preset_path), "%s", "bce_gui_preset.json");
+    std::snprintf(g_state.preset_path, sizeof(g_state.preset_path), "%s", "dope_gui_preset.json");
     std::snprintf(g_state.profile_library_path, sizeof(g_state.profile_library_path), "%s",
-                  "bce_gui_profile_library.json");
+                  "dope_gui_profile_library.json");
     std::snprintf(g_state.new_cartridge_preset_name, sizeof(g_state.new_cartridge_preset_name),
                   "%s", "New Cartridge Preset");
     std::snprintf(g_state.new_gun_preset_name, sizeof(g_state.new_gun_preset_name), "%s",
@@ -1264,17 +1264,17 @@ void ResetStateDefaults() {
 }
 
 void ApplyConfig() {
-    // Push current GUI inputs into the BCE engine.
+    // Push current GUI inputs into the DOPE engine.
     g_state.bullet.drag_model = kDragModels[g_state.drag_model_index];
     g_state.bullet.bc = g_state.override_drag_coefficient
                             ? ClampValue(g_state.manual_drag_coefficient, 0.001f, 1.20f)
                             : ComputeAutoDragCoefficient(g_state.bullet);
-    BCE_SetBulletProfile(&g_state.bullet);
-    BCE_SetZeroConfig(&g_state.zero);
-    BCE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
-    BCE_SetLatitude(g_state.latitude);
+    DOPE_SetBulletProfile(&g_state.bullet);
+    DOPE_SetZeroConfig(&g_state.zero);
+    DOPE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
+    DOPE_SetLatitude(g_state.latitude);
     SyncDerivedInputUncertaintySigmas();
-    BCE_SetUncertaintyConfig(&g_state.uc_config);
+    DOPE_SetUncertaintyConfig(&g_state.uc_config);
 }
 
 SensorFrame BuildFrame() {
@@ -1316,25 +1316,25 @@ SensorFrame BuildFrame() {
 void RunFrameUpdates(int frame_count) {
     for (int i = 0; i < frame_count; ++i) {
         SensorFrame frame = BuildFrame();
-        BCE_Update(&frame);
+        DOPE_Update(&frame);
     }
 }
 
 void RefreshOutput() {
-    // Produce the human-readable diagnostics/solution text displayed in "BCE Output".
+    // Produce the human-readable diagnostics/solution text displayed in "DOPE Output".
     FiringSolution sol = {};
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
 
-    BCE_Mode mode = BCE_GetMode();
-    uint32_t fault = BCE_GetFaultFlags();
-    uint32_t diag = BCE_GetDiagFlags();
+    DOPE_Mode mode = DOPE_GetMode();
+    uint32_t fault = DOPE_GetFaultFlags();
+    uint32_t diag = DOPE_GetDiagFlags();
 
     const char* mode_text = "UNKNOWN";
-    if (mode == BCE_Mode::IDLE)
+    if (mode == DOPE_Mode::IDLE)
         mode_text = "IDLE";
-    if (mode == BCE_Mode::SOLUTION_READY)
+    if (mode == DOPE_Mode::SOLUTION_READY)
         mode_text = "SOLUTION_READY";
-    if (mode == BCE_Mode::FAULT)
+    if (mode == DOPE_Mode::FAULT)
         mode_text = "FAULT";
 
     std::ostringstream ss;
@@ -1349,23 +1349,23 @@ void RefreshOutput() {
             ss << name;
             first = false;
         };
-        if (flags == BCE_Fault::NONE) {
+        if (flags == DOPE_Fault::NONE) {
             ss << "none";
             return;
         }
-        if (flags & BCE_Fault::NO_RANGE)
+        if (flags & DOPE_Fault::NO_RANGE)
             add("NO_RANGE");
-        if (flags & BCE_Fault::NO_BULLET)
+        if (flags & DOPE_Fault::NO_BULLET)
             add("NO_BULLET");
-        if (flags & BCE_Fault::NO_MV)
+        if (flags & DOPE_Fault::NO_MV)
             add("NO_MV");
-        if (flags & BCE_Fault::NO_BC)
+        if (flags & DOPE_Fault::NO_BC)
             add("NO_BC");
-        if (flags & BCE_Fault::ZERO_UNSOLVABLE)
+        if (flags & DOPE_Fault::ZERO_UNSOLVABLE)
             add("ZERO_UNSOLVABLE");
-        if (flags & BCE_Fault::AHRS_UNSTABLE)
+        if (flags & DOPE_Fault::AHRS_UNSTABLE)
             add("AHRS_UNSTABLE");
-        if (flags & BCE_Fault::SENSOR_INVALID)
+        if (flags & DOPE_Fault::SENSOR_INVALID)
             add("SENSOR_INVALID");
     };
 
@@ -1377,25 +1377,25 @@ void RefreshOutput() {
             ss << name;
             first = false;
         };
-        if (flags == BCE_Diag::NONE) {
+        if (flags == DOPE_Diag::NONE) {
             ss << "none";
             return;
         }
-        if (flags & BCE_Diag::CORIOLIS_DISABLED)
+        if (flags & DOPE_Diag::CORIOLIS_DISABLED)
             add("CORIOLIS_DISABLED");
-        if (flags & BCE_Diag::DEFAULT_PRESSURE)
+        if (flags & DOPE_Diag::DEFAULT_PRESSURE)
             add("DEFAULT_PRESSURE");
-        if (flags & BCE_Diag::DEFAULT_TEMP)
+        if (flags & DOPE_Diag::DEFAULT_TEMP)
             add("DEFAULT_TEMP");
-        if (flags & BCE_Diag::DEFAULT_HUMIDITY)
+        if (flags & DOPE_Diag::DEFAULT_HUMIDITY)
             add("DEFAULT_HUMIDITY");
-        if (flags & BCE_Diag::DEFAULT_ALTITUDE)
+        if (flags & DOPE_Diag::DEFAULT_ALTITUDE)
             add("DEFAULT_ALTITUDE");
-        if (flags & BCE_Diag::DEFAULT_WIND)
+        if (flags & DOPE_Diag::DEFAULT_WIND)
             add("DEFAULT_WIND");
-        if (flags & BCE_Diag::MAG_SUPPRESSED)
+        if (flags & DOPE_Diag::MAG_SUPPRESSED)
             add("MAG_SUPPRESSED");
-        if (flags & BCE_Diag::LRF_STALE)
+        if (flags & DOPE_Diag::LRF_STALE)
             add("LRF_STALE");
     };
 
@@ -1410,18 +1410,18 @@ void RefreshOutput() {
     appendDiagNames(diag);
     ss << "\n\n";
 
-    if (mode == BCE_Mode::IDLE) {
+    if (mode == DOPE_Mode::IDLE) {
         ss << "Hint: IDLE means no valid firing solution yet. Apply config then feed frames with "
               "Step/Run 100.\n";
     }
-    if (fault & BCE_Fault::AHRS_UNSTABLE) {
+    if (fault & DOPE_Fault::AHRS_UNSTABLE) {
         ss << "Hint: AHRS_UNSTABLE is expected in early frames. Use Run 100 or enough Step updates "
               "while IMU is static.\n";
     }
-    if (fault & BCE_Fault::NO_RANGE) {
+    if (fault & DOPE_Fault::NO_RANGE) {
         ss << "Hint: NO_RANGE means no accepted LRF sample (check LRF valid/range).\n";
     }
-    if (diag & BCE_Diag::DEFAULT_ALTITUDE) {
+    if (diag & DOPE_Diag::DEFAULT_ALTITUDE) {
         ss << "Hint: DEFAULT_ALTITUDE is informational (not a fault).\n";
     }
     ss << "\n";
@@ -1525,7 +1525,7 @@ void RefreshOutput() {
     {
         std::lock_guard<std::mutex> dlk(g_display_mutex);
         g_display_output = g_state.output_text;
-        BCE_GetSolution(&g_display_sol);
+        DOPE_GetSolution(&g_display_sol);
     }
 }
 
@@ -2029,9 +2029,9 @@ void LoadPreset() {
         g_state.baro_humidity = j.value("baro_humidity", 0.5f);
         g_state.lrf_range = j.value("lrf_range_m", 500.0f);
 
-        // Uncertainty config ΓÇö load with per-field defaults matching BCE defaults
+        // Uncertainty config ΓÇö load with per-field defaults matching DOPE defaults
         UncertaintyConfig uc_def = {};
-        BCE_GetDefaultUncertaintyConfig(&uc_def);
+        DOPE_GetDefaultUncertaintyConfig(&uc_def);
         g_state.uc_config.enabled = j.value("uc_enabled", uc_def.enabled);
         g_state.uc_config.sigma_muzzle_velocity_ms =
             j.value("uc_sigma_mv_ms", uc_def.sigma_muzzle_velocity_ms);
@@ -2130,7 +2130,7 @@ void LoadPreset() {
 }
 
 void ResetEngineAndState() {
-    BCE_Init();
+    DOPE_Init();
     g_state.now_us = 0;
     g_state.last_action = "Reset Engine";
     ApplyConfig();
@@ -2165,8 +2165,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Engine ticker ΓÇö mirrors the FreeRTOS BCE task on the ESP32-P4.
-// Runs BCE_Update + RefreshOutput at FRAME_STEP_US intervals on a background
+// Engine ticker ΓÇö mirrors the FreeRTOS DOPE task on the ESP32-P4.
+// Runs DOPE_Update + RefreshOutput at FRAME_STEP_US intervals on a background
 // thread so the render loop never blocks on the solver.
 // ---------------------------------------------------------------------------
 void EngineTickerThread() {
@@ -2186,16 +2186,16 @@ void EngineTickerThread() {
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> BCE init.
+    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
     ResetStateDefaults();
 
     WNDCLASSEX wc = {sizeof(WNDCLASSEX),       CS_CLASSDC, WndProc, 0L,      0L,
                      GetModuleHandle(nullptr), nullptr,    nullptr, nullptr, nullptr,
-                     _T("BCE_ImGui_Test"),     nullptr};
+                     _T("DOPE_ImGui_Test"),     nullptr};
     RegisterClassEx(&wc);
 
     HWND hwnd =
-        CreateWindow(wc.lpszClassName, _T("BCE Basic Test GUI (ImGui)"), WS_OVERLAPPEDWINDOW, 100,
+        CreateWindow(wc.lpszClassName, _T("DOPE Basic Test GUI (ImGui)"), WS_OVERLAPPEDWINDOW, 100,
                      100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
 
     if (CreateDeviceD3D(hwnd) < 0) {
@@ -2218,7 +2218,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     ResetEngineAndState();
 
-    // Start engine ticker thread ΓÇö mirrors the FreeRTOS BCE task on ESP32-P4.
+    // Start engine ticker thread ΓÇö mirrors the FreeRTOS DOPE task on ESP32-P4.
     g_ticker_running = true;
     std::thread ticker_thread(EngineTickerThread);
 
@@ -2249,7 +2249,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Begin("BCE Inputs");
+        ImGui::Begin("DOPE Inputs");
         int unit_mode = static_cast<int>(g_state.unit_system);
         if (ImGui::Combo("Unit System", &unit_mode, kUnitSystemLabels,
                          IM_ARRAYSIZE(kUnitSystemLabels))) {
@@ -2337,15 +2337,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
             ImGui::SameLine();
             if (ImGui::Button("Save Presets to File")) {
-                const std::string repo_path = "tools/native_gui/bce_gui_cartridges.json";
-                const bool ok = SaveCartridgePresetsToFile(repo_path) || SaveCartridgePresetsToFile("bce_gui_cartridges.json");
+                const std::string repo_path = "tools/native_gui/dope_gui_cartridges.json";
+                const bool ok = SaveCartridgePresetsToFile(repo_path) || SaveCartridgePresetsToFile("dope_gui_cartridges.json");
                 g_state.last_action = ok ? "Saved Cartridge Presets" : "Save Cartridge Presets (failed)";
                 if (!ok) g_state.output_text = "Failed to save cartridge presets.";
             }
             ImGui::SameLine();
             if (ImGui::Button("Load Presets from File")) {
-                const std::string repo_path = "tools/native_gui/bce_gui_cartridges.json";
-                const bool ok = LoadCartridgePresetsFromFile(repo_path) || LoadCartridgePresetsFromFile("bce_gui_cartridges.json");
+                const std::string repo_path = "tools/native_gui/dope_gui_cartridges.json";
+                const bool ok = LoadCartridgePresetsFromFile(repo_path) || LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
                 g_state.last_action = ok ? "Loaded Cartridge Presets" : "Load Cartridge Presets (failed)";
                 if (ok) {
                     EnsureProfileDefaults();
@@ -2533,15 +2533,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
             ImGui::SameLine();
             if (ImGui::Button("Save Presets to File")) {
-                const std::string repo_path = "tools/native_gui/bce_gui_guns.json";
-                const bool ok = SaveGunPresetsToFile(repo_path) || SaveGunPresetsToFile("bce_gui_guns.json");
+                const std::string repo_path = "tools/native_gui/dope_gui_guns.json";
+                const bool ok = SaveGunPresetsToFile(repo_path) || SaveGunPresetsToFile("dope_gui_guns.json");
                 g_state.last_action = ok ? "Saved Gun Presets" : "Save Gun Presets (failed)";
                 if (!ok) g_state.output_text = "Failed to save gun presets.";
             }
             ImGui::SameLine();
             if (ImGui::Button("Load Presets from File")) {
-                const std::string repo_path = "tools/native_gui/bce_gui_guns.json";
-                const bool ok = LoadGunPresetsFromFile(repo_path) || LoadGunPresetsFromFile("bce_gui_guns.json");
+                const std::string repo_path = "tools/native_gui/dope_gui_guns.json";
+                const bool ok = LoadGunPresetsFromFile(repo_path) || LoadGunPresetsFromFile("dope_gui_guns.json");
                 g_state.last_action = ok ? "Loaded Gun Presets" : "Load Gun Presets (failed)";
                 if (ok) {
                     EnsureProfileDefaults();
@@ -2626,7 +2626,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Reset Sigmas")) {
                 bool was_enabled = g_state.uc_config.enabled;
-                BCE_GetDefaultUncertaintyConfig(&g_state.uc_config);
+                DOPE_GetDefaultUncertaintyConfig(&g_state.uc_config);
                 g_state.uc_config.enabled = was_enabled;
                 g_state.hw_barometer_index = kBarometerDefaultIndex;
                 g_state.hw_lrf_index = kLrfDefaultIndex;
@@ -2984,9 +2984,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                                   "Grays out the manual sigma field when table data is loaded.");
         }
         // Lock manual entry only when a preset with actual table data is selected.
-        const BCE_ErrorTable* tmp_table_lock = GetTempTable(g_state.hw_temp_sensor_index);
+        const DOPE_ErrorTable* tmp_table_lock = GetTempTable(g_state.hw_temp_sensor_index);
         const bool tmp_locked = uc_on && (g_state.hw_temp_sensor_index > 0 && tmp_table_lock && tmp_table_lock->points != nullptr);
-        const BCE_ErrorTable* pr_table_lock = GetBarometerTable(g_state.hw_barometer_index);
+        const DOPE_ErrorTable* pr_table_lock = GetBarometerTable(g_state.hw_barometer_index);
         const bool pressure_locked = uc_on && (g_state.hw_barometer_index >= 0 && g_state.hw_barometer_index < GetNumBarometerPresets()) && (pr_table_lock && pr_table_lock->points != nullptr);
         float pressure_display = g_state.baro_pressure;
         {
@@ -3219,7 +3219,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         ImGui::End();
 
-        ImGui::Begin("BCE Output");
+        ImGui::Begin("DOPE Output");
         ImGui::InputTextMultiline("##output", frame_output.data(), frame_output.size() + 1,
                                   ImVec2(-FLT_MIN, -FLT_MIN), ImGuiInputTextFlags_ReadOnly);
         ImGui::End();
@@ -3458,7 +3458,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
         const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
         const float wind_relative_rad =
-            (g_state.wind_heading - side_sol.heading_deg_true) * bce::math::DEG_TO_RAD;
+            (g_state.wind_heading - side_sol.heading_deg_true) * dope::math::DEG_TO_RAD;
         const float headwind_ms = g_state.wind_speed_ms * std::cos(wind_relative_rad);
         const float crosswind_ms = g_state.wind_speed_ms * std::sin(wind_relative_rad);
         const float wind_ms_to_display = is_imperial ? MPS_TO_MPH : 1.0f;

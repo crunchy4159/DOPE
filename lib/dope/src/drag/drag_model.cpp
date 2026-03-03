@@ -90,11 +90,11 @@ float DragModelLookup::getDeceleration(float velocity_ms, float speed_of_sound,
 
     float density = air_density;
     if (!std::isfinite(density) || density <= 0.0f) {
-        density = BCE_STD_AIR_DENSITY;
+        density = DOPE_STD_AIR_DENSITY;
     }
-    float density_ratio = density / BCE_STD_AIR_DENSITY; // [MATH §5.2]
+    float density_ratio = density / DOPE_STD_AIR_DENSITY; // [MATH §5.2]
     float decel = (cd * density_ratio * velocity_ms * velocity_ms) /
-                  (bc_corrected * bce::math::BALLISTIC_DRAG_CONSTANT); // [MATH §5.2]
+                  (bc_corrected * dope::math::BALLISTIC_DRAG_CONSTANT); // [MATH §5.2]
 
     return decel;
 }

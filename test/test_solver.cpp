@@ -22,10 +22,10 @@ protected:
         p.bc = 0.505f;                              // G1 BC
         p.drag_model = DragModel::G1;
         p.muzzle_velocity_ms = 792.0f;              // ~2600 fps
-        p.bullet_mass_kg = 175.0f * BCE_GRAINS_TO_KG;
+        p.bullet_mass_kg = 175.0f * DOPE_GRAINS_TO_KG;
         p.sight_height_m = 0.0381f;                 // 1.5 inches
-        p.air_density = BCE_STD_AIR_DENSITY;
-        p.speed_of_sound = BCE_SPEED_OF_SOUND_15C;
+        p.air_density = DOPE_STD_AIR_DENSITY;
+        p.speed_of_sound = DOPE_SPEED_OF_SOUND_15C;
         p.target_range_m = range_m;
         p.launch_angle_rad = 0.0f;
         p.headwind_ms = 0.0f;
@@ -42,7 +42,7 @@ TEST_F(SolverTest, ZeroAngleSmallPositive) {
     float angle = solver.solveZeroAngle(p, 100.0f);
     EXPECT_FALSE(std::isnan(angle));
     EXPECT_GT(angle, 0.0f);
-    EXPECT_LT(angle, 1.0f * BCE_DEG_TO_RAD); // less than 1 degree for 100m
+    EXPECT_LT(angle, 1.0f * DOPE_DEG_TO_RAD); // less than 1 degree for 100m
 }
 
 // Zero angle at 200m should be larger than at 100m
@@ -168,7 +168,7 @@ TEST_F(SolverTest, CrosswindProducesWindage) {
 TEST_F(SolverTest, ZeroAngleRejectsInvalidRange) {
     SolverParams p = make308Params(100.0f);
     EXPECT_TRUE(std::isnan(solver.solveZeroAngle(p, 0.0f)));
-    EXPECT_TRUE(std::isnan(solver.solveZeroAngle(p, BCE_MAX_RANGE_M + 1.0f)));
+    EXPECT_TRUE(std::isnan(solver.solveZeroAngle(p, DOPE_MAX_RANGE_M + 1.0f)));
 }
 
 // If projectile cannot reach zero range, solveZeroAngle should return NAN
@@ -209,8 +209,8 @@ TEST_F(SolverTest, CoriolisNorthernHemisphere) {
     SolverParams p = make308Params(1000.0f);
     p.launch_angle_rad = 0.005f;
     p.coriolis_enabled = true;
-    p.coriolis_lat_rad = 45.0f * BCE_DEG_TO_RAD; // 45 deg N
-    p.azimuth_rad = 90.0f * BCE_DEG_TO_RAD;      // Firing East
+    p.coriolis_lat_rad = 45.0f * DOPE_DEG_TO_RAD; // 45 deg N
+    p.azimuth_rad = 90.0f * DOPE_DEG_TO_RAD;      // Firing East
 
     SolverResult result = solver.integrate(p);
     EXPECT_TRUE(result.valid);
@@ -223,8 +223,8 @@ TEST_F(SolverTest, CoriolisSouthernHemisphere) {
     SolverParams p = make308Params(1000.0f);
     p.launch_angle_rad = 0.005f;
     p.coriolis_enabled = true;
-    p.coriolis_lat_rad = -45.0f * BCE_DEG_TO_RAD; // 45 deg S
-    p.azimuth_rad = 90.0f * BCE_DEG_TO_RAD;       // Firing East
+    p.coriolis_lat_rad = -45.0f * DOPE_DEG_TO_RAD; // 45 deg S
+    p.azimuth_rad = 90.0f * DOPE_DEG_TO_RAD;       // Firing East
 
     SolverResult result = solver.integrate(p);
     EXPECT_TRUE(result.valid);
@@ -274,12 +274,12 @@ TEST_F(SolverTest, BulletLengthAffectsDropWithDynamicStability) {
     SolverParams short_bullet = make308Params(1200.0f);
     short_bullet.launch_angle_rad = 0.005f;
     short_bullet.twist_rate_inches = 10.0f;
-    short_bullet.caliber_m = 0.308f * BCE_INCHES_TO_M;
-    short_bullet.bullet_length_m = 28.0f * BCE_MM_TO_M;
+    short_bullet.caliber_m = 0.308f * DOPE_INCHES_TO_M;
+    short_bullet.bullet_length_m = 28.0f * DOPE_MM_TO_M;
     short_bullet.spin_drift_enabled = true;
 
     SolverParams long_bullet = short_bullet;
-    long_bullet.bullet_length_m = 36.0f * BCE_MM_TO_M;
+    long_bullet.bullet_length_m = 36.0f * DOPE_MM_TO_M;
 
     SolverResult r_short = solver.integrate(short_bullet);
     SolverResult r_long = solver.integrate(long_bullet);

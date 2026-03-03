@@ -1,6 +1,6 @@
 /**
  * @file test_integration.cpp
- * @brief End-to-end integration tests for the BCE API.
+ * @brief End-to-end integration tests for the DOPE API.
  *
  * Tests the full pipeline: init → set profile → set zero → feed sensors → get solution.
  */
@@ -20,7 +20,7 @@ constexpr float kMoaPerMil = 3.43774677f;
 class IntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        BCE_Init();
+        DOPE_Init();
     }
 
     SensorFrame makeDefaultFrame(uint64_t timestamp_us) {
@@ -59,20 +59,20 @@ protected:
         bullet.mass_grains = 175.0f;
         bullet.caliber_inches = 0.308f;
         bullet.twist_rate_inches = twist_rate_inches;
-        BCE_SetBulletProfile(&bullet);
+        DOPE_SetBulletProfile(&bullet);
     }
 
     void setZero100m(float sight_height_mm = 38.1f) {
         ZeroConfig zero = {};
         zero.zero_range_m = 100.0f;
         zero.sight_height_mm = sight_height_mm;
-        BCE_SetZeroConfig(&zero);
+        DOPE_SetZeroConfig(&zero);
     }
 };
 
 // After init, mode should be IDLE
 TEST_F(IntegrationTest, InitialModeIsIdle) {
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::IDLE);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::IDLE);
 }
 
 // Without bullet profile, should fault
@@ -86,11 +86,11 @@ TEST_F(IntegrationTest, NoBulletFaults) {
     for (int i = 0; i < 100; ++i) {
         f.timestamp_us = (uint64_t)(i + 1) * 10000;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::FAULT);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::NO_BULLET, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::FAULT);
+    EXPECT_NE(DOPE_GetFaultFlags() & DOPE_Fault::NO_BULLET, 0u);
 }
 
 // With full configuration, mode should be SOLUTION_READY
@@ -104,13 +104,13 @@ TEST_F(IntegrationTest, FullConfigProducesSolution) {
     bullet.length_mm = 31.2f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     // Set zero
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     // Feed sensor frames with LRF
     for (int i = 0; i < 100; ++i) {
@@ -118,16 +118,16 @@ TEST_F(IntegrationTest, FullConfigProducesSolution) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     // Get solution
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
 
-    EXPECT_EQ(sol.solution_mode, static_cast<uint32_t>(BCE_Mode::SOLUTION_READY));
+    EXPECT_EQ(sol.solution_mode, static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY));
     EXPECT_FLOAT_EQ(sol.range_m, 500.0f);
     EXPECT_GT(sol.tof_ms, 0.0f);
     EXPECT_GT(sol.velocity_at_target_ms, 0.0f);
@@ -144,15 +144,15 @@ TEST_F(IntegrationTest, RealtimeSolutionMatchesPrimaryHolds) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     FiringSolution full = {};
     RealtimeSolution rt = {};
-    BCE_GetSolution(&full);
-    BCE_GetRealtimeSolution(&rt);
+    DOPE_GetSolution(&full);
+    DOPE_GetRealtimeSolution(&rt);
 
     EXPECT_EQ(rt.solution_mode, full.solution_mode);
     EXPECT_EQ(rt.fault_flags, full.fault_flags);
@@ -182,35 +182,35 @@ TEST_F(IntegrationTest, FederalFusion150gr500ydReferenceEnvelope) {
     BulletProfile bullet = {};
     bullet.bc = 0.414f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2820.0f * bce::math::FPS_TO_MPS;
+    bullet.muzzle_velocity_ms = 2820.0f * dope::math::FPS_TO_MPS;
     bullet.mass_grains = 150.0f;
     bullet.length_mm = 28.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 91.44f;      // 100 yd
     zero.sight_height_mm = 38.1f;    // 1.5 in
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     // Federal reference conditions: 59 F, sea level, no wind
-    BCE_SetWindManual(0.0f, 0.0f);
+    DOPE_SetWindManual(0.0f, 0.0f);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 457.2f; // 500 yd
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
 
-    const float velocity_fps = sol.velocity_at_target_ms * bce::math::MPS_TO_FPS;
+    const float velocity_fps = sol.velocity_at_target_ms * dope::math::MPS_TO_FPS;
 
     // Published calculators vary with exact drag fit and implementation details.
     // Keep this as a realistic envelope centered near ~1821 fps.
@@ -223,27 +223,27 @@ TEST_F(IntegrationTest, FederalFusion150gr500ydReferenceEnvelope) {
 // than .308 Win 175gr, despite the .308's higher BC.
 TEST_F(IntegrationTest, PresetPair223Vs308HoldOrderingAt500Yd) {
     auto solve_at_500yd = [&](const BulletProfile& bullet) {
-        BCE_Init();
-        BCE_SetBulletProfile(&bullet);
+        DOPE_Init();
+        DOPE_SetBulletProfile(&bullet);
 
         ZeroConfig zero = {};
         zero.zero_range_m = 91.44f;   // 100 yd
         zero.sight_height_mm = 38.1f; // 1.5 in
-        BCE_SetZeroConfig(&zero);
-        BCE_SetWindManual(0.0f, 0.0f);
+        DOPE_SetZeroConfig(&zero);
+        DOPE_SetWindManual(0.0f, 0.0f);
 
         for (int i = 0; i < 120; ++i) {
             SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
             f.lrf_valid = true;
             f.lrf_range_m = 457.2f; // 500 yd
             f.lrf_timestamp_us = f.timestamp_us;
-            BCE_Update(&f);
+            DOPE_Update(&f);
         }
 
-        EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+        EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
         FiringSolution sol = {};
-        BCE_GetSolution(&sol);
+        DOPE_GetSolution(&sol);
         return sol;
     };
 
@@ -288,13 +288,13 @@ TEST_F(IntegrationTest, CoriolisDisabledWithoutLatitude) {
         f.lrf_valid = true;
         f.lrf_range_m = 1000.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_NE(BCE_GetDiagFlags() & BCE_Diag::CORIOLIS_DISABLED, 0u);
+    EXPECT_NE(DOPE_GetDiagFlags() & DOPE_Diag::CORIOLIS_DISABLED, 0u);
 
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_FLOAT_EQ(sol.coriolis_windage_moa, 0.0f);
     EXPECT_FLOAT_EQ(sol.coriolis_elevation_moa, 0.0f);
 }
@@ -310,21 +310,21 @@ TEST_F(IntegrationTest, StaleLRFCausesFault) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     // Now feed frames WITHOUT LRF, with timestamps far in the future
     // to trigger staleness
-    uint64_t future_time = 100 * 10000 + BCE_LRF_STALE_US + 1000000;
+    uint64_t future_time = 100 * 10000 + DOPE_LRF_STALE_US + 1000000;
     for (int i = 0; i < 10; ++i) {
         SensorFrame f = makeDefaultFrame(future_time + (uint64_t)i * 10000);
         f.lrf_valid = false;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     // Should no longer be SOLUTION_READY
-    EXPECT_NE(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_NE(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 }
 
 // Timestamp arithmetic near uint64 max should not falsely mark fresh LRF as stale
@@ -337,9 +337,9 @@ TEST_F(IntegrationTest, LRFStaleCheckHandlesTimestampNearWrap) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     constexpr uint64_t near_wrap_lrf_ts = std::numeric_limits<uint64_t>::max() - 100;
 
@@ -347,28 +347,28 @@ TEST_F(IntegrationTest, LRFStaleCheckHandlesTimestampNearWrap) {
     near_wrap.lrf_valid = true;
     near_wrap.lrf_range_m = 500.0f;
     near_wrap.lrf_timestamp_us = near_wrap.timestamp_us;
-    BCE_Update(&near_wrap);
+    DOPE_Update(&near_wrap);
 
     SensorFrame shortly_after = makeDefaultFrame(near_wrap_lrf_ts + 50);
     shortly_after.lrf_valid = false;
-    BCE_Update(&shortly_after);
+    DOPE_Update(&shortly_after);
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
-    EXPECT_EQ(BCE_GetDiagFlags() & BCE_Diag::LRF_STALE, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetDiagFlags() & DOPE_Diag::LRF_STALE, 0u);
 }
 
 // Default overrides should be reflected in solution
 TEST_F(IntegrationTest, DefaultOverridesApplied) {
-    BCE_DefaultOverrides ovr = {};
+    DOPE_DefaultOverrides ovr = {};
     ovr.use_altitude = true;
     ovr.altitude_m = 1500.0f;
     ovr.use_temperature = true;
     ovr.temperature_c = 30.0f;
-    BCE_SetDefaultOverrides(&ovr);
+    DOPE_SetDefaultOverrides(&ovr);
 
     // Check that altitude default flag is cleared (since we set an override)
-    uint32_t flags = BCE_GetDiagFlags();
-    EXPECT_EQ(flags & BCE_Diag::DEFAULT_ALTITUDE, 0u);
+    uint32_t flags = DOPE_GetDiagFlags();
+    EXPECT_EQ(flags & DOPE_Diag::DEFAULT_ALTITUDE, 0u);
 }
 
 // Invalid zero config should produce ZERO_UNSOLVABLE hard fault
@@ -378,18 +378,18 @@ TEST_F(IntegrationTest, InvalidZeroRangeFaults) {
     ZeroConfig zero = {};
     zero.zero_range_m = 0.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::FAULT);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::ZERO_UNSOLVABLE, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::FAULT);
+    EXPECT_NE(DOPE_GetFaultFlags() & DOPE_Fault::ZERO_UNSOLVABLE, 0u);
 }
 
 // Wind default overrides should behave like startup manual wind
@@ -397,25 +397,25 @@ TEST_F(IntegrationTest, WindDefaultOverrideAffectsSolution) {
     setDefault308BulletProfile(0.0f); // isolate wind contribution
     setZero100m();
 
-    BCE_DefaultOverrides ovr = {};
+    DOPE_DefaultOverrides ovr = {};
     ovr.use_wind = true;
     ovr.wind_speed_ms = 10.0f;
     ovr.wind_heading_deg = 90.0f;
-    BCE_SetDefaultOverrides(&ovr);
+    DOPE_SetDefaultOverrides(&ovr);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
-    EXPECT_EQ(BCE_GetDiagFlags() & BCE_Diag::DEFAULT_WIND, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetDiagFlags() & DOPE_Diag::DEFAULT_WIND, 0u);
 
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_NE(sol.hold_windage_moa, 0.0f);
 }
 
@@ -424,44 +424,44 @@ TEST_F(IntegrationTest, WindFromRightRequiresRightHold) {
     setDefault308BulletProfile(0.0f); // isolate wind contribution
     setZero100m();
 
-    BCE_SetWindManual(10.0f, 90.0f); // wind from right (east) when firing north
+    DOPE_SetWindManual(10.0f, 90.0f); // wind from right (east) when firing north
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     FiringSolution sol = {};
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_GT(sol.hold_windage_moa, 0.0f);
 }
 
 // Null calibration pointers should be accepted safely
 TEST_F(IntegrationTest, NullCalibrationInputsAreSafe) {
-    BCE_SetIMUBias(nullptr, nullptr);
-    BCE_SetMagCalibration(nullptr, nullptr);
+    DOPE_SetIMUBias(nullptr, nullptr);
+    DOPE_SetMagCalibration(nullptr, nullptr);
 
     setDefault308BulletProfile();
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 }
 
 // Boresight + reticle offsets should add directly to holds when cant is near zero
@@ -473,40 +473,40 @@ TEST_F(IntegrationTest, MechanicalOffsetsShiftHolds) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 0.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution base;
-    BCE_GetSolution(&base);
+    DOPE_GetSolution(&base);
 
     BoresightOffset boresight = {};
     boresight.vertical_moa = 1.5f;
     boresight.horizontal_moa = -2.0f;
-    BCE_SetBoresightOffset(&boresight);
-    BCE_SetReticleMechanicalOffset(0.5f, 1.0f);
+    DOPE_SetBoresightOffset(&boresight);
+    DOPE_SetReticleMechanicalOffset(0.5f, 1.0f);
 
     for (int i = 0; i < 10; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(101 + i) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution shifted;
-    BCE_GetSolution(&shifted);
+    DOPE_GetSolution(&shifted);
 
     EXPECT_NEAR(shifted.hold_elevation_moa - base.hold_elevation_moa, 2.0f, 0.05f);
     EXPECT_NEAR(shifted.hold_windage_moa - base.hold_windage_moa, -1.0f, 0.05f);
@@ -521,12 +521,12 @@ TEST_F(IntegrationTest, MagDisturbanceSetsDiagnostic) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
@@ -537,11 +537,11 @@ TEST_F(IntegrationTest, MagDisturbanceSetsDiagnostic) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
-    EXPECT_NE(BCE_GetDiagFlags() & BCE_Diag::MAG_SUPPRESSED, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
+    EXPECT_NE(DOPE_GetDiagFlags() & DOPE_Diag::MAG_SUPPRESSED, 0u);
 }
 
 // Baro calibration should move measured atmosphere toward standard reference
@@ -553,12 +553,12 @@ TEST_F(IntegrationTest, BaroCalibrationRaisesLowPressureDensity) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
@@ -570,13 +570,13 @@ TEST_F(IntegrationTest, BaroCalibrationRaisesLowPressureDensity) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution before;
-    BCE_GetSolution(&before);
+    DOPE_GetSolution(&before);
 
-    BCE_CalibrateBaro();
+    DOPE_CalibrateBaro();
 
     for (int i = 0; i < 20; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(101 + i) * 10000);
@@ -588,18 +588,18 @@ TEST_F(IntegrationTest, BaroCalibrationRaisesLowPressureDensity) {
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution after;
-    BCE_GetSolution(&after);
+    DOPE_GetSolution(&after);
 
     EXPECT_GT(after.air_density_kgm3, before.air_density_kgm3);
 }
 
 // Magnetic declination should offset reported true heading
 TEST_F(IntegrationTest, DeclinationOffsetsHeading) {
-    BCE_SetMagDeclination(12.0f);
+    DOPE_SetMagDeclination(12.0f);
 
     BulletProfile bullet = {};
     bullet.bc = 0.505f;
@@ -608,23 +608,23 @@ TEST_F(IntegrationTest, DeclinationOffsetsHeading) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_NEAR(sol.heading_deg_true, 12.0f, 0.5f);
 }
 
@@ -637,44 +637,44 @@ TEST_F(IntegrationTest, TimestampJumpsAndRollbackRemainDeterministic) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 80; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     SensorFrame jump = makeDefaultFrame(10ull * 1000ull * 1000ull);
     jump.lrf_valid = true;
     jump.lrf_range_m = 500.0f;
     jump.lrf_timestamp_us = jump.timestamp_us;
-    BCE_Update(&jump);
+    DOPE_Update(&jump);
 
     SensorFrame rollback = makeDefaultFrame(500000ull);
     rollback.lrf_valid = true;
     rollback.lrf_range_m = 500.0f;
     rollback.lrf_timestamp_us = rollback.timestamp_us;
-    BCE_Update(&rollback);
+    DOPE_Update(&rollback);
 
     for (int i = 0; i < 40; ++i) {
         SensorFrame f = makeDefaultFrame(600000ull + (uint64_t)i * 10000ull);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_TRUE(std::isfinite(sol.hold_elevation_moa));
     EXPECT_TRUE(std::isfinite(sol.hold_windage_moa));
 }
@@ -688,19 +688,19 @@ TEST_F(IntegrationTest, NaNImuInputFlagsSensorInvalid) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     SensorFrame bad = makeDefaultFrame(2000000ull);
@@ -708,9 +708,9 @@ TEST_F(IntegrationTest, NaNImuInputFlagsSensorInvalid) {
     bad.lrf_valid = true;
     bad.lrf_range_m = 500.0f;
     bad.lrf_timestamp_us = bad.timestamp_us;
-    BCE_Update(&bad);
+    DOPE_Update(&bad);
 
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::SENSOR_INVALID, 0u);
+    EXPECT_NE(DOPE_GetFaultFlags() & DOPE_Fault::SENSOR_INVALID, 0u);
 }
 
 // Non-finite LRF range should be rejected and flagged invalid
@@ -722,24 +722,24 @@ TEST_F(IntegrationTest, InfRangeRejectedAndFlagged) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 100; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = true;
         f.lrf_range_m = std::numeric_limits<float>::infinity();
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::FAULT);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::NO_RANGE, 0u);
-    EXPECT_NE(BCE_GetFaultFlags() & BCE_Fault::SENSOR_INVALID, 0u);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::FAULT);
+    EXPECT_NE(DOPE_GetFaultFlags() & DOPE_Fault::NO_RANGE, 0u);
+    EXPECT_NE(DOPE_GetFaultFlags() & DOPE_Fault::SENSOR_INVALID, 0u);
 }
 
 // Rapid alternation of valid and missing LRF samples should recover deterministically
@@ -751,31 +751,31 @@ TEST_F(IntegrationTest, RapidRangeValidityTransitionsRecover) {
     bullet.mass_grains = 175.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 200; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000);
         f.lrf_valid = (i % 2 == 0);
         f.lrf_range_m = 500.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
     SensorFrame final_good = makeDefaultFrame(3000000ull);
     final_good.lrf_valid = true;
     final_good.lrf_range_m = 500.0f;
     final_good.lrf_timestamp_us = final_good.timestamp_us;
-    BCE_Update(&final_good);
+    DOPE_Update(&final_good);
 
-    EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     FiringSolution sol;
-    BCE_GetSolution(&sol);
+    DOPE_GetSolution(&sol);
     EXPECT_TRUE(std::isfinite(sol.hold_elevation_moa));
     EXPECT_TRUE(std::isfinite(sol.hold_windage_moa));
 }
@@ -786,16 +786,16 @@ TEST_F(IntegrationTest, AtmosphericDeltaTriggersZeroRecompute) {
     BulletProfile bullet = {};
     bullet.bc = 0.462f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2650.0f * bce::math::FPS_TO_MPS;
+    bullet.muzzle_velocity_ms = 2650.0f * dope::math::FPS_TO_MPS;
     bullet.mass_grains = 168.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 600.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 140; ++i) {
         SensorFrame f = makeDefaultFrame((uint64_t)(i + 1) * 10000ull);
@@ -807,13 +807,13 @@ TEST_F(IntegrationTest, AtmosphericDeltaTriggersZeroRecompute) {
         f.lrf_valid = true;
         f.lrf_range_m = 600.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    ASSERT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    ASSERT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
 
     FiringSolution baseline;
-    BCE_GetSolution(&baseline);
+    DOPE_GetSolution(&baseline);
     EXPECT_LT(std::fabs(baseline.hold_elevation_moa), 0.75f);
 
     for (int i = 0; i < 140; ++i) {
@@ -826,12 +826,12 @@ TEST_F(IntegrationTest, AtmosphericDeltaTriggersZeroRecompute) {
         f.lrf_valid = true;
         f.lrf_range_m = 600.0f;
         f.lrf_timestamp_us = f.timestamp_us;
-        BCE_Update(&f);
+        DOPE_Update(&f);
     }
 
-    ASSERT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+    ASSERT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
     FiringSolution after;
-    BCE_GetSolution(&after);
+    DOPE_GetSolution(&after);
 
     // If zero is recomputed for the new atmosphere, hold at zero range should remain near zero.
     EXPECT_LT(std::fabs(after.hold_elevation_moa), 0.75f);
@@ -846,12 +846,12 @@ TEST_F(IntegrationTest, Reference308168gr600mAnd800mTightEnvelope) {
     bullet.mass_grains = 168.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 50.8f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
     auto runAtRange = [&](float range_m, uint64_t ts_start) {
         for (int i = 0; i < 100; ++i) {
@@ -859,12 +859,12 @@ TEST_F(IntegrationTest, Reference308168gr600mAnd800mTightEnvelope) {
             f.lrf_valid = true;
             f.lrf_range_m = range_m;
             f.lrf_timestamp_us = f.timestamp_us;
-            BCE_Update(&f);
+            DOPE_Update(&f);
         }
 
-        EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+        EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
         FiringSolution sol;
-        BCE_GetSolution(&sol);
+        DOPE_GetSolution(&sol);
         return sol;
     };
 
@@ -891,20 +891,20 @@ TEST_F(IntegrationTest, ExternalReferenceModeReducesDropAndTof) {
     BulletProfile bullet = {};
     bullet.bc = 0.462f;
     bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 2650.0f * bce::math::FPS_TO_MPS;
+    bullet.muzzle_velocity_ms = 2650.0f * dope::math::FPS_TO_MPS;
     bullet.mass_grains = 168.0f;
     bullet.length_mm = 31.0f;
     bullet.caliber_inches = 0.308f;
     bullet.twist_rate_inches = 10.0f;
-    BCE_SetBulletProfile(&bullet);
+    DOPE_SetBulletProfile(&bullet);
 
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
-    BCE_SetZeroConfig(&zero);
+    DOPE_SetZeroConfig(&zero);
 
-    BCE_SetWindManual(0.0f, 0.0f);
-    BCE_SetExternalReferenceMode(false);
+    DOPE_SetWindManual(0.0f, 0.0f);
+    DOPE_SetExternalReferenceMode(false);
 
     auto runAt800 = [&](uint64_t start_ts_us) {
         for (int i = 0; i < 140; ++i) {
@@ -917,17 +917,17 @@ TEST_F(IntegrationTest, ExternalReferenceModeReducesDropAndTof) {
             f.lrf_valid = true;
             f.lrf_range_m = 800.0f;
             f.lrf_timestamp_us = f.timestamp_us;
-            BCE_Update(&f);
+            DOPE_Update(&f);
         }
-        EXPECT_EQ(BCE_GetMode(), BCE_Mode::SOLUTION_READY);
+        EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
         FiringSolution sol;
-        BCE_GetSolution(&sol);
+        DOPE_GetSolution(&sol);
         return sol;
     };
 
     FiringSolution legacy = runAt800(0ull);
 
-    BCE_SetExternalReferenceMode(true);
+    DOPE_SetExternalReferenceMode(true);
     FiringSolution external_mode = runAt800(2000000ull);
 
     EXPECT_LT(std::fabs(external_mode.hold_elevation_moa), std::fabs(legacy.hold_elevation_moa));
@@ -941,8 +941,8 @@ TEST_F(IntegrationTest, ExternalReferenceModeReducesDropAndTof) {
 
 // After init, with no encoder frame received, both FOV values must be zero.
 TEST_F(IntegrationTest, EncoderNoReadingDefaultsToZeroFOV) {
-    EXPECT_FLOAT_EQ(BCE_GetHFOV(), 0.0f);
-    EXPECT_FLOAT_EQ(BCE_GetVFOV(), 0.0f);
+    EXPECT_FLOAT_EQ(DOPE_GetHFOV(), 0.0f);
+    EXPECT_FLOAT_EQ(DOPE_GetVFOV(), 0.0f);
 }
 
 // A valid encoder reading at 8 mm focal length should produce the expected
@@ -953,10 +953,10 @@ TEST_F(IntegrationTest, EncoderAt8mmProducesExpectedFOV) {
     SensorFrame f = makeDefaultFrame(10000);
     f.encoder_focal_length_mm = 8.0f;
     f.encoder_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
-    EXPECT_NEAR(BCE_GetHFOV(), 42.92f, 0.1f);
-    EXPECT_NEAR(BCE_GetVFOV(), 32.80f, 0.1f);
+    EXPECT_NEAR(DOPE_GetHFOV(), 42.92f, 0.1f);
+    EXPECT_NEAR(DOPE_GetVFOV(), 32.80f, 0.1f);
 }
 
 // At maximum zoom (50 mm) the FOV should be much narrower.
@@ -966,10 +966,10 @@ TEST_F(IntegrationTest, EncoderAt50mmProducesNarrowFOV) {
     SensorFrame f = makeDefaultFrame(20000);
     f.encoder_focal_length_mm = 50.0f;
     f.encoder_valid = true;
-    BCE_Update(&f);
+    DOPE_Update(&f);
 
-    EXPECT_NEAR(BCE_GetHFOV(), 7.19f, 0.1f);
-    EXPECT_NEAR(BCE_GetVFOV(), 5.39f, 0.1f);
+    EXPECT_NEAR(DOPE_GetHFOV(), 7.19f, 0.1f);
+    EXPECT_NEAR(DOPE_GetVFOV(), 5.39f, 0.1f);
 }
 
 // Longer focal length must yield smaller FOV (monotone relationship).
@@ -977,16 +977,16 @@ TEST_F(IntegrationTest, EncoderFOVDecreasesWithLongerFocalLength) {
     SensorFrame f8 = makeDefaultFrame(10000);
     f8.encoder_focal_length_mm = 8.0f;
     f8.encoder_valid = true;
-    BCE_Update(&f8);
-    float hfov_8mm = BCE_GetHFOV();
-    float vfov_8mm = BCE_GetVFOV();
+    DOPE_Update(&f8);
+    float hfov_8mm = DOPE_GetHFOV();
+    float vfov_8mm = DOPE_GetVFOV();
 
     SensorFrame f50 = makeDefaultFrame(20000);
     f50.encoder_focal_length_mm = 50.0f;
     f50.encoder_valid = true;
-    BCE_Update(&f50);
-    float hfov_50mm = BCE_GetHFOV();
-    float vfov_50mm = BCE_GetVFOV();
+    DOPE_Update(&f50);
+    float hfov_50mm = DOPE_GetHFOV();
+    float vfov_50mm = DOPE_GetVFOV();
 
     EXPECT_GT(hfov_8mm, hfov_50mm);
     EXPECT_GT(vfov_8mm, vfov_50mm);
@@ -998,17 +998,17 @@ TEST_F(IntegrationTest, EncoderNotValidDoesNotChangeFOV) {
     SensorFrame fValid = makeDefaultFrame(10000);
     fValid.encoder_focal_length_mm = 25.0f;
     fValid.encoder_valid = true;
-    BCE_Update(&fValid);
-    float hfov_after_valid = BCE_GetHFOV();
+    DOPE_Update(&fValid);
+    float hfov_after_valid = DOPE_GetHFOV();
     EXPECT_GT(hfov_after_valid, 0.0f);
 
     // Now send a frame with encoder_valid = false — FOV must be unchanged
     SensorFrame fInvalid = makeDefaultFrame(20000);
     fInvalid.encoder_valid = false;
     fInvalid.encoder_focal_length_mm = 8.0f; // different value, should be ignored
-    BCE_Update(&fInvalid);
+    DOPE_Update(&fInvalid);
 
-    EXPECT_FLOAT_EQ(BCE_GetHFOV(), hfov_after_valid);
+    EXPECT_FLOAT_EQ(DOPE_GetHFOV(), hfov_after_valid);
 }
 
 // A focal length below the minimum threshold with encoder_valid = true must
@@ -1017,28 +1017,28 @@ TEST_F(IntegrationTest, EncoderInvalidFocalLengthRetainsPreviousFOV) {
     SensorFrame fValid = makeDefaultFrame(10000);
     fValid.encoder_focal_length_mm = 16.0f;
     fValid.encoder_valid = true;
-    BCE_Update(&fValid);
-    float prev_hfov = BCE_GetHFOV();
+    DOPE_Update(&fValid);
+    float prev_hfov = DOPE_GetHFOV();
     EXPECT_GT(prev_hfov, 0.0f);
 
-    // Sub-minimum focal length (< BCE_ENCODER_MIN_FOCAL_LENGTH_MM)
+    // Sub-minimum focal length (< DOPE_ENCODER_MIN_FOCAL_LENGTH_MM)
     SensorFrame fBad = makeDefaultFrame(20000);
     fBad.encoder_focal_length_mm = 0.0f;
     fBad.encoder_valid = true;
-    BCE_Update(&fBad);
+    DOPE_Update(&fBad);
 
-    EXPECT_FLOAT_EQ(BCE_GetHFOV(), prev_hfov);
+    EXPECT_FLOAT_EQ(DOPE_GetHFOV(), prev_hfov);
 }
 
-// BCE_Init() must reset FOV to zero even after valid readings have been stored.
+// DOPE_Init() must reset FOV to zero even after valid readings have been stored.
 TEST_F(IntegrationTest, EncoderFOVResetOnInit) {
     SensorFrame f = makeDefaultFrame(10000);
     f.encoder_focal_length_mm = 20.0f;
     f.encoder_valid = true;
-    BCE_Update(&f);
-    EXPECT_GT(BCE_GetHFOV(), 0.0f);
+    DOPE_Update(&f);
+    EXPECT_GT(DOPE_GetHFOV(), 0.0f);
 
-    BCE_Init();
-    EXPECT_FLOAT_EQ(BCE_GetHFOV(), 0.0f);
-    EXPECT_FLOAT_EQ(BCE_GetVFOV(), 0.0f);
+    DOPE_Init();
+    EXPECT_FLOAT_EQ(DOPE_GetHFOV(), 0.0f);
+    EXPECT_FLOAT_EQ(DOPE_GetVFOV(), 0.0f);
 }

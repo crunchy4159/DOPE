@@ -2,7 +2,7 @@
  * @file solver.h
  * @brief Point-mass ballistic trajectory solver.
  *
- * BCE SRS v1.3 — Section 11.1
+ * DOPE SRS v1.3 — Section 11.1
  *
  * Integrates the point-mass equations of motion with adaptive timestep
  * fourth-order Runge-Kutta (RK4). Produces a 1-meter resolution trajectory table
@@ -106,13 +106,13 @@ public:
     /**
      * Get a trajectory point at a specific range (meters).
      * Only valid after integrate() has been called.
-     * @param range_m  Range in meters (0 to BCE_MAX_RANGE_M)
+     * @param range_m  Range in meters (0 to DOPE_MAX_RANGE_M)
      * @return Pointer to trajectory point, or nullptr if out of range
      */
     const TrajectoryPoint* getPointAt(int range_m) const;
 
 private:
-    TrajectoryPoint table_[BCE_TRAJ_TABLE_SIZE];
+    TrajectoryPoint table_[DOPE_TRAJ_TABLE_SIZE];
     int max_valid_range_ = 0;
 
     /**

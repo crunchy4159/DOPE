@@ -6,7 +6,7 @@ Horizontal pipeline: inputs on the left feed numbered stages inside the engine; 
 
 ```text
 INPUTS                              +=========================================================+          OUTPUTS
-------                              |               DOPE ENGINE  |  BCE_Update()              |          -------
+------                              |               DOPE ENGINE  |  DOPE_Update()              |          -------
                                     |                                                         |
 [Weapon + Zero]  ------------->     |  [1] VALIDATE + NORMALIZE                               |
   zero_range                        |           |                                             |
@@ -48,8 +48,8 @@ INPUTS                              +===========================================
 
 ## Notes
 
-- All inputs feed into the engine via `BCE_Update()` at the top of each solver frame.
-- `BCE_GetRealtimeSolution()` returns a compact hot-path payload for embedded loops; `BCE_GetSolution()` remains the full diagnostic payload.
+- All inputs feed into the engine via `DOPE_Update()` at the top of each solver frame.
+- `DOPE_GetRealtimeSolution()` returns a compact hot-path payload for embedded loops; `DOPE_GetSolution()` remains the full diagnostic payload.
 - The trajectory table records a `TrajectoryPoint` at every integer metre; the final point at `x = R_target` drives the firing solution.
 - Uncertainty (stage 7) re-runs stages 4–6 twice per input (34 total runs) and does not mutate engine state.
 - When enabled, a cartridge CEP50 (MOA) table scales the propagated uncertainty radius at each range while preserving the elevation/windage ratio.
