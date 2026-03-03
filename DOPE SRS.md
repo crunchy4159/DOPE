@@ -4,7 +4,7 @@
 
 ## Version 2.0 — DRAFT
 
-**Date:** 2026-02-27  
+**Date:** 2026-03-2  
 **Language Target:** C++17  
 **Primary Platform:** ESP32-P4 @ 400MHz
 
