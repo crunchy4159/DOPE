@@ -65,6 +65,13 @@ void DOPE_SetWindManual(float speed_ms, float heading_deg);
  */
 void DOPE_SetLatitude(float latitude_deg);
 
+/**
+ * Notify the engine that a shot was fired (for barrel heat/stringing modeling).
+ * @param timestamp_us   Shot time in microseconds since boot
+ * @param ambient_temp_c Ambient air temperature in Celsius (NAN to reuse last)
+ */
+void DOPE_NotifyShotFired(uint64_t timestamp_us, float ambient_temp_c);
+
 // ---------------------------------------------------------------------------
 // Default Overrides — SRS §5.2
 // ---------------------------------------------------------------------------

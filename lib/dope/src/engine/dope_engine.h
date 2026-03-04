@@ -46,6 +46,7 @@ public:
     void setLRFConfig(const DOPE_LRFConfig* config);
     void setMagDeclination(float declination_deg);
     void setExternalReferenceMode(bool enabled);
+    void notifyShotFired(uint64_t timestamp_us, float ambient_temp_c);
 
     // --- Output ---
     void getSolution(FiringSolution* out) const;
@@ -132,6 +133,13 @@ private:
     float latest_baro_temp_c_ = 0.0f;
     bool has_baro_temp_ = false;
 
+    // Barrel thermal/stringing state
+    float barrel_temp_K_ = 293.15f;        // current barrel temp (K)
+    float barrel_ambient_K_ = 293.15f;     // last known ambient (K)
+    uint64_t last_barrel_update_us_ = 0;   // last cooling integration timestamp
+    uint64_t last_shot_time_us_ = 0;       // last shot event timestamp
+    int shots_in_string_ = 0;              // rolling shot count for stringing heuristics
+
     // FOV from zoom encoder (degrees; 0 = unknown)
     float fov_h_deg_ = 0.0f;
     float fov_v_deg_ = 0.0f;
@@ -143,4 +151,7 @@ private:
     void refreshDerivedSigmasFromProfiles();
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
+    void integrateBarrelCooling(uint64_t now_us);
+    float estimateBarrelMassKg() const;
+    float barrelHeatMultiplier() const;
 };

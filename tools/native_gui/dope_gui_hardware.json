@@ -1,4 +1,11 @@
 {
+  "_comments": {
+    "purpose": "Lists available hardware presets by sensor class; GUI treats unknown keys as custom presets.",
+    "fields": {
+      "name": "Display name in dropdown.",
+      "index": "Integer preset index mapping to built-in tables; keep as a whole number (no decimals)."
+    }
+  },
   "sensors": {
     "barometers": [
       { "name": "Bosch BMP581", "index": 0 }
@@ -13,7 +20,7 @@
       { "name": "No GPS/GNSS Module", "index": 0 }
     ],
     "mag_lat": [
-      { "name": "Default Mag Lat", "index": 0 }
+      { "name": "RM3100", "index": 0 }
     ]
   }
 }

@@ -8,15 +8,16 @@ Horizontal pipeline: inputs on the left feed numbered stages inside the engine; 
 INPUTS                              +=========================================================+          OUTPUTS
 ------                              |               DOPE ENGINE  |  DOPE_Update()              |          -------
                                     |                                                         |
-[Weapon + Zero]  ------------->     |  [1] VALIDATE + NORMALIZE                               |
+[Weapon + Zero]  ------------->     |  [1] VALIDATE + NORMALIZE + LRF IIR (SS14.3)            |
   zero_range                        |           |                                             |
   sight_height                      |           v                                             |
   muzzle_velocity                   |  [2] ATMO CORRECTION  (SS3, SS4)                        |
-                                    |           rho, speed of sound (c), BC_corrected         |
-[Atmosphere]  ----------------->    |           |                                             |  --->  [Trajectory Table]
-  temp, pressure, humidity, alt     |           v                                             |          per-metre: drop,
-                                    |  [3] ZERO-ANGLE SOLVE  (SS8)                            |          windage, speed,
-[Projectile + Drag]  ---------->    |           binary search -> bore elevation (theta_0)     |          TOF, energy
+[Range / LRF]  ---------------->    |           rho, speed of sound (c), BC_corrected         |
+  range, timestamp                  |           |                                             |  --->  [Trajectory Table]
+[Atmosphere]  ----------------->    |           v                                             |          per-metre: drop,
+  temp, pressure, humidity, alt     |  [3] ZERO-ANGLE SOLVE  (SS8)                            |          windage, speed,
+                                    |           binary search -> bore elevation (theta_0)     |          TOF, energy
+[Projectile + Drag]  ---------->    |           |                                             |
   BC, mass, caliber, G1-G8 model    |           |                                             |
                                     |           v                                             |
 [Wind]  ------------------------>   |  [4] BUILD SOLVER PARAMS  (SS9, SS10)                   |  --->  [Final Point @ R]

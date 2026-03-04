@@ -1,10 +1,35 @@
-[
+[ 
   {
+    "_comments": {
+      "purpose": "Cartridge preset list consumed by GUI; extra fields are ignored by the loader.",
+      "required_fields": ["name", "bc", "drag_model_index", "mass_grains", "caliber_inches", "length_mm"],
+      "optional_fields": [
+        "velocity_profile", "trajectory_profile", "tags", "cep_table_moa", "cep_scale_floor", "reference_barrel_inches", "mv_adjustment_fps_per_in",
+        "sigma_mass_grains", "sigma_length_mm", "sigma_caliber_inches", "sigma_bc_fraction"
+      ],
+      "drag_model_index": "0-7 maps to G1..G8.",
+      "sigma_fields": "If present and >0, these override tag-derived tolerances and are saved back to JSON as numbers.",
+      "precision": {
+        "bc": "Up to 3 decimals (UI uses %.3f).",
+        "muzzle_velocity_ms": "Up to 1 decimal; fps variants are converted internally.",
+        "mass_grains": "Up to 1 decimal (UI uses %.1f).",
+        "caliber_inches": "Up to 3 decimals (UI uses %.3f).",
+        "length_mm": "Up to 2 decimals (UI uses %.2f).",
+        "sigma_mass_grains": "Up to 3 decimals (gr).",
+        "sigma_length_mm": "Up to 3 decimals (mm).",
+        "sigma_caliber_inches": "Up to 5 decimals (in).",
+        "sigma_bc_fraction": "Up to 4 decimals (fraction).",
+        "profile_tables": "distance_inches up to 1 decimal; velocity_ms/fps up to 1 decimal; trajectory_inches up to 2 decimals; CEP MOA up to 2 decimals.",
+        "reference_barrel_inches": "Reference barrel length used for ammo assumptions; keep to 1 decimal (UI uses %.1f).",
+        "mv_adjustment_fps_per_in": "Linear MV change per inch from the reference barrel; fps/in, up to 1 decimal."
+      }
+    },
     "name": ".308 Win 175gr SMK",
     "tags": ["match", "hpbt"],
     "bc": 0.505,
     "drag_model_index": 0,
-    "reference_barrel_inches": 24,
+    "reference_barrel_inches": 24.0,
+    "mv_adjustment_fps_per_in": 25.0,
     "velocity_profile": [
       { "distance_inches": 0, "velocity_ms": 792.0 }
     ],
@@ -15,7 +40,6 @@
       { "range_m": 800.0, "cep50_moa": 1.3 }
     ],
     "cep_scale_floor": 1.0,
-    "mv_adjustment_fps_per_in": 25.0,
     "mass_grains": 175.0,
     "caliber_inches": 0.308,
     "length_mm": 31.5
@@ -25,7 +49,8 @@
     "tags": ["commercial", "fmj"],
     "bc": 0.245,
     "drag_model_index": 0,
-    "reference_barrel_inches": 24,
+    "reference_barrel_inches": 24.0,
+    "mv_adjustment_fps_per_in": 25.0,
     "velocity_profile": [
       { "distance_inches": 0, "velocity_ms": 987.0 }
     ],
@@ -36,7 +61,6 @@
       { "range_m": 700.0, "cep50_moa": 1.6 }
     ],
     "cep_scale_floor": 1.0,
-    "mv_adjustment_fps_per_in": 25.0,
     "mass_grains": 55.0,
     "caliber_inches": 0.224,
     "length_mm": 19.1
@@ -46,7 +70,8 @@
     "tags": ["match", "hpbt"],
     "bc": 0.395,
     "drag_model_index": 0,
-    "reference_barrel_inches": 24,
+    "reference_barrel_inches": 24.0,
+    "mv_adjustment_fps_per_in": 25.0,
     "velocity_profile": [
       { "distance_inches": 0,     "velocity_ms": 850.4 },
       { "distance_inches": 3600,  "velocity_ms": 781.1 },
@@ -69,7 +94,6 @@
       { "range_m": 900.0, "cep50_moa": 1.5 }
     ],
     "cep_scale_floor": 1.0,
-    "mv_adjustment_fps_per_in": 25.0,
     "mass_grains": 75.0,
     "caliber_inches": 0.224,
     "length_mm": 26.1
@@ -79,7 +103,8 @@
     "tags": ["match", "polymer_tip"],
     "bc": 0.326,
     "drag_model_index": 6,
-    "reference_barrel_inches": 24,
+    "reference_barrel_inches": 24.0,
+    "mv_adjustment_fps_per_in": 25.0,
     "velocity_profile": [
       { "distance_inches": 0, "velocity_ms": 823.0 }
     ],
@@ -90,7 +115,6 @@
       { "range_m": 1100.0, "cep50_moa": 1.2 }
     ],
     "cep_scale_floor": 1.0,
-    "mv_adjustment_fps_per_in": 25.0,
     "mass_grains": 140.0,
     "caliber_inches": 0.264,
     "length_mm": 35.4
@@ -100,7 +124,8 @@
     "tags": ["match", "hpbt"],
     "bc": 0.533,
     "drag_model_index": 0,
-    "reference_barrel_inches": 26,
+    "reference_barrel_inches": 26.0,
+    "mv_adjustment_fps_per_in": 30.0,
     "velocity_profile": [
       { "distance_inches": 0, "velocity_ms": 884.0 }
     ],
@@ -111,9 +136,40 @@
       { "range_m": 1200.0, "cep50_moa": 1.4 }
     ],
     "cep_scale_floor": 1.0,
-    "mv_adjustment_fps_per_in": 30.0,
     "mass_grains": 190.0,
     "caliber_inches": 0.308,
+    "length_mm": 35.3
+  },
+    {
+    "name": "7.62x39mm FMJ 123gr",
+    "tags": ["commercial", "fmj"],
+    "bc": 0.309,
+    "drag_model_index": 0,
+    "reference_barrel_inches": 16.3,
+    "mv_adjustment_fps_per_in": 15.0,
+    "velocity_profile": [
+      { "distance_inches": 0, "velocity_ms": 716.3 },
+      { "distance_inches": 3600, "velocity_ms": 624.8 },
+      { "distance_inches": 7200, "velocity_ms": 542.5 },
+      { "distance_inches": 10800, "velocity_ms": 469.4 },
+      { "distance_inches": 14400, "velocity_ms": 408.4 },
+      { "distance_inches": 18000, "velocity_ms": 359.7 }
+    ],
+    "trajectory_profile": [
+      { "distance_inches": 0,     "trajectory_inches": -1.5   },
+      { "distance_inches": 3600,  "trajectory_inches":  0.0   },
+      { "distance_inches": 7200,  "trajectory_inches": -7.0   },
+      { "distance_inches": 10800, "trajectory_inches": -25.0  },
+      { "distance_inches": 14400, "trajectory_inches": -58.0  },
+      { "distance_inches": 18000, "trajectory_inches": -111.0 }
+    ],
+    "cep_table_moa": [
+      { "range_m": 100.0, "cep50_moa": 4.0 },
+      { "range_m": 300.0, "cep50_moa": 12.0 }
+    ],
+    "cep_scale_floor": 1.0,
+    "mass_grains": 123.0,
+    "caliber_inches": 0.311,
     "length_mm": 35.3
   },
   {
@@ -121,7 +177,8 @@
     "tags": ["commercial", "fmj"],
     "bc": 0.149,
     "drag_model_index": 0,
-    "reference_barrel_inches": 4,
+    "reference_barrel_inches": 4.0,
+    "mv_adjustment_fps_per_in": 12.0,
     "velocity_profile": [
       { "distance_inches": 0, "velocity_ms": 335.28 }
     ],
@@ -132,14 +189,6 @@
       { "range_m": 100.0, "cep50_moa": 2.2 }
     ],
     "cep_scale_floor": 1.0,
-    "barrel_mv_profile": [
-      { "barrel_in": 2.0,  "mv_fps": 975.0 },
-      { "barrel_in": 3.0,  "mv_fps": 1040.0 },
-      { "barrel_in": 4.0,  "mv_fps": 1100.0 },
-      { "barrel_in": 6.0,  "mv_fps": 1170.0 },
-      { "barrel_in": 8.0,  "mv_fps": 1200.0 },
-      { "barrel_in": 16.0, "mv_fps": 1250.0 }
-    ],
     "mass_grains": 124.0,
     "caliber_inches": 0.355,
     "length_mm": 15.7

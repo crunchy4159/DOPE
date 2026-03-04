@@ -38,6 +38,10 @@ void DOPE_SetLatitude(float latitude_deg) {
     s_engine.setLatitude(latitude_deg);
 }
 
+void DOPE_NotifyShotFired(uint64_t timestamp_us, float ambient_temp_c) {
+    s_engine.notifyShotFired(timestamp_us, ambient_temp_c);
+}
+
 void DOPE_SetDefaultOverrides(const DOPE_DefaultOverrides* defaults) {
     s_engine.setDefaultOverrides(defaults);
 }

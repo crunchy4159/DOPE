@@ -62,6 +62,15 @@ enum class DragModel : uint8_t {
 };
 
 // ---------------------------------------------------------------------------
+// Barrel Material — stiffness/thermal properties selector
+// ---------------------------------------------------------------------------
+enum class BarrelMaterial : uint8_t {
+    CMV          = 0, // 4140/4150 CMV / CrMoV
+    STAINLESS_416 = 1,
+    CARBON_WRAPPED = 2
+};
+
+// ---------------------------------------------------------------------------
 // AHRS Algorithm Selection
 // ---------------------------------------------------------------------------
 enum class AHRS_Algorithm : uint8_t {
@@ -136,10 +145,21 @@ struct BulletProfile {
     float     barrel_length_in;       // actual barrel length, inches
     float     reference_barrel_length_in; // SAAMI reference barrel (rifle=24", 9mm=4"); 0 → default 24"
     float     mv_adjustment_factor;   // fps per inch deviation from reference barrel
+    float     muzzle_diameter_in;     // Muzzle outside diameter (inches) for stiffness classification
+    BarrelMaterial barrel_material;   // Material type (stiffness/thermal props)
+    float     barrel_finish_sigma_mv_fps; // Base MV sigma from barrel finish (fps)
+    float     measured_cep50_moa;     // Measured CEP50 (MOA) from manufacturer/test barrel; 0 when absent
+    float     manufacturer_spec_moa;  // Manufacturer accuracy guarantee (MOA); 0 when absent
+    float     category_radial_moa;    // Category-based radial dispersion default (MOA); 0 when absent
+    float     category_vertical_moa;  // Category-based vertical dispersion default (MOA); 0 when absent
+    float     stiffness_moa;          // Derived stiffness modifier (MOA radial) from wall thickness; computed by caller
     float     mass_grains;            // grains (converted internally)
     float     length_mm;              // mm
     float     caliber_inches;         // inches
     float     twist_rate_inches;      // signed: positive = RH, negative = LH
+    bool      free_floated;           // True when barrel is free-floated (no stock contact)
+    bool      suppressor_attached;    // True when a suppressor is attached
+    bool      barrel_tuner_attached;  // True when a barrel tuner is installed
 };
 
 // ---------------------------------------------------------------------------

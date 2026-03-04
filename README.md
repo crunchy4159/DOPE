@@ -10,6 +10,8 @@ The engine ingests normalized sensor data, performs ballistic trajectory computa
 
 For margin/error modeling, the engine outputs analytic uncertainty primitives (sigma/covariance/per-input variance); presentation-layer confidence rings, heatmaps, or scores belong in the application/UI layer.
 
+Barrel modeling covers stiffness/CEP hierarchy, free-float vs contact, suppressor and tuner multipliers, and heat/stringing. Feed shot events via `DOPE_NotifyShotFired(timestamp_us, ambient_temp_c)` to let the barrel-side dispersion grow with cadence and cool over time.
+
 It does not render graphics, process camera/LiDAR data, or select targets.
 
 ## Architecture
@@ -96,23 +98,23 @@ py -m platformio test -e native
 
 ### Desktop (basic GUI test harness, Windows)
 
+Build:
+
 ```bash
 py -m platformio run -e native_gui
 ```
 
-Then launch:
+Launch:
 
 ```bash
 .pio/build/native_gui/program.exe
 ```
 
-Or use the launcher helper (auto-detects PlatformIO command/module):
+Launch helpers (also build unless `-NoBuild` is passed):
 
 ```bash
 ./scripts/run_native_gui.ps1
 ```
-
-Or from CMD/Explorer:
 
 ```bat
 scripts\run_native_gui.bat

@@ -383,6 +383,9 @@ Persist until changed.
 |Latitude|deg (see §11.4 — GPS/GNSS feed, manual entry, or magnetometer estimation)|
 |Altitude override|m|
 |Humidity|fraction|
+|Barrel material|CMV, 416 stainless, carbon-wrapped (sets stiffness/thermal properties)|
+|Barrel toggles|Free-float, suppressor, barrel tuner|
+|Shot events|`DOPE_NotifyShotFired(timestamp_us, ambient_temp_c)` to drive barrel heat/stringing|
 
 ---
 

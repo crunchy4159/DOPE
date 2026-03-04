@@ -28,6 +28,7 @@
 14. [MOA Hold Computation](#14-moa-hold-computation)
 15. [Cant Correction](#15-cant-correction)
 16. [Uncertainty Propagation](#16-uncertainty-propagation)
+- [16.4 Barrel Attachment & Thermal Dispersion](#164-barrel-attachment--thermal-dispersion)
 - [Appendix A ΓÇö Constants & Unit Reference](#appendix-a--constants--unit-reference)
 
 ---
@@ -575,7 +576,7 @@ Drag acts on the bullet's velocity **relative to the air mass**. Headwind adds d
 
 $$v_{x,rel} = v_x + v_{head}$$
 
-$$v_{z,rel} = v_z - v_{cross}$$
+$$v_{z,rel} = v_z + v_{cross}$$
 
 $$v_{rel} = \sqrt{v_{x,rel}^2 + v_y^2 + v_{z,rel}^2}$$
 
@@ -879,6 +880,18 @@ The engine intentionally outputs uncertainty primitives (sigmas/covariance/per-i
 
 > **Implementation:** `dope_engine.cpp` lines tagged `[MATH ┬º16.2]`
 
+### 16.3 Barrel Stiffness, Accuracy Hierarchy, and Finish MV Sigma
+
+`[MATH ┬º16.3]`
+
+Baseline dispersion is injected before user-provided sigmas:
+
+- **Barrel stiffness floor (radial):** wall thickness at muzzle \(w = (D_{od} - D_{bore})/2\). Map to \(M_{stiff}\): Bull/Heavy if \(w > 0.35\) → 0.20 MOA; Medium if \(0.20 \le w \le 0.35\) → 0.75 MOA; Pencil if \(w < 0.20\) → 1.25 MOA. Add \(M_{stiff}\) via RSS to both elevation and windage variance.
+- **Accuracy hierarchy:** pick highest-fidelity source: measured CEP50 (manufacturer test) → manufacturer spec MOA → category defaults (radial/vertical). If CEP50 exists, split 80% radial, 20% vertical. Combine radial with \(M_{stiff}\) via RSS into both axes; combine the vertical slice via RSS into elevation only. Category fallbacks are already axis-specific.
+- **Finish MV sigma floor:** muzzle-velocity sigma is floored to the barrel-finish value (Stainless 5 fps, Nitride 8.5 fps default, Chrome 20 fps) before other MV uncertainty; engine converts to m/s internally.
+
+These baselines precede any CEP-table scaling so axis ratios are preserved.
+
 ### 16.3 Input Table
 
 | Index | Input $x_i$ | Perturbation $\sigma_{x_i}$ (default) |
@@ -913,6 +926,20 @@ The engine intentionally outputs uncertainty primitives (sigmas/covariance/per-i
 - Caliber ($K_c$): Monolithic Copper `0.00015`, Lead Core Match-Grade `[DEFAULT]` `0.00045`, Soft Point `0.00075`, Cheap `0.0015`
 
 > **Sync:** If default sigma values change, update the table above and `getDefaultUncertaintyConfig()` in `dope_engine.cpp`.
+
+### 16.4 Barrel Attachment & Thermal Dispersion
+
+`[MATH §16.4]`
+
+Additional barrel-side dispersion adjustments applied after the §16.3 hierarchy and before CEP scaling. Implementation: [lib/dope/src/engine/dope_engine.cpp](lib/dope/src/engine/dope_engine.cpp).
+
+- **Free-float penalty:** If the barrel is not free-floated, radial dispersion becomes `rss(radial_moa, 0.75)`.
+- **Suppressor scaling:** With a suppressor attached, radial dispersion is scaled linearly by muzzle OD: 1.25× at ≤0.55", 1.05× at ≥1.00", interpolated between.
+- **Barrel tuner:** If present, radial dispersion is multiplied by 0.85.
+- **Material scaling:** Stiffness and thermal growth are scaled by barrel material: CMV (~0.95× stiffness factor, lower CTE), 416 stainless (baseline), carbon-wrapped (~1.30× stiffness factor, low CTE, lower density/higher heat capacity).
+- **Thermal growth:** For ΔT = T_barrel − T_ambient (kelvin), apply $$m_{heat} = \min\bigl(1.6,\; \max(1,\; \sqrt{1 + 0.01\,\Delta T})\bigr)$$ to the barrel-side radial term only.
+- **Cooling:** Barrel temperature decays toward ambient via $$T_{b,new} = T_a + (T_b - T_a) e^{-\Delta t/\tau}$$ with τ interpolated from 70 s at 0.55" muzzle OD to 120 s at 1.0". Ambient tracks the latest baro temperature when available.
+- **Heating per shot:** Each shot deposits $$E_b = \text{clamp}\bigl(0.2 \cdot 0.5 m_b v^2,\; 400,\; 2000\bigr)$$ J into the barrel (m_b bullet mass, v muzzle velocity). The resulting rise $$\Delta T_{shot} = E_b / C_b$$ uses barrel heat capacity $C_b = m_{barrel} \cdot 500$ J/kgK; barrel mass is a clamped cylindrical estimate (defaults: 24" length, 0.7" muzzle OD, limits 0.5ΓÇô4.0 kg).
 
 ---
 

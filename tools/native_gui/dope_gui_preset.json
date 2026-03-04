@@ -1,4 +1,23 @@
 {
+  "_comments": {
+    "purpose": "Default GUI preset payload; fields align with bullet/zero/hardware state.",
+    "precision": {
+      "drag_coefficient": "Up to 3 decimals.",
+      "bc": "Up to 3 decimals (UI uses %.3f).",
+      "muzzle_velocity_fps": "Up to 1 decimal (UI uses %.1f).",
+      "muzzle_velocity_ms": "Up to 1 decimal if using metric input.",
+      "mass_grains": "Up to 1 decimal (UI uses %.1f).",
+      "length_mm": "Up to 2 decimals (UI uses %.2f).",
+      "caliber_inches": "Up to 3 decimals (UI uses %.3f).",
+      "twist_rate_inches": "Up to 2 decimals (UI uses %.2f).",
+      "zero_range_m": "Up to 2 decimals (UI uses %.2f).",
+      "sight_height_mm": "Up to 2 decimals (UI uses %.2f/%.3f depending on units).",
+      "wind_speed_mph/ms/fps": "Up to 1 decimal (UI uses %.1f).",
+      "angles_and_lat": "Heading/latitude up to 2 decimals (UI uses %.2f).",
+      "baro_fields": "Pressure in Pa as integer; temperature up to 1 decimal; humidity 0-1 with up to 3 decimals.",
+      "lrf_range_m": "Up to 1 decimal (UI uses %.1f)."
+    }
+  },
   "unit_system": "imperial",
   "drag_coefficient_override": false,
   "drag_coefficient": 0.414,

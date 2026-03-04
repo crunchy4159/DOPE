@@ -19,6 +19,10 @@ namespace {
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
 
+inline float rss2(float a, float b) {
+    return std::sqrt((a * a) + (b * b));
+}
+
 float InterpolatePiecewiseSigma(const DOPE_ErrorTable& table, float x) {
     if (!table.points || table.count <= 0)
         return 0.0f;
@@ -60,6 +64,26 @@ float InterpolateCEP(const DOPE_CEPTable& table, float range_m) {
         }
     }
     return table.points[table.count - 1].cep50_moa;
+}
+
+struct BarrelMaterialProps {
+    float density_kg_m3;        // bulk density
+    float specific_heat_J_kgK;  // specific heat capacity
+    float stiffness_scale;      // relative stiffness factor (1/E)
+    float cte_scale;            // relative thermal expansion factor
+};
+
+BarrelMaterialProps getBarrelMaterialProps(BarrelMaterial material) {
+    switch (material) {
+    case BarrelMaterial::CMV:
+        return {7850.0f, 460.0f, 0.95f, 0.75f}; // 205 GPa, ~12e-6/K
+    case BarrelMaterial::STAINLESS_416:
+        return {8000.0f, 500.0f, 1.0f, 1.0f};   // 193 GPa, ~17e-6/K baseline
+    case BarrelMaterial::CARBON_WRAPPED:
+        return {5200.0f, 720.0f, 1.30f, 0.25f}; // composite wrap + liner
+    default:
+        return {7850.0f, 460.0f, 1.0f, 1.0f};
+    }
 }
 } // namespace
 
@@ -104,6 +128,11 @@ void DOPE_Engine::init() {
     getDefaultUncertaintyConfig(&uncertainty_config_);
     latest_baro_temp_c_ = 0.0f;
     has_baro_temp_ = false;
+    barrel_ambient_K_ = 293.15f;
+    barrel_temp_K_ = barrel_ambient_K_;
+    last_barrel_update_us_ = 0;
+    last_shot_time_us_ = 0;
+    shots_in_string_ = 0;
     fov_h_deg_ = 0.0f;
     fov_v_deg_ = 0.0f;
 
@@ -117,6 +146,7 @@ void DOPE_Engine::update(const SensorFrame* frame) {
     had_invalid_sensor_input_ = false;
 
     uint64_t now_us = frame->timestamp_us;
+    integrateBarrelCooling(now_us);
 
     // --- 1. AHRS Update ---
     if (frame->imu_valid) {
@@ -169,6 +199,7 @@ void DOPE_Engine::update(const SensorFrame* frame) {
         if (std::isfinite(frame->baro_temperature_c)) {
             latest_baro_temp_c_ = frame->baro_temperature_c;
             has_baro_temp_ = true;
+            barrel_ambient_K_ = 273.15f + latest_baro_temp_c_;
         }
         float humidity = frame->baro_humidity_valid ? frame->baro_humidity : -1.0f;
         atmo_.updateFromBaro(frame->baro_pressure_pa, frame->baro_temperature_c, humidity);
@@ -224,6 +255,11 @@ void DOPE_Engine::setBulletProfile(const BulletProfile* profile) {
     if (!profile)
         return;
     bullet_ = *profile;
+    if (bullet_.barrel_material != BarrelMaterial::CMV &&
+        bullet_.barrel_material != BarrelMaterial::STAINLESS_416 &&
+        bullet_.barrel_material != BarrelMaterial::CARBON_WRAPPED) {
+        bullet_.barrel_material = BarrelMaterial::CMV;
+    }
     has_bullet_ = true;
     zero_dirty_ = true;
 }
@@ -553,6 +589,106 @@ void DOPE_Engine::computeSolution() {
     computeUncertainty();
 }
 
+float DOPE_Engine::estimateBarrelMassKg() const {
+    float length_m = (bullet_.barrel_length_in > 0.0f)
+                         ? bullet_.barrel_length_in * dope::math::INCHES_TO_M
+                         : 0.6f; // fallback ~24"
+    const BarrelMaterialProps props = getBarrelMaterialProps(bullet_.barrel_material);
+    float od_m = (bullet_.muzzle_diameter_in > 0.0f)
+                     ? bullet_.muzzle_diameter_in * dope::math::INCHES_TO_M
+                     : 0.01778f; // ~0.7"
+    // Cylindrical approximation; conservatively clamp.
+    const float area = 0.25f * dope::math::PI * od_m * od_m;
+    float volume = area * length_m;
+    if (!std::isfinite(volume) || volume <= 0.0f)
+        volume = 0.00008f; // ~0.08 L fallback
+    float mass = volume * props.density_kg_m3; // material density
+    if (!std::isfinite(mass) || mass <= 0.0f)
+        mass = 1.5f;
+    return std::fmax(0.5f, std::fmin(mass, 4.0f));
+}
+
+void DOPE_Engine::integrateBarrelCooling(uint64_t now_us) {
+    if (now_us == 0)
+        return;
+    if (last_barrel_update_us_ == 0) {
+        last_barrel_update_us_ = now_us;
+        barrel_temp_K_ = barrel_ambient_K_;
+        return;
+    }
+    if (now_us <= last_barrel_update_us_)
+        return;
+
+    const float dt_s = static_cast<float>(now_us - last_barrel_update_us_) * 1e-6f;
+    // Cooling time constant scales with muzzle diameter (thin barrels shed heat faster).
+    const float od_in = (bullet_.muzzle_diameter_in > 0.0f) ? bullet_.muzzle_diameter_in : 0.7f;
+    const float od_lo = 0.55f, od_hi = 1.0f;
+    const float tau_lo = 70.0f, tau_hi = 120.0f; // seconds
+    float tau_s = tau_hi;
+    if (od_in <= od_lo) {
+        tau_s = tau_lo;
+    } else if (od_in >= od_hi) {
+        tau_s = tau_hi;
+    } else {
+        const float t = (od_in - od_lo) / (od_hi - od_lo);
+        tau_s = tau_lo + t * (tau_hi - tau_lo);
+    }
+
+    const float decay = std::exp(-dt_s / std::fmax(tau_s, 1.0f));
+    barrel_temp_K_ = barrel_ambient_K_ + (barrel_temp_K_ - barrel_ambient_K_) * decay;
+    last_barrel_update_us_ = now_us;
+}
+
+float DOPE_Engine::barrelHeatMultiplier() const {
+    const float delta_K = barrel_temp_K_ - barrel_ambient_K_;
+    if (!(delta_K > 0.0f))
+        return 1.0f;
+    const BarrelMaterialProps props = getBarrelMaterialProps(bullet_.barrel_material);
+    const float alpha_base = 0.01f; // mild growth per K at stainless baseline
+    const float alpha = alpha_base * props.cte_scale;
+    const float mult = std::sqrt(1.0f + alpha * delta_K);
+    return std::fmin(std::fmax(mult, 1.0f), 1.6f); // cap to avoid runaway
+}
+
+void DOPE_Engine::notifyShotFired(uint64_t timestamp_us, float ambient_temp_c) {
+    // Update ambient if provided.
+    if (std::isfinite(ambient_temp_c)) {
+        barrel_ambient_K_ = 273.15f + ambient_temp_c;
+    }
+
+    // Integrate cooling up to the shot timestamp.
+    integrateBarrelCooling(timestamp_us);
+
+    // Reset string counter if the cadence relaxed.
+    if (last_shot_time_us_ > 0) {
+        const uint64_t delta_us = (timestamp_us > last_shot_time_us_) ? (timestamp_us - last_shot_time_us_) : 0;
+        if (delta_us > 120000000ULL) { // >120 s break
+            shots_in_string_ = 0;
+        }
+    }
+
+    // Energy coupled into barrel approximated from muzzle energy with a coupling factor.
+    const float bullet_mass_kg = (std::isfinite(bullet_.mass_grains) && bullet_.mass_grains > 0.0f)
+                                     ? bullet_.mass_grains * dope::math::GRAINS_TO_KG
+                                     : 0.0097f; // ~150 gr fallback
+    const float mv = std::fmax(1.0f, bullet_.muzzle_velocity_ms);
+    const float muzzle_energy_J = 0.5f * bullet_mass_kg * mv * mv;
+    const float energy_to_barrel_J = std::fmin(std::fmax(muzzle_energy_J * 0.2f, 400.0f), 2000.0f);
+
+    const BarrelMaterialProps props = getBarrelMaterialProps(bullet_.barrel_material);
+    const float heat_capacity = estimateBarrelMassKg() * props.specific_heat_J_kgK;
+    if (heat_capacity > 0.0f) {
+        const float delta_K = energy_to_barrel_J / heat_capacity;
+        if (std::isfinite(delta_K) && delta_K > 0.0f) {
+            barrel_temp_K_ += delta_K;
+        }
+    }
+
+    last_shot_time_us_ = timestamp_us;
+    last_barrel_update_us_ = timestamp_us;
+    ++shots_in_string_;
+}
+
 // ---------------------------------------------------------------------------
 // Internal: recompute zero angle
 // ---------------------------------------------------------------------------
@@ -689,6 +825,15 @@ void DOPE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
 }
 
 void DOPE_Engine::refreshDerivedSigmasFromProfiles() {
+    // Enforce a minimum MV sigma derived from barrel finish (fps → m/s) when present.
+    if (has_bullet_ && std::isfinite(bullet_.barrel_finish_sigma_mv_fps) &&
+        bullet_.barrel_finish_sigma_mv_fps > 0.0f) {
+        const float finish_sigma_ms = bullet_.barrel_finish_sigma_mv_fps * 0.3048f;
+        if (finish_sigma_ms > uncertainty_config_.sigma_muzzle_velocity_ms) {
+            uncertainty_config_.sigma_muzzle_velocity_ms = finish_sigma_ms;
+        }
+    }
+
     if (uncertainty_config_.use_range_error_table &&
         uncertainty_config_.range_error_table.points != nullptr &&
         uncertainty_config_.range_error_table.count > 0 && has_range_ &&
@@ -1166,6 +1311,93 @@ void DOPE_Engine::computeUncertainty() {
 
     // Optional cartridge dispersion scaling (CEP50 table). Converts CEP50 radius to 1-sigma
     // radial and scales all variances to match while preserving axis ratios.
+    // Barrel stiffness + accuracy hierarchy
+    bool has_explicit_accuracy = false;
+    {
+        float radial_moa = 0.0f;
+        float vertical_extra_moa = 0.0f;
+        has_explicit_accuracy =
+            (std::isfinite(bullet_.measured_cep50_moa) && bullet_.measured_cep50_moa > 0.0f) ||
+            (std::isfinite(bullet_.manufacturer_spec_moa) && bullet_.manufacturer_spec_moa > 0.0f) ||
+            (uncertainty_config_.use_cartridge_cep_table &&
+             uncertainty_config_.cartridge_cep_table.points != nullptr &&
+             uncertainty_config_.cartridge_cep_table.count > 0);
+
+        // Base radial from stiffness (applies to both axes as a floor)
+        if (std::isfinite(bullet_.stiffness_moa) && bullet_.stiffness_moa > 0.0f) {
+            radial_moa = bullet_.stiffness_moa;
+        }
+
+        // Accuracy hierarchy: measured CEP -> manufacturer -> category defaults
+        float cep_source_moa = 0.0f;
+        if (std::isfinite(bullet_.measured_cep50_moa) && bullet_.measured_cep50_moa > 0.0f) {
+            cep_source_moa = bullet_.measured_cep50_moa;
+        } else if (std::isfinite(bullet_.manufacturer_spec_moa) &&
+                   bullet_.manufacturer_spec_moa > 0.0f) {
+            cep_source_moa = bullet_.manufacturer_spec_moa;
+        }
+
+        if (cep_source_moa > 0.0f) {
+            // Split 80/20 into radial vs vertical components at the reference test barrel.
+            const float radial_part = cep_source_moa * 0.8f;
+            const float vertical_part = cep_source_moa * 0.2f;
+            radial_moa = rss2(radial_moa, radial_part);
+            vertical_extra_moa = vertical_part;
+        } else {
+            // Fallback to category estimates if provided (already axis-specific).
+            if (std::isfinite(bullet_.category_radial_moa) && bullet_.category_radial_moa > 0.0f) {
+                radial_moa = rss2(radial_moa, bullet_.category_radial_moa);
+            }
+            if (std::isfinite(bullet_.category_vertical_moa) &&
+                bullet_.category_vertical_moa > 0.0f) {
+                vertical_extra_moa = rss2(vertical_extra_moa, bullet_.category_vertical_moa);
+            }
+        }
+
+        // Stock contact penalty when not free-floated.
+        if (!bullet_.free_floated) {
+            radial_moa = rss2(radial_moa, 0.75f);
+        }
+
+        // Suppressor attachment: scale barrel-side dispersion based on muzzle diameter.
+        if (bullet_.suppressor_attached && radial_moa > 0.0f) {
+            const float od_in = (bullet_.muzzle_diameter_in > 0.0f) ? bullet_.muzzle_diameter_in : 0.7f;
+            const float od_lo = 0.55f, od_hi = 1.0f;
+            const float scale_lo = 1.25f, scale_hi = 1.05f;
+            float scale = scale_hi;
+            if (od_in <= od_lo) {
+                scale = scale_lo;
+            } else if (od_in >= od_hi) {
+                scale = scale_hi;
+            } else {
+                const float t = (od_in - od_lo) / (od_hi - od_lo);
+                scale = scale_lo + t * (scale_hi - scale_lo);
+            }
+            radial_moa *= scale;
+        }
+
+        // Barrel tuner reduces barrel-side dispersion modestly.
+        if (bullet_.barrel_tuner_attached && radial_moa > 0.0f) {
+            radial_moa *= 0.85f;
+        }
+
+        // Barrel heat/stringing multiplier (applies only to barrel-side radial term).
+        if (radial_moa > 0.0f) {
+            radial_moa *= barrelHeatMultiplier();
+        }
+
+        // Add radial to both axes; add vertical_extra to elevation only.
+        if (radial_moa > 0.0f) {
+            const float r2 = radial_moa * radial_moa;
+            var_w += r2;
+            var_e += r2;
+        }
+        if (vertical_extra_moa > 0.0f) {
+            const float v2 = vertical_extra_moa * vertical_extra_moa;
+            var_e += v2;
+        }
+    }
+
     float cep_scale = 1.0f;
     const float base_sigma_radius = std::sqrt(std::fmax(0.0f, var_e + var_w));
     if (uncertainty_config_.use_cartridge_cep_table && base_sigma_radius > 0.0f &&
@@ -1176,7 +1408,9 @@ void DOPE_Engine::computeUncertainty() {
             const float sigma_target = cep_moa / kCep50ToSigma;
             if (std::isfinite(sigma_target) && sigma_target > 0.0f) {
                 cep_scale = sigma_target / base_sigma_radius;
-                if (uncertainty_config_.cartridge_cep_scale_floor > 0.0f) {
+                const bool should_floor =
+                    !(has_explicit_accuracy && cep_scale < 1.0f);
+                if (should_floor && uncertainty_config_.cartridge_cep_scale_floor > 0.0f) {
                     cep_scale = std::fmax(cep_scale, uncertainty_config_.cartridge_cep_scale_floor);
                 }
             }
