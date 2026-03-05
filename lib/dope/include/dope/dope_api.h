@@ -200,6 +200,19 @@ void DOPE_SetUncertaintyConfig(const UncertaintyConfig* config);
  */
 void DOPE_GetDefaultUncertaintyConfig(UncertaintyConfig* out);
 
+/**
+ * Enable/disable deferring the uncertainty pass. When enabled, DOPE_Update
+ * produces a fast solution with uncertainty marked invalid; the caller must
+ * explicitly trigger the uncertainty computation via DOPE_ComputeUncertainty.
+ */
+void DOPE_SetDeferUncertainty(bool enabled);
+
+/**
+ * If an uncertainty computation is pending, run it immediately. No-op when
+ * no pending uncertainty or uncertainty is disabled.
+ */
+void DOPE_ComputeUncertainty(void);
+
 // ---------------------------------------------------------------------------
 // Output — SRS §12
 // ---------------------------------------------------------------------------

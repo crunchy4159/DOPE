@@ -111,6 +111,10 @@ constexpr float DOPE_DT_MAX = 0.001f;    // 1 ms
 // Maximum downrange distance advanced per integration step (meters)
 constexpr float DOPE_MAX_STEP_DISTANCE_M = 0.25f;
 
+// Far-range relaxation: beyond this range, allow a larger step to reduce iterations.
+constexpr float DOPE_FAR_RANGE_THRESHOLD_M = 800.0f;
+constexpr float DOPE_MAX_STEP_DISTANCE_FAR_M = 1.0f;
+
 // Zero-angle binary search tolerance (meters of drop at zero range)
 constexpr float DOPE_ZERO_TOLERANCE_M = 0.001f;
 

@@ -68,6 +68,7 @@ static std::string g_display_output;
 static std::atomic<bool> g_ticker_running{false};
 static std::atomic<bool> g_run_batch_in_flight{false}; // prevents stacking background runs
 static std::atomic<bool> g_auto_tick_enabled{false};   // gate background DOPE ticker
+static std::atomic<bool> g_uncertainty_job{false};     // prevents overlapping UC jobs
 
 constexpr uint64_t FRAME_STEP_US = 10000;
 constexpr int TARGET_RING_COUNT = 4;
@@ -97,11 +98,12 @@ struct CartridgePreset {
     float mass_grains = 0.0f;
     float caliber_inches = 0.0f;
     float length_mm = 0.0f;
+    std::vector<std::string> cartridge_keys; // Canonical cartridge identifiers (e.g., "308_win", "300_win_mag")
     float reference_barrel_inches = 24.0f;
     float sigma_mass_grains = 0.0f;    // Absolute sigma; 0 means derive from tags/tables.
     float sigma_length_mm = 0.0f;       // Absolute sigma; 0 means derive from tags/tables.
     float sigma_caliber_inches = 0.0f;  // Absolute sigma; 0 means derive from tags/tables.
-    float sigma_bc_fraction = 0.0f;     // Fractional sigma; 0 means derive from tags/tables.
+    float sigma_bc = 0.0f;              // Fractional sigma; 0 means derive from tags/tables.
     float mv_adjustment_fps_per_in = 0.0f; // fps of MV change per inch of barrel (0 = use fallback estimator)
     std::vector<std::pair<float,float>> barrel_mv_profile; // (barrel_in, mv_fps) — multi-point table; overrides mv_adjustment_fps_per_in when non-empty
     std::vector<std::pair<float,float>> velocity_profile; // (distance_inches, velocity_ms)
@@ -120,8 +122,10 @@ struct CartridgePreset {
 struct GunPreset {
     std::string name;
     float caliber_inches = 0.308f;
+    std::vector<std::string> cartridge_keys; // Compatible cartridge identifiers (intersection with cartridge preset required when present)
     float barrel_length_in = 24.0f;
     float muzzle_diameter_in = 0.7f;
+    float barrel_finish_sigma_mv_fps = 8.5f;
     BarrelMaterial barrel_material = BarrelMaterial::CMV;
     float twist_rate_inches = 10.0f;
     float zero_range_m = 91.44f; // 100 yd
@@ -383,7 +387,7 @@ struct GuiState {
     float new_cartridge_sigma_mass_grains = 0.0f;
     float new_cartridge_sigma_length_mm = 0.0f;
     float new_cartridge_sigma_caliber_inches = 0.0f;
-    float new_cartridge_sigma_bc_fraction = 0.0f;
+    float new_cartridge_sigma_bc = 0.0f;
     bool side_view_show_required_angle = false;
     bool top_down_show_required_angle = false;
     std::string output_text;
@@ -428,6 +432,33 @@ using json = nlohmann::json;
 
 static json g_bullet_tolerances;
 
+// Legacy per-type tolerance tables can still be embedded; when absent we expect
+// per-cartridge sigma fields to be present instead.
+
+// Capture tolerances from any object that embeds a bullet_type_tolerances block.
+static void CaptureBulletTolerances(const json& root) {
+    if (!root.is_object()) return;
+    const auto tol_it = root.find("bullet_type_tolerances");
+    if (tol_it == root.end() || !tol_it->is_object()) return;
+
+    json captured = json::object();
+    if (root.contains("__comments")) captured["__comments"] = root["__comments"];
+    if (root.contains("_comments"))  captured["_comments"] = root["_comments"];
+    if (root.contains("bullet_tolerance_comments")) captured["__comments"] = root["bullet_tolerance_comments"];
+    captured["bullet_type_tolerances"] = *tol_it;
+    g_bullet_tolerances = captured;
+}
+
+static bool CartridgesHaveSigmaValues(const std::vector<CartridgePreset>& presets) {
+    for (const auto& p : presets) {
+        if (p.sigma_mass_grains > 0.0f || p.sigma_length_mm > 0.0f ||
+            p.sigma_caliber_inches > 0.0f || p.sigma_bc > 0.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 void SanitizeCartridgePreset(CartridgePreset& preset);
 void SanitizeGunPreset(GunPreset& preset);
@@ -468,8 +499,8 @@ CartridgeSigmaSet ResolveCartridgeSigmas(const CartridgePreset& cp) {
         out.length_mm = cp.sigma_length_mm;
     if (std::isfinite(cp.sigma_caliber_inches) && cp.sigma_caliber_inches > 0.0f)
         out.caliber_inches = cp.sigma_caliber_inches;
-    if (std::isfinite(cp.sigma_bc_fraction) && cp.sigma_bc_fraction > 0.0f)
-        out.bc_fraction = cp.sigma_bc_fraction;
+    if (std::isfinite(cp.sigma_bc) && cp.sigma_bc > 0.0f)
+        out.bc_fraction = cp.sigma_bc;
 
     if (out.any()) return out;
 
@@ -689,9 +720,24 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
     try {
         json j;
         ifs >> j;
-        if (!j.is_array()) return false;
+        const json* preset_array = nullptr;
+
+        if (j.is_object()) {
+            CaptureBulletTolerances(j);
+            if (j.contains("cartridge_presets") && j["cartridge_presets"].is_array()) {
+                preset_array = &j["cartridge_presets"];
+            } else if (j.contains("cartridges") && j["cartridges"].is_array()) {
+                preset_array = &j["cartridges"];
+            } else if (j.contains("presets") && j["presets"].is_array()) {
+                preset_array = &j["presets"];
+            }
+        } else if (j.is_array()) {
+            preset_array = &j;
+        }
+
+        if (preset_array == nullptr) return false;
         std::vector<CartridgePreset> tmp;
-        for (const auto& e : j) {
+        for (const auto& e : *preset_array) {
             CartridgePreset p;
             p.name = e.value("name", std::string(""));
             p.bc = e.value("bc", 0.0f);
@@ -705,6 +751,13 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
             p.mass_grains = e.value("mass_grains", 0.0f);
             p.caliber_inches = e.value("caliber_inches", 0.0f);
             p.length_mm = e.value("length_mm", 0.0f);
+            p.cartridge_keys.clear();
+            const auto ck_it = e.find("cartridge_keys");
+            if (ck_it != e.end() && ck_it->is_array()) {
+                for (const auto& k : *ck_it) {
+                    if (k.is_string()) p.cartridge_keys.push_back(k.get<std::string>());
+                }
+            }
             p.reference_barrel_inches = e.value("reference_barrel_inches", 24.0f);
             p.muzzle_diameter_in = e.value("muzzle_diameter_in", 0.7f);
             p.barrel_finish_sigma_mv_fps = e.value("barrel_finish_sigma_mv_fps", 8.5f);
@@ -715,7 +768,7 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
             p.sigma_mass_grains = e.value("sigma_mass_grains", 0.0f);
             p.sigma_length_mm = e.value("sigma_length_mm", 0.0f);
             p.sigma_caliber_inches = e.value("sigma_caliber_inches", 0.0f);
-            p.sigma_bc_fraction = e.value("sigma_bc_fraction", 0.0f);
+            p.sigma_bc = e.value("sigma_bc", e.value("sigma_bc_fraction", 0.0f));
             // tags (optional): ["tier","construction"]
             p.tags.clear();
             const auto tags_it = e.find("tags");
@@ -804,8 +857,16 @@ bool LoadGunPresetsFromFile(const std::string& path) {
             GunPreset p;
             p.name = e.value("name", std::string(""));
             p.caliber_inches = e.value("caliber_inches", 0.308f);
+            p.cartridge_keys.clear();
+            const auto ck_it = e.find("cartridge_keys");
+            if (ck_it != e.end() && ck_it->is_array()) {
+                for (const auto& k : *ck_it) {
+                    if (k.is_string()) p.cartridge_keys.push_back(k.get<std::string>());
+                }
+            }
             p.barrel_length_in = e.value("barrel_length_in", 24.0f);
             p.muzzle_diameter_in = e.value("muzzle_diameter_in", 0.7f);
+            p.barrel_finish_sigma_mv_fps = e.value("barrel_finish_sigma_mv_fps", 8.5f);
             const std::string mat_key = e.value("barrel_material", std::string(""));
             p.barrel_material = mat_key.empty()
                                      ? kBarrelMaterialPresets[kDefaultBarrelMaterialIndex].material
@@ -885,10 +946,35 @@ float GetSelectedCartridgeCaliberInches() {
     return g_state.bullet.caliber_inches;
 }
 
+const CartridgePreset* GetSelectedCartridgePreset() {
+    if (g_state.selected_cartridge_preset >= 0 &&
+        g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+        return &g_cartridge_presets[g_state.selected_cartridge_preset];
+    }
+    return nullptr;
+}
+
+bool CartridgeKeysIntersect(const std::vector<std::string>& a, const std::vector<std::string>& b) {
+    if (a.empty() || b.empty()) return false;
+    for (const auto& ka : a) {
+        for (const auto& kb : b) {
+            if (ka == kb) return true;
+        }
+    }
+    return false;
+}
+
 bool IsGunPresetCompatibleWithSelectedCaliber(const GunPreset& preset) {
     const float selected_caliber = std::fabs(GetSelectedCartridgeCaliberInches());
     const float preset_caliber = std::fabs(preset.caliber_inches);
-    return std::fabs(selected_caliber - preset_caliber) <= 0.005f;
+    const CartridgePreset* selected = GetSelectedCartridgePreset();
+    const bool keys_match = selected && CartridgeKeysIntersect(selected->cartridge_keys, preset.cartridge_keys);
+    if (keys_match) return true;
+    if (selected && !selected->cartridge_keys.empty() && !preset.cartridge_keys.empty()) {
+        // Both provided keys but none matched.
+        return false;
+    }
+    return std::fabs(selected_caliber - preset_caliber) <= 0.0005f;
 }
 
 void EnsureSelectedGunPresetMatchesCurrentCaliber() {
@@ -916,17 +1002,19 @@ void EnsureProfileDefaults() {
     // from the repo root or from the tools/native_gui folder.
     const std::string rel_dir = "tools/native_gui/";
     const std::string cartridge_file_repo = rel_dir + "dope_gui_cartridges.json";
-    const std::string tol_file_repo = rel_dir + "dope_gui_bullet_tolerances.json";
     const std::string gun_file_repo = rel_dir + "dope_gui_guns.json";
     const std::string hw_file_repo = rel_dir + "dope_gui_hardware.json";
-    // Load optional tolerances first so cartridge tag parsing can use them.
-    (void)LoadBulletTolerancesFromFile(tol_file_repo);
-    (void)LoadBulletTolerancesFromFile("dope_gui_bullet_tolerances.json");
-
     bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo) || LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
     bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo) || LoadGunPresetsFromFile("dope_gui_guns.json");
     (void)LoadHardwarePresetsFromFile(hw_file_repo);
     (void)LoadHardwarePresetsFromFile("dope_gui_hardware.json");
+
+    // If neither embedded tables nor per-cartridge sigma values exist, legacy file fallback remains optional.
+    if (g_bullet_tolerances.is_null() && !CartridgesHaveSigmaValues(g_cartridge_presets)) {
+        const std::string tol_file_repo = rel_dir + "dope_gui_bullet_tolerances.json";
+        (void)LoadBulletTolerancesFromFile(tol_file_repo);
+        (void)LoadBulletTolerancesFromFile("dope_gui_bullet_tolerances.json");
+    }
 
     if (!loaded_cartridges && g_cartridge_presets.empty()) {
         CartridgePreset fallback;
@@ -966,7 +1054,7 @@ void EnsureProfileDefaults() {
         g_state.new_cartridge_sigma_mass_grains = resolved.mass_grains;
         g_state.new_cartridge_sigma_length_mm = resolved.length_mm;
         g_state.new_cartridge_sigma_caliber_inches = resolved.caliber_inches;
-        g_state.new_cartridge_sigma_bc_fraction = resolved.bc_fraction;
+        g_state.new_cartridge_sigma_bc = resolved.bc_fraction;
     }
     if (g_state.selected_gun_preset < 0 && !g_gun_presets.empty()) {
         g_state.selected_gun_preset = 0;
@@ -997,6 +1085,20 @@ int ClampPresetIndex(int value, int count, int fallback) {
     if (value >= 0 && value < count) return value;
     if (fallback >= 0 && fallback < count) return fallback;
     return count - 1;
+}
+
+void SanitizeKeyList(std::vector<std::string>& keys) {
+    auto trim_ascii = [](std::string& s) {
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+    };
+    for (auto& k : keys) {
+        trim_ascii(k);
+        std::transform(k.begin(), k.end(), k.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    }
+    keys.erase(std::remove_if(keys.begin(), keys.end(), [](const std::string& s) { return s.empty(); }), keys.end());
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
 }
 
 float GetPresetMultiplier(const ErrorMultiplierPreset* presets, int count, int default_index,
@@ -1037,7 +1139,7 @@ void SyncDerivedInputUncertaintySigmas() {
         if (sigmas.caliber_inches > 0.0f)
             g_state.uc_config.sigma_caliber_inches = sigmas.caliber_inches;
         if (sigmas.bc_fraction > 0.0f)
-            g_state.uc_config.sigma_bc_fraction = sigmas.bc_fraction;
+            g_state.uc_config.sigma_bc = sigmas.bc_fraction;
         used_tolerances = sigmas.any();
     }
 
@@ -1131,6 +1233,7 @@ void SanitizeCartridgePreset(CartridgePreset& preset) {
     if (preset.name.empty()) {
         preset.name = "Unnamed Cartridge";
     }
+    SanitizeKeyList(preset.cartridge_keys);
     preset.bc = ClampValue(preset.bc, 0.001f, 1.20f);
     preset.drag_model_index =
         static_cast<int>(ClampValue(static_cast<float>(preset.drag_model_index), 0.0f, 7.0f));
@@ -1201,10 +1304,10 @@ void SanitizeCartridgePreset(CartridgePreset& preset) {
         preset.sigma_caliber_inches = 0.0f;
     else
         preset.sigma_caliber_inches = ClampValue(preset.sigma_caliber_inches, 0.00001f, 0.01f);
-    if (!std::isfinite(preset.sigma_bc_fraction) || preset.sigma_bc_fraction <= 0.0f)
-        preset.sigma_bc_fraction = 0.0f;
+    if (!std::isfinite(preset.sigma_bc) || preset.sigma_bc <= 0.0f)
+        preset.sigma_bc = 0.0f;
     else
-        preset.sigma_bc_fraction = ClampValue(preset.sigma_bc_fraction, 0.0001f, 0.5f);
+        preset.sigma_bc = ClampValue(preset.sigma_bc, 0.0001f, 0.5f);
     // sanitize barrel-MV fields
     if (!std::isfinite(preset.mv_adjustment_fps_per_in) || preset.mv_adjustment_fps_per_in < 0.0f)
         preset.mv_adjustment_fps_per_in = 0.0f;
@@ -1228,9 +1331,11 @@ void SanitizeGunPreset(GunPreset& preset) {
     if (preset.name.empty()) {
         preset.name = "Unnamed Gun";
     }
+    SanitizeKeyList(preset.cartridge_keys);
     preset.caliber_inches = ClampValue(std::fabs(preset.caliber_inches), 0.10f, 1.00f);
     preset.barrel_length_in = ClampValue(preset.barrel_length_in, 2.0f, 40.0f);
     preset.muzzle_diameter_in = ClampValue(preset.muzzle_diameter_in, 0.2f, 3.0f);
+    preset.barrel_finish_sigma_mv_fps = ClampValue(preset.barrel_finish_sigma_mv_fps, 1.0f, 50.0f);
     // Normalize material to a known preset.
     preset.barrel_material = GetBarrelMaterialPreset(preset.barrel_material).material;
     preset.twist_rate_inches = ClampValue(std::fabs(preset.twist_rate_inches), 1.0f, 30.0f);
@@ -1301,14 +1406,18 @@ json SerializeCartridgePreset(const CartridgePreset& input) {
         item["sigma_length_mm"] = preset.sigma_length_mm;
     if (preset.sigma_caliber_inches > 0.0f)
         item["sigma_caliber_inches"] = preset.sigma_caliber_inches;
-    if (preset.sigma_bc_fraction > 0.0f)
-        item["sigma_bc_fraction"] = preset.sigma_bc_fraction;
+    if (preset.sigma_bc > 0.0f)
+        item["sigma_bc"] = preset.sigma_bc;
     item["mass_grains"] = preset.mass_grains;
     item["caliber_inches"] = preset.caliber_inches;
     item["length_mm"] = preset.length_mm;
     if (!preset.tags.empty()) {
         item["tags"] = json::array();
         for (const auto& t : preset.tags) item["tags"].push_back(t);
+    }
+    if (!preset.cartridge_keys.empty()) {
+        item["cartridge_keys"] = json::array();
+        for (const auto& k : preset.cartridge_keys) item["cartridge_keys"].push_back(k);
     }
     return item;
 }
@@ -1322,6 +1431,7 @@ json SerializeGunPreset(const GunPreset& input) {
     item["caliber_inches"] = preset.caliber_inches;
     item["barrel_length_in"] = preset.barrel_length_in;
     item["muzzle_diameter_in"] = preset.muzzle_diameter_in;
+    item["barrel_finish_sigma_mv_fps"] = preset.barrel_finish_sigma_mv_fps;
     item["barrel_material"] = BarrelMaterialKey(preset.barrel_material);
     item["twist_rate_inches"] = preset.twist_rate_inches;
     item["zero_range_m"] = preset.zero_range_m;
@@ -1329,6 +1439,10 @@ json SerializeGunPreset(const GunPreset& input) {
     item["free_floated"] = preset.free_floated;
     item["suppressor_attached"] = preset.suppressor_attached;
     item["barrel_tuner_attached"] = preset.barrel_tuner_attached;
+    if (!preset.cartridge_keys.empty()) {
+        item["cartridge_keys"] = json::array();
+        for (const auto& k : preset.cartridge_keys) item["cartridge_keys"].push_back(k);
+    }
     return item;
 }
 
@@ -1565,6 +1679,7 @@ void ApplyConfig() {
     DOPE_SetLatitude(g_state.latitude);
     SyncDerivedInputUncertaintySigmas();
     DOPE_SetUncertaintyConfig(&g_state.uc_config);
+    DOPE_SetDeferUncertainty(true);
 }
 
 SensorFrame BuildFrame() {
@@ -1608,6 +1723,23 @@ void RunFrameUpdates(int frame_count) {
         SensorFrame frame = BuildFrame();
         DOPE_Update(&frame);
     }
+}
+
+// Forward declaration for async callbacks that refresh the displayed solution snapshot.
+void RefreshOutput();
+
+// Launch a background uncertainty computation if one is pending.
+void KickUncertaintyJob() {
+    if (g_uncertainty_job.exchange(true, std::memory_order_acq_rel))
+        return;
+    std::thread([] {
+        {
+            std::lock_guard<std::mutex> lk(g_engine_mutex);
+            DOPE_ComputeUncertainty();
+            RefreshOutput();
+        }
+        g_uncertainty_job.store(false, std::memory_order_release);
+    }).detach();
 }
 
 void RefreshOutput() {
@@ -1965,6 +2097,8 @@ void ApplyGunPreset(const GunPreset& preset) {
 
     g_state.bullet.barrel_length_in = normalized.barrel_length_in;
     g_state.bullet.muzzle_diameter_in = normalized.muzzle_diameter_in;
+    g_state.bullet.barrel_finish_sigma_mv_fps = normalized.barrel_finish_sigma_mv_fps;
+    g_state.barrel_finish_index = ResolveBarrelFinishIndex(normalized.barrel_finish_sigma_mv_fps);
     g_state.bullet.barrel_material = normalized.barrel_material;
     g_state.barrel_material_index = ResolveBarrelMaterialIndex(normalized.barrel_material);
     g_state.bullet.twist_rate_inches = normalized.twist_rate_inches;
@@ -2016,7 +2150,7 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
     preset.sigma_mass_grains = g_state.new_cartridge_sigma_mass_grains;
     preset.sigma_length_mm = g_state.new_cartridge_sigma_length_mm;
     preset.sigma_caliber_inches = g_state.new_cartridge_sigma_caliber_inches;
-    preset.sigma_bc_fraction = g_state.new_cartridge_sigma_bc_fraction;
+    preset.sigma_bc = g_state.new_cartridge_sigma_bc;
     // barrel-MV data from glue-layer globals
     preset.mv_adjustment_fps_per_in = g_active_mv_adj_fps_per_in;
     preset.barrel_mv_profile        = g_active_barrel_mv_profile;
@@ -2029,6 +2163,11 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
     if (g_state.new_cartridge_shape_index > 0 && g_state.new_cartridge_shape_index < kNumBulletShapes)
         preset.tags.push_back(kBulletShapeLabels[g_state.new_cartridge_shape_index]);
 
+    if (g_state.selected_cartridge_preset >= 0 &&
+        g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+        preset.cartridge_keys = g_cartridge_presets[g_state.selected_cartridge_preset].cartridge_keys;
+    }
+
     SanitizeCartridgePreset(preset);
     return preset;
 }
@@ -2039,6 +2178,7 @@ GunPreset CaptureCurrentGunPreset(const std::string& name) {
     preset.caliber_inches = g_state.bullet.caliber_inches;
     preset.barrel_length_in = g_state.bullet.barrel_length_in;
     preset.muzzle_diameter_in = g_state.bullet.muzzle_diameter_in;
+    preset.barrel_finish_sigma_mv_fps = g_state.bullet.barrel_finish_sigma_mv_fps;
     preset.barrel_material = g_state.bullet.barrel_material;
     preset.twist_rate_inches = g_state.bullet.twist_rate_inches;
     preset.zero_range_m = g_state.zero.zero_range_m;
@@ -2046,6 +2186,12 @@ GunPreset CaptureCurrentGunPreset(const std::string& name) {
     preset.free_floated = g_state.free_floated;
     preset.suppressor_attached = g_state.suppressor_attached;
     preset.barrel_tuner_attached = g_state.barrel_tuner_attached;
+    if (g_state.selected_gun_preset >= 0 &&
+        g_state.selected_gun_preset < static_cast<int>(g_gun_presets.size())) {
+        preset.cartridge_keys = g_gun_presets[g_state.selected_gun_preset].cartridge_keys;
+    } else if (const CartridgePreset* cart = GetSelectedCartridgePreset()) {
+        preset.cartridge_keys = cart->cartridge_keys;
+    }
     SanitizeGunPreset(preset);
     return preset;
 }
@@ -2078,13 +2224,24 @@ void SaveProfileLibrary() {
 // Save cartridge presets (JSON array) to given path. Returns true on success.
 bool SaveCartridgePresetsToFile(const std::string& path) {
     EnsureProfileDefaults();
-    json j = json::array();
+    json root = json::object();
+
+    if (!g_bullet_tolerances.is_null() && g_bullet_tolerances.contains("bullet_type_tolerances")) {
+        root["bullet_type_tolerances"] = g_bullet_tolerances["bullet_type_tolerances"];
+        if (g_bullet_tolerances.contains("__comments")) {
+            root["bullet_tolerance_comments"] = g_bullet_tolerances["__comments"];
+        } else if (g_bullet_tolerances.contains("_comments")) {
+            root["bullet_tolerance_comments"] = g_bullet_tolerances["_comments"];
+        }
+    }
+
+    root["cartridge_presets"] = json::array();
     for (const auto& p : g_cartridge_presets) {
-        j.push_back(SerializeCartridgePreset(p));
+        root["cartridge_presets"].push_back(SerializeCartridgePreset(p));
     }
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) return false;
-    out << j.dump(2);
+    out << root.dump(2);
     return true;
 }
 
@@ -2185,6 +2342,7 @@ void LoadProfileLibrary() {
                 preset.caliber_inches = item.value("caliber_inches", 0.308f);
                 preset.barrel_length_in = item.value("barrel_length_in", 24.0f);
                 preset.muzzle_diameter_in = item.value("muzzle_diameter_in", 0.7f);
+                preset.barrel_finish_sigma_mv_fps = item.value("barrel_finish_sigma_mv_fps", 8.5f);
                 const std::string mat_key = item.value("barrel_material", std::string(""));
                 preset.barrel_material = mat_key.empty()
                                              ? kBarrelMaterialPresets[kDefaultBarrelMaterialIndex].material
@@ -2192,6 +2350,9 @@ void LoadProfileLibrary() {
                 preset.twist_rate_inches = item.value("twist_rate_inches", 10.0f);
                 preset.zero_range_m = item.value("zero_range_m", 100.0f);
                 preset.sight_height_mm = item.value("sight_height_mm", 38.1f);
+                preset.free_floated = item.value("free_floated", false);
+                preset.suppressor_attached = item.value("suppressor_attached", false);
+                preset.barrel_tuner_attached = item.value("barrel_tuner_attached", false);
                 SanitizeGunPreset(preset);
                 loaded_gun.push_back(preset);
             }
@@ -2205,6 +2366,7 @@ void LoadProfileLibrary() {
                 preset.caliber_inches = GetSelectedCartridgeCaliberInches();
                 preset.barrel_length_in = item.value("barrel_length_in", 24.0f);
                 preset.muzzle_diameter_in = item.value("muzzle_diameter_in", 0.7f);
+                preset.barrel_finish_sigma_mv_fps = item.value("barrel_finish_sigma_mv_fps", 8.5f);
                 const std::string mat_key = item.value("barrel_material", std::string(""));
                 preset.barrel_material = mat_key.empty()
                                              ? kBarrelMaterialPresets[kDefaultBarrelMaterialIndex].material
@@ -2212,6 +2374,9 @@ void LoadProfileLibrary() {
                 preset.twist_rate_inches = item.value("twist_rate_inches", 10.0f);
                 preset.zero_range_m = item.value("zero_range_m", 100.0f);
                 preset.sight_height_mm = item.value("sight_height_mm", 38.1f);
+                preset.free_floated = item.value("free_floated", false);
+                preset.suppressor_attached = item.value("suppressor_attached", false);
+                preset.barrel_tuner_attached = item.value("barrel_tuner_attached", false);
                 SanitizeGunPreset(preset);
                 loaded_gun.push_back(preset);
             }
@@ -2276,7 +2441,7 @@ void SavePreset() {
     j["lrf_range_m"] = g_state.lrf_range;
     j["uc_enabled"] = g_state.uc_config.enabled;
     j["uc_sigma_mv_ms"] = g_state.uc_config.sigma_muzzle_velocity_ms;
-    j["uc_sigma_bc_fraction"] = g_state.uc_config.sigma_bc_fraction;
+    j["uc_sigma_bc"] = g_state.uc_config.sigma_bc;
     j["uc_sigma_range_m"] = g_state.uc_config.sigma_range_m;
     j["uc_sigma_wind_speed_ms"] = g_state.uc_config.sigma_wind_speed_ms;
     j["uc_sigma_wind_heading_deg"] = g_state.uc_config.sigma_wind_heading_deg;
@@ -2438,8 +2603,8 @@ void LoadPreset() {
         g_state.uc_config.enabled = j.value("uc_enabled", uc_def.enabled);
         g_state.uc_config.sigma_muzzle_velocity_ms =
             j.value("uc_sigma_mv_ms", uc_def.sigma_muzzle_velocity_ms);
-        g_state.uc_config.sigma_bc_fraction =
-            j.value("uc_sigma_bc_fraction", uc_def.sigma_bc_fraction);
+        g_state.uc_config.sigma_bc =
+            j.value("uc_sigma_bc", j.value("uc_sigma_bc_fraction", uc_def.sigma_bc));
         g_state.uc_config.sigma_range_m = j.value("uc_sigma_range_m", uc_def.sigma_range_m);
         g_state.uc_config.sigma_wind_speed_ms =
             j.value("uc_sigma_wind_speed_ms", uc_def.sigma_wind_speed_ms);
@@ -2534,6 +2699,7 @@ void LoadPreset() {
 
 void ResetEngineAndState() {
     DOPE_Init();
+    DOPE_SetDeferUncertainty(true);
     g_state.now_us = 0;
     g_state.last_action = "Reset Engine";
     ApplyConfig();
@@ -2586,6 +2752,7 @@ void EngineTickerThread() {
         RunFrameUpdates(1);
         RefreshOutput();
     }
+    KickUncertaintyJob();
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -2665,6 +2832,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const bool uc_on = g_state.uc_config.enabled;
 
         if (ImGui::CollapsingHeader("Cartridge Presets (GUI-only)")) {
+            ImGui::PushID("cartridge_presets");
             ImGui::TextUnformatted(
                 "Presets are for test-harness convenience and do not alter engine internals.");
 
@@ -2699,7 +2867,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 if (resolved.mass_grains > 0.0f) g_state.new_cartridge_sigma_mass_grains = resolved.mass_grains;
                 if (resolved.length_mm > 0.0f) g_state.new_cartridge_sigma_length_mm = resolved.length_mm;
                 if (resolved.caliber_inches > 0.0f) g_state.new_cartridge_sigma_caliber_inches = resolved.caliber_inches;
-                if (resolved.bc_fraction > 0.0f) g_state.new_cartridge_sigma_bc_fraction = resolved.bc_fraction;
+                if (resolved.bc_fraction > 0.0f) g_state.new_cartridge_sigma_bc = resolved.bc_fraction;
             }
             if (ImGui::Button("Add/Update Cartridge Preset")) {
                 const std::string preset_name = g_state.new_cartridge_preset_name;
@@ -2791,11 +2959,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 if (uc_on) {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(-1.0f);
-                    if (ImGui::InputFloat("+/-BC##bc_sig", &g_state.new_cartridge_sigma_bc_fraction, 0.0f, 0.0f,
+                    if (ImGui::InputFloat("+/-BC##bc_sig", &g_state.new_cartridge_sigma_bc, 0.0f, 0.0f,
                                            "%.3f")) {
-                        g_state.new_cartridge_sigma_bc_fraction =
-                            std::fmax(0.0f, g_state.new_cartridge_sigma_bc_fraction);
-                        g_state.uc_config.sigma_bc_fraction = g_state.new_cartridge_sigma_bc_fraction;
+                        g_state.new_cartridge_sigma_bc =
+                            std::fmax(0.0f, g_state.new_cartridge_sigma_bc);
+                        g_state.uc_config.sigma_bc = g_state.new_cartridge_sigma_bc;
                     }
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("1-sigma BC uncertainty as a fraction, e.g. 0.02 = 2%%");
@@ -2831,7 +2999,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         g_state.new_cartridge_sigma_mass_grains = resolved.mass_grains;
                         g_state.new_cartridge_sigma_length_mm = resolved.length_mm;
                         g_state.new_cartridge_sigma_caliber_inches = resolved.caliber_inches;
-                        g_state.new_cartridge_sigma_bc_fraction = resolved.bc_fraction;
+                        g_state.new_cartridge_sigma_bc = resolved.bc_fraction;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
@@ -3020,9 +3188,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     }
                 }
             }
+            ImGui::PopID();
         }
 
         if (ImGui::CollapsingHeader("Gun Presets (GUI-only)")) {
+            ImGui::PushID("gun_presets");
             EnsureSelectedGunPresetMatchesCurrentCaliber();
             ImGui::InputText("Gun Preset Name", g_state.new_gun_preset_name,
                              IM_ARRAYSIZE(g_state.new_gun_preset_name));
@@ -3228,6 +3398,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     }
                 }
             }
+            ImGui::PopID();
         }
 
         ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
@@ -3258,30 +3429,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::TextUnformatted("Manual Inputs");
         float muzzle_display = is_imperial ? (g_state.bullet.muzzle_velocity_ms * MPS_TO_FPS)
                                            : g_state.bullet.muzzle_velocity_ms;
+        // Effective MV sigma is the larger of manual MV sigma and barrel-finish sigma.
+        const float mv_sigma_effective_ms = std::max(g_state.uc_config.sigma_muzzle_velocity_ms,
+                                                     g_state.bullet.barrel_finish_sigma_mv_fps * FPS_TO_MPS);
+        float mv_sig_display = is_imperial ? (mv_sigma_effective_ms * MPS_TO_FPS)
+                                           : mv_sigma_effective_ms;
         {
             const float avail_mv = ImGui::GetContentRegionAvail().x;
+            ImGui::BeginDisabled(true);
             ImGui::SetNextItemWidth(uc_on ? avail_mv * 0.45f : -1.0f);
-            if (ImGui::InputFloat(is_imperial ? "Muzzle Velocity (fps)" : "Muzzle Velocity (m/s)",
-                                  &muzzle_display, is_imperial ? 5.0f : 1.0f,
-                                  is_imperial ? 50.0f : 10.0f, "%.1f")) {
-                g_state.bullet.muzzle_velocity_ms =
-                    is_imperial ? (muzzle_display * FPS_TO_MPS) : muzzle_display;
-            }
+            ImGui::InputFloat(is_imperial ? "Muzzle Velocity (fps)" : "Muzzle Velocity (m/s)",
+                              &muzzle_display, 0.0f, 0.0f, "%.1f",
+                              ImGuiInputTextFlags_ReadOnly);
             if (uc_on) {
                 ImGui::SameLine();
-                float mv_sig = is_imperial
-                                   ? (g_state.uc_config.sigma_muzzle_velocity_ms * MPS_TO_FPS)
-                                   : g_state.uc_config.sigma_muzzle_velocity_ms;
                 ImGui::SetNextItemWidth(-1.0f);
-                if (ImGui::InputFloat(is_imperial ? "+/-MV(fps)##mv" : "+/-MV(m/s)##mv", &mv_sig,
-                                      0.0f, 0.0f, "%.1f")) {
-                    g_state.uc_config.sigma_muzzle_velocity_ms =
-                        is_imperial ? (mv_sig * FPS_TO_MPS) : mv_sig;
-                    if (g_state.uc_config.sigma_muzzle_velocity_ms < 0.0f)
-                        g_state.uc_config.sigma_muzzle_velocity_ms = 0.0f;
-                }
+                ImGui::InputFloat(is_imperial ? "+/-MV(fps)##mv" : "+/-MV(m/s)##mv",
+                                  &mv_sig_display, 0.0f, 0.0f, "%.1f",
+                                  ImGuiInputTextFlags_ReadOnly);
             }
+            ImGui::EndDisabled();
         }
+        ImGui::TextDisabled("Muzzle velocity is derived from cartridge + barrel; sigma = max(manual MV sigma, barrel finish sigma).");
         ImGui::Separator();
         float zero_display =
             is_imperial ? (g_state.zero.zero_range_m * M_TO_YD) : g_state.zero.zero_range_m;
@@ -3678,6 +3847,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             std::lock_guard<std::mutex> lk(g_engine_mutex);
             ApplyConfig();
             RefreshOutput();
+            KickUncertaintyJob();
         }
         ImGui::SameLine();
         if (ImGui::Button("Step Update")) {
@@ -3686,6 +3856,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             ApplyConfig();
             RunFrameUpdates(1);
             RefreshOutput();
+            KickUncertaintyJob();
         }
         ImGui::SameLine();
         if (ImGui::Button("Shot Fired")) {
@@ -3693,6 +3864,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             ApplyConfig();
             DOPE_NotifyShotFired(g_state.now_us, g_state.baro_temp);
             RefreshOutput();
+            KickUncertaintyJob();
         }
         ImGui::SameLine();
         const bool run_100_busy = g_run_batch_in_flight.load(std::memory_order_relaxed);
@@ -3701,12 +3873,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             // Kick off the heavier batch on a worker so the render loop stays responsive.
             g_run_batch_in_flight.store(true, std::memory_order_relaxed);
             std::thread([] {
-                std::lock_guard<std::mutex> lk(g_engine_mutex);
                 g_state.last_action = "Run 100";
-                ApplyConfig();
-                RunFrameUpdates(100);
-                RefreshOutput();
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    ApplyConfig();
+                }
+
+                // Run in small chunks so the render thread is not blocked for the full batch.
+                constexpr int kTotalFrames = 100;
+                constexpr int kChunk = 10;
+                int remaining = kTotalFrames;
+                while (remaining > 0) {
+                    const int to_run = std::min(kChunk, remaining);
+                    {
+                        std::lock_guard<std::mutex> lk(g_engine_mutex);
+                        for (int i = 0; i < to_run; ++i) {
+                            SensorFrame frame = BuildFrame();
+                            DOPE_Update(&frame);
+                        }
+                    }
+                    remaining -= to_run;
+                    std::this_thread::yield();
+                }
+
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    RefreshOutput();
+                }
                 g_run_batch_in_flight.store(false, std::memory_order_relaxed);
+                KickUncertaintyJob();
             }).detach();
         }
         ImGui::EndDisabled();
@@ -3719,6 +3914,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (ImGui::Button("Reset Engine")) {
             std::lock_guard<std::mutex> lk(g_engine_mutex);
             ResetEngineAndState();
+            KickUncertaintyJob();
         }
 
         ImGui::Separator();
@@ -3802,7 +3998,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float display_range_yd = display_range_m * M_TO_YD;
         const float inches_per_moa = 1.047f * (display_range_yd / 100.0f);
         const float inches_per_ring = moa_per_ring * inches_per_moa;
-        const float impact_distance_in = impact_distance_moa * inches_per_moa;
         const float elev_offset_in = hold_elevation_moa * inches_per_moa;
         const float wind_offset_in = hold_windage_moa * inches_per_moa;
         const float wind_only_in = sol.wind_only_windage_moa * inches_per_moa;
@@ -3824,10 +4019,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
         };
 
-        ImGui::Text("Scale: %.0f MOA/ring (%.2f in/ring @ %.1f yd)", moa_per_ring, inches_per_ring,
-                    display_range_yd);
+        ImGui::Text("Bullseye rings: %.0f MOA (%.2f in) @ %.1f yd", moa_per_ring, inches_per_ring,
+                display_range_yd);
         ImGui::Text("Offset: Elev %.2f MOA (%.2f in), Wind %.2f MOA (%.2f in)", hold_elevation_moa,
-                    elev_offset_in, hold_windage_moa, wind_offset_in);
+                elev_offset_in, hold_windage_moa, wind_offset_in);
+        ImGui::SameLine();
+        ImGui::TextColored(direction_color(hold_windage_moa), "[%s]",
+                   direction_label(hold_windage_moa));
         ImGui::Text("Wind breakdown:");
         ImGui::Text("  Wind:       %.2f MOA (%.2f in)", sol.wind_only_windage_moa, wind_only_in);
         ImGui::SameLine();
@@ -3845,11 +4043,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImGui::SameLine();
         ImGui::TextColored(direction_color(sol.cant_windage_moa), "[%s]",
                            direction_label(sol.cant_windage_moa));
-        ImGui::Text("Hold from center: %.2f MOA (%.2f in)", impact_distance_moa,
-                    impact_distance_in);
         if (sol.uncertainty_valid &&
             (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
-            ImGui::Text("Confidence: analytic 1s/2s/3s ellipse (no shot sampling)");
+            ImGui::Text(
+                "Confidence: 1\u03c3 ellipse major %.2f MOA minor %.2f MOA (yellow, ~68%%); 2\u03c3 ellipse major %.2f MOA minor %.2f MOA (purple, ~95%%)",
+                axis1_moa, axis2_moa, axis1_moa * 2.0f, axis2_moa * 2.0f);
         }
         ImGui::Separator();
 

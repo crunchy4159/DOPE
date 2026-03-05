@@ -480,19 +480,15 @@ The "zero angle" $\theta_0$ is the bore elevation that makes the bullet intersec
 
 $$y_{LOS}(x) = h_s \cdot \left(1 - \frac{x}{R_0}\right)$$
 
-So at $x = R_0$: $y_{LOS}(R_0) = 0$. For the bullet to hit the LOS at $R_0$, the bullet must be at:
-
-$$y_{bullet}(R_0) = -h_s \quad \text{(below bore axis by sight height)}$$
-
-Wait ΓÇö that's relative to the bore. The bullet starts at bore ($y = 0$), arcs up then down, and must arrive at $y = -h_s$ at range $R_0$ to intersect a LOS that is $h_s$ above the bore at $x = 0$ and on-target at $x = R_0$.
+So at $x = R_0$: $y_{LOS}(R_0) = 0$. With a flat target plane we target $y_{bullet}(R_0) = 0$ relative to bore (LOS crosses bore at the zero range).
 
 **Search:** Binary search over $\theta \in [-5┬░, +5┬░]$, tolerance $= 1$ mm, max 50 iterations:
 
 1. Set $\theta_{mid} = (\theta_{lo} + \theta_{hi}) / 2$
 2. Integrate trajectory with launch angle $\theta_{mid}$
-3. If $y(\text{at } R_0) > -h_s$: bullet is too high ΓåÆ $\theta_{hi} = \theta_{mid}$
-4. If $y(\text{at } R_0) < -h_s$: bullet is too low ΓåÆ $\theta_{lo} = \theta_{mid}$
-5. Converge when $|y - (-h_s)| < 0.001$ m
+3. If $y(\text{at } R_0) > 0$: bullet is too high ΓåÆ $\theta_{hi} = \theta_{mid}$
+4. If $y(\text{at } R_0) < 0$: bullet is too low ΓåÆ $\theta_{lo} = \theta_{mid}$
+5. Converge when $|y| < 0.001$ m
 
 If the search fails to converge, `ZERO_UNSOLVABLE` fault is raised.
 
@@ -652,7 +648,7 @@ where $u_i = \mathbf{v}$ at each sub-step position (since $\dot{\mathbf{x}} = \m
 - $|\mathbf{v}| < 30$ m/s (`DOPE_MIN_VELOCITY`) ΓÇö bullet subsided
 - Iterations $\ge 500{,}000$ (`DOPE_MAX_SOLVER_ITERATIONS`) ΓÇö runaway guard
 
-At each integer metre of downrange distance, a `TrajectoryPoint` record is written to the static table with: drop, windage, speed, time of flight, and kinetic energy.
+At each integer metre of downrange distance, a `TrajectoryPoint` record is written to the static table with: drop, windage, speed, time of flight, and kinetic energy. Values are linearly interpolated between the previous and current RK4 states so the table reflects the state at the exact metre mark (not just the end of the integration step). The final returned drop at the requested target range is likewise interpolated between the bracketing step endpoints.
 
 > **Sync:** Any change to the RK4 order or termination conditions must update ┬º11.5.
 > **Implementation:** `solver.cpp` lines tagged `[MATH ┬º11.5]`
@@ -709,9 +705,9 @@ Let:
 
 **Horizontal (windage) deflection:**
 
-$$\Delta z = \omega_E \cdot R \cdot TOF \cdot \sin\lambda$$
+$$\Delta z = \omega_E \cdot R \cdot TOF \cdot \sin\lambda \cdot \sin\alpha$$
 
-In the Northern hemisphere ($\lambda > 0$), $\Delta z > 0$ ΓåÆ bullet deflects right. In the Southern hemisphere, bullets deflect left.
+Maximum deflection occurs for east/west shots ($\alpha = \pm 90°$); north/south shots ($\alpha = 0, 180°$) have zero horizontal Coriolis.
 
 **Vertical (E├╢tv├╢s) deflection:**
 

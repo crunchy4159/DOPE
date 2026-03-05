@@ -59,6 +59,10 @@ public:
     void setUncertaintyConfig(const UncertaintyConfig* config);
     static void getDefaultUncertaintyConfig(UncertaintyConfig* out);
 
+    // --- Uncertainty scheduling ---
+    void setDeferUncertainty(bool enabled);
+    void computeUncertaintyOnly();
+
     // --- FOV (set by encoder / optical zoom) ---
     void setFOV(float h_deg, float v_deg) { fov_h_deg_ = h_deg; fov_v_deg_ = v_deg; }
     float getHFOV() const { return fov_h_deg_; }
@@ -143,6 +147,10 @@ private:
     // FOV from zoom encoder (degrees; 0 = unknown)
     float fov_h_deg_ = 0.0f;
     float fov_v_deg_ = 0.0f;
+
+    // Uncertainty scheduling
+    bool defer_uncertainty_ = false;
+    bool uncertainty_pending_ = false;
 
     // --- Internal methods ---
     void evaluateState(uint64_t now_us);

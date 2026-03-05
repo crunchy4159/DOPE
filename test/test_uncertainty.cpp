@@ -102,6 +102,9 @@ TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
     uc.enabled = true;
     DOPE_SetUncertaintyConfig(&uc);
 
+    // Defer uncertainty to validate manual trigger behavior
+    DOPE_SetDeferUncertainty(true);
+
     SensorFrame f = makeDefaultFrame(10000 * 400);
     f.lrf_range_m = 500.0f;
     f.lrf_timestamp_us = f.timestamp_us;
@@ -109,11 +112,19 @@ TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
     DOPE_Update(&f);
 
     FiringSolution base = getSolution();
+    ASSERT_FALSE(base.uncertainty_valid);
+
+    // Manually run the deferred pass
+    DOPE_ComputeUncertainty();
+    DOPE_GetSolution(&base);
     ASSERT_TRUE(base.uncertainty_valid);
     const float base_radius =
         std::sqrt(base.sigma_elevation_moa * base.sigma_elevation_moa +
                   base.sigma_windage_moa * base.sigma_windage_moa);
     ASSERT_GT(base_radius, 0.001f);
+
+    // Return to default immediate uncertainty for the remainder of the test
+    DOPE_SetDeferUncertainty(false);
 
     const float target_factor = 1.8f;
     const float target_cep50_moa = base_radius * target_factor * 1.17741f; // CEP50 -> 1-sigma
@@ -324,7 +335,7 @@ TEST_F(UncertaintyTest, DefaultConfigHasSensibleValues) {
 
     EXPECT_TRUE(uc.enabled);
     EXPECT_GT(uc.sigma_muzzle_velocity_ms, 0.0f);
-    EXPECT_GT(uc.sigma_bc_fraction, 0.0f);
+    EXPECT_GT(uc.sigma_bc, 0.0f);
     EXPECT_GT(uc.sigma_range_m, 0.0f);
     EXPECT_GT(uc.sigma_wind_speed_ms, 0.0f);
     EXPECT_GT(uc.sigma_wind_heading_deg, 0.0f);
@@ -443,7 +454,7 @@ TEST_F(UncertaintyTest, BCSigmaAffectsElevation) {
 
     UncertaintyConfig uc = {};
     uc.enabled = true;
-    uc.sigma_bc_fraction = 0.05f; // 5% — large
+    uc.sigma_bc = 0.05f; // 5% — large
     DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);

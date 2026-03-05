@@ -332,7 +332,7 @@ struct DOPE_CEPTable {
 struct UncertaintyConfig {
     bool  enabled;                    // Master enable
     float sigma_muzzle_velocity_ms;   // 1-sigma MV uncertainty (m/s)
-    float sigma_bc_fraction;          // 1-sigma BC uncertainty as fraction (e.g. 0.02 = 2%)
+    float sigma_bc;                   // 1-sigma BC uncertainty as fraction (e.g. 0.02 = 2%)
     float sigma_range_m;              // 1-sigma range uncertainty (m)
     float sigma_wind_speed_ms;        // 1-sigma wind speed uncertainty (m/s)
     float sigma_wind_heading_deg;     // 1-sigma wind direction uncertainty (degrees)

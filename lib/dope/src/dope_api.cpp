@@ -124,6 +124,14 @@ void DOPE_GetDefaultUncertaintyConfig(UncertaintyConfig* out) {
     DOPE_Engine::getDefaultUncertaintyConfig(out);
 }
 
+void DOPE_SetDeferUncertainty(bool enabled) {
+    s_engine.setDeferUncertainty(enabled);
+}
+
+void DOPE_ComputeUncertainty(void) {
+    s_engine.computeUncertaintyOnly();
+}
+
 void DOPE_GetSolution(FiringSolution* out) {
     s_engine.getSolution(out);
 }

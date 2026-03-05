@@ -101,7 +101,7 @@ public:
      * @param params  Complete solver parameters including launch_angle_rad
      * @return SolverResult at the target range
      */
-    SolverResult integrate(const SolverParams& params);
+    SolverResult integrate(const SolverParams& params, bool fill_table = true);
 
     /**
      * Get a trajectory point at a specific range (meters).
@@ -119,5 +119,6 @@ private:
      * Run the RK4 integration.
      * Returns drop at specified range_m, or NAN if bullet didn't reach.
      */
-    float integrateToRange(const SolverParams& params, float range_m, bool fill_table);
+    float integrateToRange(const SolverParams& params, float range_m, bool fill_table,
+                           TrajectoryPoint* final_point = nullptr, float* final_t = nullptr);
 };

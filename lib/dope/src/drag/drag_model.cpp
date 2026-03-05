@@ -93,6 +93,9 @@ float DragModelLookup::getDeceleration(float velocity_ms, float speed_of_sound,
         density = DOPE_STD_AIR_DENSITY;
     }
     float density_ratio = density / DOPE_STD_AIR_DENSITY; // [MATH §5.2]
+
+    // Use density scaling even with corrected BC to preserve realistic
+    // sensitivity to weather; corrected BC remains the primary adjustment.
     float decel = (cd * density_ratio * velocity_ms * velocity_ms) /
                   (bc_corrected * dope::math::BALLISTIC_DRAG_CONSTANT); // [MATH §5.2]
 

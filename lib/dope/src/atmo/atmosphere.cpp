@@ -241,7 +241,7 @@ float Atmosphere::correctBC(float bc_standard) const {
     float FP = (std_press_inhg - press_inhg) / std_press_inhg; // [MATH §4.3]
 
     // FR — Humidity factor    [MATH §4.4]
-    // Small effect: FR ≈ 1.0 + 0.002 * (humidity_pct - 50)
+    // Small effect: FR ≈ 1.0 + 0.00002 * (humidity_pct - 50)
     // where humidity_pct = humidity_ * 100
     float humidity_pct = humidity_ * 100.0f;
     float FR = 1.0f + 0.00002f * (humidity_pct - 50.0f); // [MATH §4.4]

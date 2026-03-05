@@ -510,6 +510,8 @@ void DOPE_Engine::computeSolution() {
         solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::FAULT);
         solution_.fault_flags = fault_flags_;
         solution_.defaults_active = diag_flags_;
+        uncertainty_pending_ = false;
+        solution_.uncertainty_valid = false;
         return;
     }
 
@@ -586,7 +588,12 @@ void DOPE_Engine::computeSolution() {
     solution_.heading_deg_true = heading_true;
     solution_.air_density_kgm3 = atmo_.getAirDensity();
 
-    computeUncertainty();
+    // Stage uncertainty so callers can defer the expensive pass
+    solution_.uncertainty_valid = false;
+    uncertainty_pending_ = true;
+    if (!defer_uncertainty_) {
+        computeUncertainty();
+    }
 }
 
 float DOPE_Engine::estimateBarrelMassKg() const {
@@ -788,12 +795,25 @@ void DOPE_Engine::setUncertaintyConfig(const UncertaintyConfig* config) {
     }
 }
 
+void DOPE_Engine::setDeferUncertainty(bool enabled) {
+    defer_uncertainty_ = enabled;
+    if (!defer_uncertainty_ && uncertainty_pending_) {
+        computeUncertainty();
+    }
+}
+
+void DOPE_Engine::computeUncertaintyOnly() {
+    if (!uncertainty_pending_)
+        return;
+    computeUncertainty();
+}
+
 void DOPE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     if (!out)
         return;
     out->enabled = true;
     out->sigma_muzzle_velocity_ms = 1.5f;       // ~5 fps standard deviation
-    out->sigma_bc_fraction = 0.02f;             // 2 % BC uncertainty
+    out->sigma_bc = 0.02f;                      // 2 % BC uncertainty
     out->sigma_range_m = 1.0f;                  // 1 m range uncertainty
     out->sigma_wind_speed_ms = 0.44704f;        // 1 mph wind speed (0.44704 m/s)
     out->sigma_wind_heading_deg = 2.0f;         // 2 ° wind direction
@@ -908,6 +928,10 @@ void DOPE_Engine::computeUncertainty() {
     solution_.sigma_windage_moa = 0.0f;
     solution_.covariance_elev_wind = 0.0f;
 
+    if (!uncertainty_pending_)
+        return;
+    uncertainty_pending_ = false;
+
     if (!uncertainty_config_.enabled)
         return;
 
@@ -932,7 +956,7 @@ void DOPE_Engine::computeUncertainty() {
     // Evaluate (elevation_moa, windage_moa) for arbitrary SolverParams + roll
     auto evalMOAWithZeroRange = [&](const SolverParams& p, float roll_rad, float zero_range_m,
                                     float& elev_moa, float& wind_moa) -> bool {
-        SolverResult r = solver_.integrate(p);
+        SolverResult r = solver_.integrate(p, false);
         if (!r.valid) {
             elev_moa = 0.0f;
             wind_moa = 0.0f;
@@ -1003,7 +1027,7 @@ void DOPE_Engine::computeUncertainty() {
     input_idx = 1;
     {
         SolverParams pp = base, pm = base;
-        float h = uncertainty_config_.sigma_bc_fraction * base.bc;
+        float h = uncertainty_config_.sigma_bc * base.bc;
         pp.bc += h;
         pm.bc = std::fmax(0.01f, pm.bc - h);
         accumulate(pp, pm);
@@ -1023,7 +1047,7 @@ void DOPE_Engine::computeUncertainty() {
 
         auto evalRange = [&](const SolverParams& p, float rng, float& elev_moa,
                              float& wind_moa) -> bool {
-            SolverResult r = solver_.integrate(p);
+            SolverResult r = solver_.integrate(p, false);
             if (!r.valid) {
                 elev_moa = 0.0f;
                 wind_moa = 0.0f;
