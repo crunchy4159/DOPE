@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief Minimal embedded entry point that boots the BCE engine.
+ * @brief Minimal embedded entry point that boots the DOPE engine.
  *
  * Platform/application-specific sensor plumbing is expected to be added by
  * firmware code around this skeleton.
@@ -12,14 +12,14 @@
 
 #include "dope/dope_api.h"
 
-#if defined(BCE_PLATFORM_NATIVE)
+#if defined(DOPE_PLATFORM_NATIVE)
 int main() {
-    BCE_Init();
+    DOPE_Init();
     return 0;
 }
 #else
 extern "C" void app_main(void) {
-    BCE_Init();
+    DOPE_Init();
     // Application layer would feed SensorFrames here
 }
 #endif

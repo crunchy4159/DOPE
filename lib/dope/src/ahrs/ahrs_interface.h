@@ -3,7 +3,7 @@
  * @brief Abstract AHRS (Attitude and Heading Reference System) interface.
  *
  * Both Madgwick and Mahony filters implement this interface.
- * The engine selects one at runtime via BCE_SetAHRSAlgorithm().
+ * The engine selects one at runtime via DOPE_SetAHRSAlgorithm().
  */
 
 #pragma once

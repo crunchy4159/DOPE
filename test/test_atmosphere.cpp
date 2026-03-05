@@ -71,7 +71,7 @@ TEST_F(AtmosphereTest, BCCorrectionAtISA) {
 
 // BC correction at altitude should increase BC (less air resistance)
 TEST_F(AtmosphereTest, BCCorrectionAtAltitude) {
-    BCE_DefaultOverrides ovr = {};
+    DOPE_DefaultOverrides ovr = {};
     ovr.use_altitude = true;
     ovr.altitude_m = 2000.0f; // 2000m elevation
 
@@ -89,19 +89,19 @@ TEST_F(AtmosphereTest, BCCorrectionAtAltitude) {
 // Diagnostic flags should show defaults when no sensor data provided
 TEST_F(AtmosphereTest, DiagFlagsShowDefaults) {
     uint32_t flags = atmo.getDiagFlags();
-    EXPECT_NE(flags & BCE_Diag::DEFAULT_PRESSURE, 0u);
-    EXPECT_NE(flags & BCE_Diag::DEFAULT_TEMP, 0u);
-    EXPECT_NE(flags & BCE_Diag::DEFAULT_HUMIDITY, 0u);
-    EXPECT_NE(flags & BCE_Diag::DEFAULT_ALTITUDE, 0u);
+    EXPECT_NE(flags & DOPE_Diag::DEFAULT_PRESSURE, 0u);
+    EXPECT_NE(flags & DOPE_Diag::DEFAULT_TEMP, 0u);
+    EXPECT_NE(flags & DOPE_Diag::DEFAULT_HUMIDITY, 0u);
+    EXPECT_NE(flags & DOPE_Diag::DEFAULT_ALTITUDE, 0u);
 }
 
 // After baro update, pressure and temp defaults should clear
 TEST_F(AtmosphereTest, DiagFlagsClearAfterBaro) {
     atmo.updateFromBaro(101325.0f, 15.0f, 0.5f);
     uint32_t flags = atmo.getDiagFlags();
-    EXPECT_EQ(flags & BCE_Diag::DEFAULT_PRESSURE, 0u);
-    EXPECT_EQ(flags & BCE_Diag::DEFAULT_TEMP, 0u);
-    EXPECT_EQ(flags & BCE_Diag::DEFAULT_HUMIDITY, 0u);
+    EXPECT_EQ(flags & DOPE_Diag::DEFAULT_PRESSURE, 0u);
+    EXPECT_EQ(flags & DOPE_Diag::DEFAULT_TEMP, 0u);
+    EXPECT_EQ(flags & DOPE_Diag::DEFAULT_HUMIDITY, 0u);
 }
 
 // Invalid barometer values should be sanitized to finite, physical outputs

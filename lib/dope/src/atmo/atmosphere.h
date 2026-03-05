@@ -2,7 +2,7 @@
  * @file atmosphere.h
  * @brief Atmospheric model — air density, speed of sound, BC correction.
  *
- * BCE SRS v1.3 — Sections 7.3, 11.2
+ * DOPE SRS v1.3 — Sections 7.3, 11.2
  *
  * Implements the 4-factor BC correction model (altitude, temperature,
  * pressure, humidity) using reference Army Metro / Litz formulas.
@@ -30,7 +30,7 @@ public:
     /**
      * Apply default overrides for atmosphere parameters.
      */
-    void applyDefaults(const BCE_DefaultOverrides& ovr);
+    void applyDefaults(const DOPE_DefaultOverrides& ovr);
 
     /**
      * Capture current pressure as the baro reference (field calibration).
@@ -94,13 +94,13 @@ public:
     bool consumeZeroRecomputeHint();
 
 private:
-    float pressure_pa_     = BCE_DEFAULT_PRESSURE_PA;
-    float temperature_c_   = BCE_DEFAULT_TEMPERATURE_C;
-    float humidity_        = BCE_DEFAULT_HUMIDITY;
-    float altitude_m_      = BCE_DEFAULT_ALTITUDE_M;
+    float pressure_pa_     = DOPE_DEFAULT_PRESSURE_PA;
+    float temperature_c_   = DOPE_DEFAULT_TEMPERATURE_C;
+    float humidity_        = DOPE_DEFAULT_HUMIDITY;
+    float altitude_m_      = DOPE_DEFAULT_ALTITUDE_M;
 
-    float air_density_     = BCE_STD_AIR_DENSITY;
-    float speed_of_sound_  = BCE_SPEED_OF_SOUND_15C;
+    float air_density_     = DOPE_STD_AIR_DENSITY;
+    float speed_of_sound_  = DOPE_SPEED_OF_SOUND_15C;
 
     float baro_offset_pa_  = 0.0f;  // calibration offset
 

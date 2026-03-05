@@ -23,7 +23,7 @@ void WindCorrection::decompose(float azimuth_deg, float& out_headwind, float& ou
     // Angle between wind direction and firing direction    [MATH §10]
     // Wind heading = direction wind comes FROM
     // The relative angle: how the wind blows relative to the shooter's bore axis
-    float angle_rad = (heading_deg_ - azimuth_deg) * bce::math::DEG_TO_RAD; // [MATH §10]
+    float angle_rad = (heading_deg_ - azimuth_deg) * dope::math::DEG_TO_RAD; // [MATH §10]
 
     // headwind = wind_speed × cos(angle)    [MATH §10]
     //   positive = wind blowing into the shooter's face (retards bullet)

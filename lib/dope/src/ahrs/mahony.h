@@ -32,8 +32,8 @@ public:
 
 private:
     Quaternion q_ = {1.0f, 0.0f, 0.0f, 0.0f};
-    float kp_ = 2.0f;    // Mahony proportional gain; override via BCE_SetAHRSConfig
-    float ki_ = 0.005f;  // Mahony integral gain;     override via BCE_SetAHRSConfig
+    float kp_ = 2.0f;    // Mahony proportional gain; override via DOPE_SetAHRSConfig
+    float ki_ = 0.005f;  // Mahony integral gain;     override via DOPE_SetAHRSConfig
 
     // Integral error terms for PI controller
     float integral_fb_x_ = 0.0f;

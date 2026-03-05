@@ -3,7 +3,7 @@
  * @brief Unit tests for popular cartridge configurations.
  *
  * Cartridge definitions in this file are validation references only.
- * They must not be treated as runtime lookup tables for BCE engine logic.
+ * They must not be treated as runtime lookup tables for DOPE engine logic.
  */
 
 #include <gtest/gtest.h>
@@ -28,13 +28,13 @@ protected:
         p.drag_model = model;
 
         // Adjust MV from reference barrel to actual barrel
-        float base_mv_fps = mv_ms * bce::math::MPS_TO_FPS;
+        float base_mv_fps = mv_ms * dope::math::MPS_TO_FPS;
         float barrel_length_delta_in = barrel_in - ref_barrel_in;
         float adjusted_mv_fps = base_mv_fps + (barrel_length_delta_in * mv_adjust);
-        p.muzzle_velocity_ms = adjusted_mv_fps * bce::math::FPS_TO_MPS;
-        p.bullet_mass_kg = mass_gr * BCE_GRAINS_TO_KG;
-        p.air_density = BCE_STD_AIR_DENSITY;
-        p.speed_of_sound = BCE_SPEED_OF_SOUND_15C;
+        p.muzzle_velocity_ms = adjusted_mv_fps * dope::math::FPS_TO_MPS;
+        p.bullet_mass_kg = mass_gr * DOPE_GRAINS_TO_KG;
+        p.air_density = DOPE_STD_AIR_DENSITY;
+        p.speed_of_sound = DOPE_SPEED_OF_SOUND_15C;
         p.target_range_m = range_m;
         p.launch_angle_rad = 0.0f;
         p.headwind_ms = 0.0f;

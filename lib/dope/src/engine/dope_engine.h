@@ -1,8 +1,8 @@
 /**
- * @file bce_engine.h
- * @brief Top-level BCE engine — orchestrates all subsystems.
+ * @file dope_engine.h
+ * @brief Top-level DOPE engine — orchestrates all subsystems.
  *
- * BCE SRS v1.3 — Sections 3, 9, 12, 13
+ * DOPE SRS v1.3 — Sections 3, 9, 12, 13
  *
  * Owns all module instances (AHRS, atmosphere, solver, corrections) as
  * static objects. Implements the state machine (IDLE / SOLUTION_READY / FAULT)
@@ -20,7 +20,7 @@
 #include "../corrections/wind.h"
 #include "../corrections/cant.h"
 
-class BCE_Engine {
+class DOPE_Engine {
 public:
     void init();
 
@@ -32,7 +32,7 @@ public:
     void setZeroConfig(const ZeroConfig* config);
     void setWindManual(float speed_ms, float heading_deg);
     void setLatitude(float latitude_deg);
-    void setDefaultOverrides(const BCE_DefaultOverrides* defaults);
+    void setDefaultOverrides(const DOPE_DefaultOverrides* defaults);
 
     // --- Calibration ---
     void setIMUBias(const float accel_bias[3], const float gyro_bias[3]);
@@ -42,21 +42,26 @@ public:
     void calibrateBaro();
     void calibrateGyro();
     void setAHRSAlgorithm(AHRS_Algorithm algo);
-    void setAHRSConfig(const BCE_AHRSConfig* config);
-    void setLRFConfig(const BCE_LRFConfig* config);
+    void setAHRSConfig(const DOPE_AHRSConfig* config);
+    void setLRFConfig(const DOPE_LRFConfig* config);
     void setMagDeclination(float declination_deg);
     void setExternalReferenceMode(bool enabled);
+    void notifyShotFired(uint64_t timestamp_us, float ambient_temp_c);
 
     // --- Output ---
     void getSolution(FiringSolution* out) const;
     void getRealtimeSolution(RealtimeSolution* out) const;
-    BCE_Mode getMode() const { return mode_; }
+    DOPE_Mode getMode() const { return mode_; }
     uint32_t getFaultFlags() const { return fault_flags_; }
     uint32_t getDiagFlags() const { return diag_flags_; }
 
     // --- Uncertainty / error propagation --- SRS §14
     void setUncertaintyConfig(const UncertaintyConfig* config);
     static void getDefaultUncertaintyConfig(UncertaintyConfig* out);
+
+    // --- Uncertainty scheduling ---
+    void setDeferUncertainty(bool enabled);
+    void computeUncertaintyOnly();
 
     // --- FOV (set by encoder / optical zoom) ---
     void setFOV(float h_deg, float v_deg) { fov_h_deg_ = h_deg; fov_v_deg_ = v_deg; }
@@ -72,7 +77,7 @@ private:
     WindCorrection wind_;
 
     // State
-    BCE_Mode mode_ = BCE_Mode::IDLE;
+    DOPE_Mode mode_ = DOPE_Mode::IDLE;
     uint32_t fault_flags_ = 0;
     uint32_t diag_flags_ = 0;
 
@@ -105,7 +110,7 @@ private:
     BoresightOffset reticle_   = {0.0f, 0.0f};
 
     // Default overrides
-    BCE_DefaultOverrides overrides_;
+    DOPE_DefaultOverrides overrides_;
     bool has_overrides_ = false;
 
     // Last gyro reading for calibration capture
@@ -123,7 +128,7 @@ private:
 
     // LRF runtime config (defaults match compile-time constants)
     float    lrf_filter_alpha_       = 0.2f;
-    uint32_t lrf_stale_threshold_us_ = BCE_LRF_STALE_US;
+    uint32_t lrf_stale_threshold_us_ = DOPE_LRF_STALE_US;
 
     // Uncertainty / error propagation config — SRS §14
     UncertaintyConfig uncertainty_config_;
@@ -132,9 +137,20 @@ private:
     float latest_baro_temp_c_ = 0.0f;
     bool has_baro_temp_ = false;
 
+    // Barrel thermal/stringing state
+    float barrel_temp_K_ = 293.15f;        // current barrel temp (K)
+    float barrel_ambient_K_ = 293.15f;     // last known ambient (K)
+    uint64_t last_barrel_update_us_ = 0;   // last cooling integration timestamp
+    uint64_t last_shot_time_us_ = 0;       // last shot event timestamp
+    int shots_in_string_ = 0;              // rolling shot count for stringing heuristics
+
     // FOV from zoom encoder (degrees; 0 = unknown)
     float fov_h_deg_ = 0.0f;
     float fov_v_deg_ = 0.0f;
+
+    // Uncertainty scheduling
+    bool defer_uncertainty_ = false;
+    bool uncertainty_pending_ = false;
 
     // --- Internal methods ---
     void evaluateState(uint64_t now_us);
@@ -143,4 +159,7 @@ private:
     void refreshDerivedSigmasFromProfiles();
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
+    void integrateBarrelCooling(uint64_t now_us);
+    float estimateBarrelMassKg() const;
+    float barrelHeatMultiplier() const;
 };

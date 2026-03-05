@@ -39,14 +39,14 @@ bool MagCalibration::apply(float& mx, float& my, float& mz) const {
 
     // Check field magnitude for disturbance detection
     float field_mag = std::sqrt(mx * mx + my * my + mz * mz);
-    is_disturbed_ = (field_mag < BCE_MAG_MIN_FIELD_UT || field_mag > BCE_MAG_MAX_FIELD_UT);
+    is_disturbed_ = (field_mag < DOPE_MAG_MIN_FIELD_UT || field_mag > DOPE_MAG_MAX_FIELD_UT);
 
     return !is_disturbed_;
 }
 
 float MagCalibration::computeHeading(float yaw_rad) const {
     // Convert yaw to degrees and apply declination
-    float heading = yaw_rad * bce::math::RAD_TO_DEG + declination_deg_;
+    float heading = yaw_rad * dope::math::RAD_TO_DEG + declination_deg_;
 
     // Normalize to 0–360
     while (heading < 0.0f) heading += 360.0f;

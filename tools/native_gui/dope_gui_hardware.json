@@ -1,0 +1,26 @@
+{
+  "_comments": {
+    "purpose": "Lists available hardware presets by sensor class; GUI treats unknown keys as custom presets.",
+    "fields": {
+      "name": "Display name in dropdown.",
+      "index": "Integer preset index mapping to built-in tables; keep as a whole number (no decimals)."
+    }
+  },
+  "sensors": {
+    "barometers": [
+      { "name": "Bosch BMP581", "index": 0 }
+    ],
+    "lrfs": [
+      { "name": "JRT D09C (2000 m)", "index": 0 }
+    ],
+    "temp_sensors": [
+      { "name": "Texas Instruments TMP117", "index": 0 }
+    ],
+    "gps": [
+      { "name": "No GPS/GNSS Module", "index": 0 }
+    ],
+    "mag_lat": [
+      { "name": "RM3100", "index": 0 }
+    ]
+  }
+}

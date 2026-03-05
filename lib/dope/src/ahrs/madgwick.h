@@ -29,5 +29,5 @@ public:
 
 private:
     Quaternion q_ = {1.0f, 0.0f, 0.0f, 0.0f};
-    float beta_ = 0.1f; // Madgwick gradient-descent gain; override via BCE_SetAHRSConfig
+    float beta_ = 0.1f; // Madgwick gradient-descent gain; override via DOPE_SetAHRSConfig
 };

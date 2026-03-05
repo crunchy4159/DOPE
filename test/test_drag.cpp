@@ -107,7 +107,7 @@ TEST(DragTest, InvalidSpeedOfSoundReturnsZeroDecel) {
 // Non-finite density should sanitize to standard atmosphere
 TEST(DragTest, NonFiniteDensitySanitizesToStandard) {
     float decel_standard = DragModelLookup::getDeceleration(
-        800.0f, 340.0f, 0.505f, DragModel::G1, BCE_STD_AIR_DENSITY);
+        800.0f, 340.0f, 0.505f, DragModel::G1, DOPE_STD_AIR_DENSITY);
     float decel_nan_density = DragModelLookup::getDeceleration(
         800.0f, 340.0f, 0.505f, DragModel::G1, std::numeric_limits<float>::quiet_NaN());
 
