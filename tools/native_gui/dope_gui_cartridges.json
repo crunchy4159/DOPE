@@ -8,7 +8,6 @@
       "sigma_mass_grains", "sigma_length_mm", "sigma_caliber_inches", "sigma_bc"
     ],
     "drag_model_index": "0-7 maps to G1..G8.",
-    "sigma_fields": "Per-cartridge sigma values are now stored here; tags stay informational only.",
     "sort_order": "Ascending muzzle energy (ft-lbs) at reference barrel.",
     "muzzle_energy_reference_ftlbs": {
       ".22 LR 40gr CCI Mini-Mag CPRN": 135,
@@ -102,6 +101,98 @@
         { "range_m":  50.0, "cep50_moa": 1.80 },
         { "range_m": 100.0, "cep50_moa": 2.20 }
       ],
+      "cep_scale_floor": 1.0
+    },
+        {
+      "name": "Federal Premium 9mm HST JHP 124gr",
+      "tags": ["commercial", "jhp"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.150,
+      "sigma_bc": 0.025,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 124.0,
+      "sigma_mass_grains": 0.75,
+      "caliber_inches": 0.355,
+      "sigma_caliber_inches": 0.0005,
+      "length_mm": 14.58,
+      "sigma_length_mm": 0.35,
+      "velocity_profile": [
+        { "distance_inches": 0, "velocity_ms": 365.8 },
+        { "distance_inches": 900, "velocity_ms": 346.3 },
+        { "distance_inches": 1800, "velocity_ms": 330.1 },
+        { "distance_inches": 2700, "velocity_ms": 316.7 },
+        { "distance_inches": 3600, "velocity_ms": 305.4 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":   900, "trajectory_inches":   0.00 },
+        { "distance_inches":  1800, "trajectory_inches":  -0.80 },
+        { "distance_inches":  2700, "trajectory_inches":  -3.40 },
+        { "distance_inches":  3600, "trajectory_inches":  -8.00 }
+      ],
+      "cep_table_moa": [],
+      "cep_scale_floor": 1.0
+    },
+            {
+      "name": "CCI Blazer Brass 9mm FMJ 115gr",
+      "tags": ["commercial", "fmj"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.155,
+      "sigma_bc": 0.025,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 115.0,
+      "sigma_mass_grains": 0.75,
+      "caliber_inches": 0.355,
+      "sigma_caliber_inches": 0.0005,
+      "length_mm": 14.61,
+      "sigma_length_mm": 0.35,
+      "velocity_profile": [
+        { "distance_inches": 0,    "velocity_ms": 349.0 },
+        { "distance_inches": 1800, "velocity_ms": 322.5 },
+        { "distance_inches": 3600, "velocity_ms": 303.0 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":   900, "trajectory_inches":   0.00 },
+        { "distance_inches":  1800, "trajectory_inches":  -0.90 },
+        { "distance_inches":  2700, "trajectory_inches":  -3.70 },
+        { "distance_inches":  3600, "trajectory_inches":  -8.60 }
+      ],
+      "cep_table_moa": [],
+      "cep_scale_floor": 1.0
+    },
+	{
+      "name": "Winchester White Box 9mm 115gr FMJ",
+      "tags": ["commercial", "fmj"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.139,
+      "sigma_bc": 0.025,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 115.0,
+      "sigma_mass_grains": 0.75,
+      "caliber_inches": 0.355,
+      "sigma_caliber_inches": 0.0005,
+      "length_mm": 13.97,
+      "sigma_length_mm": 0.35,
+      "velocity_profile": [
+        { "distance_inches": 0,    "velocity_ms": 362.8 },
+        { "distance_inches": 180,  "velocity_ms": 358.5 },
+        { "distance_inches": 900,  "velocity_ms": 343.0 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":   900, "trajectory_inches":   0.00 },
+        { "distance_inches":  1800, "trajectory_inches":  -0.90 },
+        { "distance_inches":  2700, "trajectory_inches":  -3.70 },
+        { "distance_inches":  3600, "trajectory_inches":  -8.60 }
+      ],
+      "cep_table_moa": [],
       "cep_scale_floor": 1.0
     },
     {
