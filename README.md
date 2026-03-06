@@ -6,6 +6,8 @@ DOPE engine implementing the DOPE SRS v1.6 draft (2026-02-25): a C++17 ballistic
 
 **Recent updates (2026-03-04):** LOS zero now aligns at bore crossing, Coriolis windage is azimuth-aware, RK4 per-metre outputs are interpolated, and drag retains density sensitivity alongside corrected BC.
 
+XMR Donation Address: 8BWmYeEc8xQekZXC29ATz4aLagtw4y1U7JxFxrZFYyoaLDccPjTT6KRYvEVYeirr3M9p7ZQsvJSDeQUctB68wZPaDvZ1ifu
+
 ## What It Does
 
 The engine ingests normalized sensor data, performs ballistic trajectory computation with atmospheric and Earth-rotation corrections, and produces a structured `FiringSolution`. It is platform-agnostic, display-agnostic, UI-agnostic, and vision-agnostic.
