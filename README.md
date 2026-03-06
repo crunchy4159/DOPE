@@ -265,7 +265,3 @@ All internal calculations are SI (meters, m/s, Pascals, Celsius/Kelvin, radians)
 - ISA-consistent defaults are used when optional environmental inputs are missing (pressure `101325 Pa`, temperature `15 °C`, humidity `0.5`, wind `0 m/s`, altitude `0 m`)
 - Hard faults are reserved for critical missing/invalid inputs (for example no valid range, missing BC/MV, unsolvable zero, AHRS instability)
 - Non-critical gaps use defaults and set diagnostic flags rather than forcing `FAULT`
-
-## License
-
-Proprietary. All rights reserved.
