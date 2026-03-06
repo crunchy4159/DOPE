@@ -5,8 +5,11 @@
 DOPE engine implementing the DOPE SRS v1.6 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
 
 **Recent updates (2026-03-04):** LOS zero now aligns at bore crossing, Coriolis windage is azimuth-aware, RK4 per-metre outputs are interpolated, and drag retains density sensitivity alongside corrected BC.
+
 --- 
+
 XMR Donation Address: 8BWmYeEc8xQekZXC29ATz4aLagtw4y1U7JxFxrZFYyoaLDccPjTT6KRYvEVYeirr3M9p7ZQsvJSDeQUctB68wZPaDvZ1ifu
+
 ---
 
 ## What It Does
