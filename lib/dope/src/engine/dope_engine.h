@@ -97,6 +97,7 @@ private:
     // LRF state
     float lrf_range_m_ = 0.0f;
     float lrf_range_filtered_m_ = 0.0f; // IIR filtered range
+    float target_elevation_m_ = 0.0f;
     uint64_t lrf_timestamp_us_ = 0;
     bool has_range_ = false;
     Quaternion lrf_quaternion_; // quaternion snapshot at LRF receipt

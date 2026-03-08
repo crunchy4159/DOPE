@@ -3,16 +3,16 @@
     "purpose": "Cartridge preset list consumed by GUI; extra fields are ignored by the loader.",
     "required_fields": ["name", "bc", "drag_model_index", "mass_grains", "caliber_inches", "length_mm"],
     "optional_fields": [
-      "velocity_profile", "trajectory_profile", "tags", "cep_table_moa", "cep_scale_floor",
-      "reference_barrel_inches", "mv_adjustment_fps_per_in",
-      "sigma_mass_grains", "sigma_length_mm", "sigma_caliber_inches", "sigma_bc"
+      "velocity_profile", "trajectory_profile", "tags",
+      "reference_barrel_inches", "mv_adjustment_fps_per_in", "barrel_mv_profile", "sd_mv_fps"
     ],
     "drag_model_index": "0-7 maps to G1..G8.",
-    "sigma_fields": "Per-cartridge sigma values are now stored here; tags stay informational only.",
     "sort_order": "Ascending muzzle energy (ft-lbs) at reference barrel.",
     "muzzle_energy_reference_ftlbs": {
       ".22 LR 40gr CCI Mini-Mag CPRN": 135,
-      "9mm 124gr FMJ": 364,
+      "Federal Premium 9mm HST JHP 124gr": 396,
+      "CCI Blazer Brass 9mm FMJ 115gr": 323,
+      "Winchester White Box 9mm 115gr FMJ": 362,
       ".45 ACP 230gr FMJ": 369,
       ".300 BLK 220gr OTM Subsonic": 548,
       "5.56 NATO 62gr M855 FMJ": 1174,
@@ -25,6 +25,8 @@
       "Hornady 6.5 Creedmoor 140gr ELD-M": 2266,
       ".308 Win 168gr BTHP MatchKing": 2619,
       ".308 Win 175gr SMK": 2622,
+      ".30-06 Springfield 168gr BTHP MatchKing": 2719,
+      ".30-06 Springfield 150gr FMJ": 2820,
       "Sierra .300 Win Mag 190gr HPBT MatchKing": 3549,
       ".338 Lapua Magnum 250gr Lapua Scenar HPBT": 4892,
       ".50 BMG 750gr Hornady A-Max Match": 11826
@@ -35,10 +37,7 @@
       "mass_grains": "Up to 1 decimal (UI uses %.1f).",
       "caliber_inches": "Up to 3 decimals (UI uses %.3f).",
       "length_mm": "Up to 2 decimals (UI uses %.2f).",
-      "sigma_mass_grains": "Up to 3 decimals (gr).",
-      "sigma_length_mm": "Up to 3 decimals (mm).",
-      "sigma_caliber_inches": "Up to 5 decimals (in).",
-      "sigma_bc": "Up to 4 decimals (fraction).",
+      "sd_mv_fps": "1-sigma MV standard deviation from factory or chronograph data (fps). Used directly as the cartridge uncertainty contribution to sigma_muzzle_velocity_ms.",
       "profile_tables": "distance_inches up to 1 decimal; velocity_ms up to 1 decimal; trajectory_inches up to 2 decimals; CEP MOA up to 2 decimals.",
       "reference_barrel_inches": "Reference barrel length used for ammo assumptions; keep to 1 decimal.",
       "mv_adjustment_fps_per_in": "Linear MV change per inch from reference barrel; fps/in, up to 1 decimal."
@@ -46,7 +45,9 @@
     "changelog": [
       "ADDED .22 LR 40gr CCI Mini-Mag CPRN: BC 0.130 G1 (precision testing per Target Sports data); 1235 fps (376.4 m/s) from 18.5-in Ruger 10/22; mv_adj 10 fps/in.",
       "ADDED .300 BLK 125gr FMJ Supersonic: BC 0.295 G1 (Sierra 125gr FPJ projectile); 2216 fps (675.4 m/s) from 16-in reference barrel; mv_adj 35 fps/in. Subsonic-capable platform requires separate preset.",
-      "ADDED .300 BLK 220gr OTM Subsonic: BC 0.270 G1 (conservative value for generic 220gr round-nose; Hornady 208gr A-Max is 0.648 G1 which is atypical); 1060 fps (323.1 m/s) from 16-in reference barrel; mv_adj 10 fps/in (short-barrel effect minimal for subsonic)."
+      "ADDED .300 BLK 220gr OTM Subsonic: BC 0.270 G1 (conservative value for generic 220gr round-nose; Hornady 208gr A-Max is 0.648 G1 which is atypical); 1060 fps (323.1 m/s) from 16-in reference barrel; mv_adj 10 fps/in (short-barrel effect minimal for subsonic).",
+      "ADDED .30-06 Springfield 150gr FMJ: BC 0.338 G1 (Sierra/Federal generic 150gr .30 cal FMJ); 2910 fps (887.0 m/s) from 24-in reference barrel; mv_adj 20 fps/in. M2 Ball class load; cartridge_key 30_06_sprg.",
+      "ADDED .30-06 Springfield 168gr BTHP MatchKing: BC 0.462 G1 (Sierra #2200, same projectile as .308 Win 168gr SMK, higher MV due to larger case); 2700 fps (823.0 m/s) from 24-in reference barrel; mv_adj 20 fps/in."
     ]
   },
   "cartridge_presets": [
@@ -56,26 +57,46 @@
       "cartridge_keys": ["22_lr"],
       "_source": "CCI #0030 Mini-Mag 40gr Copper Plated Round Nose. G1 BC ~0.130 per precision testing (Target Sports USA ballistics data). MV 1235 fps (376.4 m/s) from 18.5-in Ruger 10/22 barrel per CCI published spec. Subsonic from pistols (~950-1085 fps). Bullet diameter 0.222 in; length ~15.60 mm. mv_adj 10 fps/in for barrels 16-22 in.",
       "bc": 0.130,
-      "sigma_bc": 0.020,
       "drag_model_index": 0,
       "reference_barrel_inches": 18.5,
       "mv_adjustment_fps_per_in": 10.0,
       "mass_grains": 40.0,
-      "sigma_mass_grains": 0.50,
       "caliber_inches": 0.223,
-      "sigma_caliber_inches": 0.0005,
       "length_mm": 15.60,
-      "sigma_length_mm": 0.30,
       "velocity_profile": [
         { "distance_inches": 0, "velocity_ms": 376.4 }
       ],
       "trajectory_profile": [],
-      "cep_table_moa": [
-        { "range_m":  25.0, "cep50_moa": 1.00 },
-        { "range_m":  50.0, "cep50_moa": 1.50 },
-        { "range_m": 100.0, "cep50_moa": 2.50 }
+      "sd_mv_fps": 20.0
+        "velocity_sigma_fps": 20.0,
+        "angular_sigma_moa": 0.2
+    },
+    {
+      "name": "Remington .22lr Subsonic 40gr CPHP",
+      "tags": ["commercial", "rimfire"],
+      "cartridge_keys": ["22_lr"],
+      "bc": 0.079,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 18.5,
+      "mv_adjustment_fps_per_in": 10.0,
+      "mass_grains": 40.0,
+      "caliber_inches": 0.223,
+      "length_mm": 15.60,
+      "velocity_profile": [
+        { "distance_inches": 0, "velocity_ms": 320.0 },
+        { "distance_inches": 1800, "velocity_ms": 282.6 },
+        { "distance_inches": 3600, "velocity_ms": 256.3 },
+        { "distance_inches": 5400, "velocity_ms": 235.3 }
       ],
-      "cep_scale_floor": 1.0
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50  },
+        { "distance_inches":  1800, "trajectory_inches":   4.30  },
+        { "distance_inches":  3600, "trajectory_inches":   0.00  },
+        { "distance_inches":  5400, "trajectory_inches":  -16.40 }
+      ],
+      "sd_mv_fps": 20.0
+        "velocity_sigma_fps": 20.0,
+        "angular_sigma_moa": 0.2
     },
     {
       "name": "9mm 124gr FMJ",
@@ -83,26 +104,126 @@
       "cartridge_keys": ["9x19"],
       "_mv_note": "CORRECTED from original 335.3 m/s: Federal AE, Winchester USA, Remington UMC all rate 1150 fps from a 4-in barrel.",
       "bc": 0.149,
-      "sigma_bc": 0.025,
       "drag_model_index": 0,
       "reference_barrel_inches": 4.0,
       "mv_adjustment_fps_per_in": 12.0,
       "mass_grains": 124.0,
-      "sigma_mass_grains": 0.75,
       "caliber_inches": 0.355,
-      "sigma_caliber_inches": 0.0005,
       "length_mm": 15.70,
-      "sigma_length_mm": 0.35,
       "velocity_profile": [
         { "distance_inches": 0, "velocity_ms": 350.5 }
       ],
-      "trajectory_profile": [],
-      "cep_table_moa": [
-        { "range_m":  25.0, "cep50_moa": 1.50 },
-        { "range_m":  50.0, "cep50_moa": 1.80 },
-        { "range_m": 100.0, "cep50_moa": 2.20 }
+      "barrel_mv_profile": [
+        { "barrel_in": 2.0,  "mv_fps": 975.0 },
+        { "barrel_in": 3.0,  "mv_fps": 1040.0 },
+        { "barrel_in": 4.0,  "mv_fps": 1100.0 },
+        { "barrel_in": 6.0,  "mv_fps": 1170.0 },
+        { "barrel_in": 8.0,  "mv_fps": 1200.0 },
+        { "barrel_in": 16.0, "mv_fps": 1250.0 }
       ],
-      "cep_scale_floor": 1.0
+      "trajectory_profile": [],
+      "sd_mv_fps": 18.0
+        "velocity_sigma_fps": 18.0,
+        "angular_sigma_moa": 0.2
+    },
+    {
+      "name": "Federal Premium 9mm HST JHP 124gr",
+      "tags": ["commercial", "jhp"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.150,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 124.0,
+      "caliber_inches": 0.355,
+      "length_mm": 14.58,
+      "velocity_profile": [
+        { "distance_inches": 0, "velocity_ms": 365.8 },
+        { "distance_inches": 900, "velocity_ms": 346.3 },
+        { "distance_inches": 1800, "velocity_ms": 330.1 },
+        { "distance_inches": 2700, "velocity_ms": 316.7 },
+        { "distance_inches": 3600, "velocity_ms": 305.4 }
+      ],
+      "barrel_mv_profile": [
+        { "barrel_in": 2.0,  "mv_fps": 975.0 },
+        { "barrel_in": 3.0,  "mv_fps": 1040.0 },
+        { "barrel_in": 4.0,  "mv_fps": 1100.0 },
+        { "barrel_in": 6.0,  "mv_fps": 1170.0 },
+        { "barrel_in": 8.0,  "mv_fps": 1200.0 },
+        { "barrel_in": 16.0, "mv_fps": 1250.0 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":   900, "trajectory_inches":   0.00 },
+        { "distance_inches":  1800, "trajectory_inches":  -0.80 },
+        { "distance_inches":  2700, "trajectory_inches":  -3.40 },
+        { "distance_inches":  3600, "trajectory_inches":  -8.00 }
+      ],
+      "sd_mv_fps": 18.0
+    },
+    {
+      "name": "CCI Blazer Brass 9mm FMJ 115gr",
+      "tags": ["commercial", "fmj"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.155,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 115.0,
+      "caliber_inches": 0.355,
+      "length_mm": 14.61,
+      "velocity_profile": [
+        { "distance_inches": 0,    "velocity_ms": 349.0 },
+        { "distance_inches": 1800, "velocity_ms": 322.5 },
+        { "distance_inches": 3600, "velocity_ms": 303.0 }
+      ],
+      "barrel_mv_profile": [
+        { "barrel_in": 2.0,  "mv_fps": 975.0 },
+        { "barrel_in": 3.0,  "mv_fps": 1040.0 },
+        { "barrel_in": 4.0,  "mv_fps": 1100.0 },
+        { "barrel_in": 6.0,  "mv_fps": 1170.0 },
+        { "barrel_in": 8.0,  "mv_fps": 1200.0 },
+        { "barrel_in": 16.0, "mv_fps": 1250.0 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":   900, "trajectory_inches":   0.00 },
+        { "distance_inches":  1800, "trajectory_inches":  -0.90 },
+        { "distance_inches":  2700, "trajectory_inches":  -3.70 },
+        { "distance_inches":  3600, "trajectory_inches":  -8.60 }
+      ],
+      "sd_mv_fps": 18.0
+    },
+    {
+      "name": "Winchester White Box 9mm 115gr FMJ",
+      "tags": ["commercial", "fmj"],
+      "cartridge_keys": ["9x19"],
+      "bc": 0.139,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "mass_grains": 115.0,
+      "caliber_inches": 0.355,
+      "length_mm": 13.97,
+      "velocity_profile": [
+        { "distance_inches": 0, "velocity_ms": 362.8 }
+      ],
+      "barrel_mv_profile": [
+        { "barrel_in": 2.0,  "mv_fps": 975.0 },
+        { "barrel_in": 3.0,  "mv_fps": 1040.0 },
+        { "barrel_in": 4.0,  "mv_fps": 1100.0 },
+        { "barrel_in": 6.0,  "mv_fps": 1170.0 },
+        { "barrel_in": 8.0,  "mv_fps": 1200.0 },
+        { "barrel_in": 16.0, "mv_fps": 1250.0 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches": 0, "trajectory_inches": -1.50 },
+        { "distance_inches": 900, "trajectory_inches": 0.00 },
+        { "distance_inches": 1800, "trajectory_inches": -0.90 },
+        { "distance_inches": 2700, "trajectory_inches": -3.70 },
+        { "distance_inches": 3600, "trajectory_inches": -8.60 }
+      ],
+      "sd_mv_fps": 18.0
     },
     {
       "name": ".45 ACP 230gr FMJ",
@@ -110,26 +231,17 @@
       "cartridge_keys": ["45_acp"],
       "_source": "M1911A1 mil-spec / Federal AE, Remington UMC, Winchester USA. BC ~0.195 G1. 850 fps (259.1 m/s) from 5-in barrel.",
       "bc": 0.195,
-      "sigma_bc": 0.020,
       "drag_model_index": 0,
       "reference_barrel_inches": 5.0,
       "mv_adjustment_fps_per_in": 12.0,
       "mass_grains": 230.0,
-      "sigma_mass_grains": 0.75,
       "caliber_inches": 0.451,
-      "sigma_caliber_inches": 0.0005,
       "length_mm": 17.30,
-      "sigma_length_mm": 0.35,
       "velocity_profile": [
         { "distance_inches": 0, "velocity_ms": 259.1 }
       ],
       "trajectory_profile": [],
-      "cep_table_moa": [
-        { "range_m": 15.0, "cep50_moa": 2.00 },
-        { "range_m": 25.0, "cep50_moa": 2.50 },
-        { "range_m": 50.0, "cep50_moa": 3.50 }
-      ],
-      "cep_scale_floor": 1.0
+      "sd_mv_fps": 18.0
     },
     {
       "name": ".300 BLK 220gr OTM Subsonic",
@@ -137,26 +249,17 @@
       "cartridge_keys": ["300_blk"],
       "_source": "Generic 220gr OTM subsonic category (Sellier & Bellot 200gr FMJ, Remington 220gr OTM, etc.). BC 0.270 G1 is a conservative midpoint for round-nose / blunt OTM subsonic profiles; Hornady 208gr A-Max (BC 0.648) and similar high-BC projectiles are outliers. MV 1060 fps (323.1 m/s) from 16-in barrel per Sellier & Bellot and Remington published data. mv_adj 10 fps/in (very flat curve below ~1100 fps; short-barrel effect minimal for subsonic loads). NOTE: supersonic and subsonic loads require separate zero profiles; POI shift is significant.",
       "bc": 0.270,
-      "sigma_bc": 0.040,
       "drag_model_index": 0,
       "reference_barrel_inches": 16.0,
       "mv_adjustment_fps_per_in": 10.0,
       "mass_grains": 220.0,
-      "sigma_mass_grains": 1.00,
       "caliber_inches": 0.308,
-      "sigma_caliber_inches": 0.0005,
       "length_mm": 34.80,
-      "sigma_length_mm": 0.35,
       "velocity_profile": [
         { "distance_inches": 0, "velocity_ms": 323.1 }
       ],
       "trajectory_profile": [],
-      "cep_table_moa": [
-        { "range_m":  50.0, "cep50_moa": 1.50 },
-        { "range_m": 100.0, "cep50_moa": 2.50 },
-        { "range_m": 150.0, "cep50_moa": 4.50 }
-      ],
-      "cep_scale_floor": 1.0
+      "sd_mv_fps": 15.0
     },
     {
       "name": "5.56 NATO 62gr M855 FMJ",
@@ -447,6 +550,88 @@
         { "range_m": 800.0, "cep50_moa": 1.30 }
       ],
       "cep_scale_floor": 1.0
+    },
+    {
+      "name": ".30-06 Springfield 168gr BTHP MatchKing",
+      "tags": ["match", "hpbt"],
+      "cartridge_keys": ["30_06_sprg"],
+      "_source": "Federal Gold Medal GM3006M / Sierra #2200 168gr MatchKing. Same projectile as .308 Win 168gr SMK; larger .30-06 case delivers ~50 fps additional MV from equivalent barrel. G1 BC 0.462 (Sierra dominant velocity zone). MV 2700 fps (823.0 m/s) from 24-in barrel per Federal published data. mv_adj 20 fps/in (larger case, slightly different curve than .308 Win).",
+      "bc": 0.462,
+      "sigma_bc": 0.012,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 20.0,
+      "mass_grains": 168.0,
+      "sigma_mass_grains": 0.15,
+      "caliber_inches": 0.308,
+      "sigma_caliber_inches": 0.0002,
+      "length_mm": 28.96,
+      "sigma_length_mm": 0.10,
+      "velocity_profile": [
+        { "distance_inches":     0, "velocity_ms": 823.0 },
+        { "distance_inches":  3600, "velocity_ms": 762.5 },
+        { "distance_inches":  7200, "velocity_ms": 703.8 },
+        { "distance_inches": 10800, "velocity_ms": 647.5 },
+        { "distance_inches": 14400, "velocity_ms": 594.3 },
+        { "distance_inches": 18000, "velocity_ms": 544.7 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":  3600, "trajectory_inches":   1.70 },
+        { "distance_inches":  7200, "trajectory_inches":   0.00 },
+        { "distance_inches": 10800, "trajectory_inches":  -7.80 },
+        { "distance_inches": 14400, "trajectory_inches": -23.10 },
+        { "distance_inches": 18000, "trajectory_inches": -47.20 }
+      ],
+      "cep_table_moa": [
+        { "range_m": 100.0, "cep50_moa": 0.80 },
+        { "range_m": 300.0, "cep50_moa": 1.00 },
+        { "range_m": 800.0, "cep50_moa": 1.40 }
+      ],
+      "cep_scale_floor": 1.0,
+      "sd_mv_fps": 15.0
+    },
+    {
+      "name": ".30-06 Springfield 150gr FMJ",
+      "tags": ["commercial", "fmj"],
+      "cartridge_keys": ["30_06_sprg"],
+      "_source": "M2 Ball equivalent / Federal AE, Remington UMC, Winchester USA. Generic 150gr .30 cal FMJ (flat base, mild steel core). G1 BC 0.338 per Sierra #2105 / Federal published trajectory data. MV 2910 fps (887.0 m/s) from 24-in barrel. mv_adj 20 fps/in. Bullet length ~28.00 mm typical for 150gr .308 FMJ.",
+      "bc": 0.338,
+      "sigma_bc": 0.020,
+      "drag_model_index": 0,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 20.0,
+      "mass_grains": 150.0,
+      "sigma_mass_grains": 0.75,
+      "caliber_inches": 0.308,
+      "sigma_caliber_inches": 0.0005,
+      "length_mm": 28.00,
+      "sigma_length_mm": 0.35,
+      "velocity_profile": [
+        { "distance_inches":     0, "velocity_ms": 887.0 },
+        { "distance_inches":  3600, "velocity_ms": 801.7 },
+        { "distance_inches":  7200, "velocity_ms": 720.2 },
+        { "distance_inches": 10800, "velocity_ms": 644.4 },
+        { "distance_inches": 14400, "velocity_ms": 576.0 },
+        { "distance_inches": 18000, "velocity_ms": 515.7 }
+      ],
+      "trajectory_profile": [
+        { "distance_inches":     0, "trajectory_inches":  -1.50 },
+        { "distance_inches":  3600, "trajectory_inches":   1.40 },
+        { "distance_inches":  7200, "trajectory_inches":   0.00 },
+        { "distance_inches": 10800, "trajectory_inches":  -8.50 },
+        { "distance_inches": 14400, "trajectory_inches": -25.80 },
+        { "distance_inches": 18000, "trajectory_inches": -54.30 }
+      ],
+      "cep_table_moa": [
+        { "range_m": 100.0, "cep50_moa": 1.50 },
+        { "range_m": 300.0, "cep50_moa": 2.00 },
+        { "range_m": 600.0, "cep50_moa": 2.80 }
+      ],
+      "cep_scale_floor": 1.0,
+      "sd_mv_fps": 20.0
+        "velocity_sigma_fps": 20.0,
+        "angular_sigma_moa": 0.2
     },
     {
       "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
