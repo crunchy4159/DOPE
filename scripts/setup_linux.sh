@@ -15,9 +15,15 @@ if [[ ! -d ".venv" ]]; then
     python3 -m venv .venv
 fi
 
-# Activate venv and upgrade pip
 echo "Activating venv and upgrading pip..."
-source .venv/bin/activate
+if [[ -f ".venv/bin/activate" ]]; then
+    source .venv/bin/activate
+elif [[ -f ".venv/Scripts/activate" ]]; then
+    source .venv/Scripts/activate
+else
+    echo "Could not find venv activation script (.venv/bin/activate or .venv/Scripts/activate)." >&2
+    exit 1
+fi
 python -m pip install --upgrade pip
 
 # Install PlatformIO if missing
