@@ -2235,10 +2235,12 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
         preset.tags.push_back(kBulletTierLabels[g_state.new_cartridge_tier_index]);
     if (g_state.new_cartridge_construction_index >= 0 &&
         g_state.new_cartridge_construction_index < kNumBulletConstructions)
-        preset.tags.push_back(kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
+        preset.tags.push_back(
+            kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
     if (g_state.new_cartridge_shape_index > 0 &&
         g_state.new_cartridge_shape_index < kNumBulletShapes)
-        preset.tags.push_back(kBulletShapeLabels[g_state.new_cartridge_shape_index]);
+        preset.tags.push_back(
+            kBulletShapeLabels[g_state.new_cartridge_shape_index]);
 
     if (g_state.selected_cartridge_preset >= 0 &&
         g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
@@ -2926,7 +2928,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
                 if (g_state.new_cartridge_shape_index > 0 &&
                     g_state.new_cartridge_shape_index < kNumBulletShapes)
-                    tmp.tags.push_back(kBulletShapeLabels[g_state.new_cartridge_shape_index]);
+                    tmp.tags.push_back(
+                        kBulletShapeLabels[g_state.new_cartridge_shape_index]);
                 const int existing = FindCartridgePresetByName(tmp.name);
                 if (existing >= 0) {
                     g_cartridge_presets[existing] = tmp;
@@ -3449,7 +3452,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             if (uc_on) {
                 ImGui::SameLine();
                 float zr_sig = is_imperial ? (g_state.uc_config.sigma_zero_range_m * M_TO_YD)
-                                           : g_state.uc_config.sigma_zero_range_m;
+                                            : g_state.uc_config.sigma_zero_range_m;
                 ImGui::SetNextItemWidth(-1.0f);
                 if (ImGui::InputFloat(is_imperial ? "+/-Zero(yd)##zr" : "+/-Zero(m)##zr", &zr_sig,
                                       0.0f, 0.0f, "%.2f")) {
@@ -4100,6 +4103,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const ImVec2 impact_point(center.x + hold_windage_moa * moa_to_px,
                                   center.y - hold_elevation_moa * moa_to_px);
 
+
         // Analytic Gaussian uncertainty ellipse contours (no shot simulation/sampling).
         if (sol.uncertainty_valid &&
             (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
@@ -4107,11 +4111,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
             constexpr int kSegments = 48;
 
-            // Labeled contour outlines at 1σ / 2σ / 3σ
-            const float sigma_levels[] = {1.0f, 2.0f, 3.0f};
-            const ImU32 sigma_colors[] = {IM_COL32(255, 200, 80, 230), IM_COL32(180, 120, 255, 180),
-                                          IM_COL32(80, 160, 255, 140)};
-            for (int si = 0; si < 3; ++si) {
+            // Labeled contour outlines at 1σ / 2σ (no 3σ)
+            const float sigma_levels[] = {1.0f, 2.0f};
+            const ImU32 sigma_colors[] = {IM_COL32(255, 200, 80, 230), IM_COL32(180, 120, 255, 180)};
+            for (int si = 0; si < 2; ++si) {
                 const float k = sigma_levels[si];
                 ImVec2 pts[kSegments];
                 for (int s = 0; s < kSegments; ++s) {
@@ -4154,204 +4157,179 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         };
 
         ImGui::Begin("Side View Arc");
-        {
-            ImDrawList* side_draw_list = ImGui::GetWindowDrawList();
-            FiringSolution side_sol = frame_sol;
-            float side_range_m = side_sol.horizontal_range_m;
-            if (side_range_m <= 0.0f) {
-                side_range_m = (side_sol.range_m > 0.0f) ? side_sol.range_m : g_state.lrf_range;
-            }
-            side_range_m = ClampValue(side_range_m, 1.0f, 5000.0f);
-
-            const float range_m_to_disp = is_imperial ? M_TO_YD : 1.0f;
-            const float range_disp_to_m = is_imperial ? YD_TO_M : 1.0f;
-            const float off_m_to_disp = is_imperial ? 39.3700787f : 100.0f;
-            const float off_disp_to_m = is_imperial ? IN_TO_MM / 1000.0f : 0.01f;
-
-            // elevation_angle_rad is the muzzle elevation (hold) — already accounts for
-            // both gravity drop AND terrain slope.
-            const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
-            const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
-
-            // The target sits at target_elevation_m above/below the shooter's horizontal.
-            const float target_elev_m = g_state.target_elevation_m;
-
-            // Gravity-caused drop relative to straight line of aim.
-            // (unused here — trajectory arc is computed geometrically below)
-
-            const float side_range_disp = side_range_m * range_m_to_disp;
-            const float side_range_scale_disp = ClampValue(nice_ceil_fn(side_range_disp * 1.15f),
-                                                           10.0f, is_imperial ? 6000.0f : 5000.0f);
-            const float side_range_step_m = (side_range_scale_disp / 5.0f) * range_disp_to_m;
-            const float side_range_scale_m = side_range_scale_disp * range_disp_to_m;
-
-            // (wind_relative_rad / headwind_ms used only in top-down panel)
-
-            ImGui::Text("Range: %.1f %s", side_range_disp, is_imperial ? "yd" : "m");
-            ImGui::Text("Target elevation: %.2f %s", target_elev_m * off_m_to_disp,
-                        is_imperial ? "in" : "cm");
-            ImGui::Text("Elevation Angle: %.4f deg", elevation_angle_deg);
-            ImGui::Separator();
-
-            ImVec2 side_avail = ImGui::GetContentRegionAvail();
-            const ImVec2 side_canvas_size(ClampValue(side_avail.x, 260.0f, 900.0f),
-                                          ClampValue(side_avail.y, 180.0f, 320.0f));
-            const ImVec2 side_canvas_pos = ImGui::GetCursorScreenPos();
-            ImGui::InvisibleButton("##side_view_canvas", side_canvas_size);
-            const ImVec2 side_canvas_end(side_canvas_pos.x + side_canvas_size.x,
-                                         side_canvas_pos.y + side_canvas_size.y);
-
-            side_draw_list->AddRectFilled(side_canvas_pos, side_canvas_end,
-                                          IM_COL32(24, 24, 28, 255));
-            side_draw_list->AddRect(side_canvas_pos, side_canvas_end, IM_COL32(80, 80, 90, 255));
-
-            const float s_left_margin = 82.0f;
-            const float s_plot_left = side_canvas_pos.x + s_left_margin;
-            const float s_plot_right = side_canvas_end.x - 20.0f;
-            const float s_plot_top = side_canvas_pos.y + 20.0f;
-            const float s_plot_bottom = side_canvas_end.y - 24.0f;
-            const float s_w = s_plot_right - s_plot_left;
-            const float s_h = s_plot_bottom - s_plot_top;
-
-            // y-axis must show the peak of the arc AND the target elevation.
-            // peak height above shooter level ≈ half the hold-angle height
-            const float arc_peak_m = std::fabs(std::tan(elevation_angle_rad)) * side_range_m * 0.5f;
-            const float raw_margin_m =
-                std::max({arc_peak_m, std::fabs(target_elev_m), off_disp_to_m * 5.0f}) * 1.3f;
-            const float side_drop_scale_m = ClampValue(raw_margin_m, off_disp_to_m * 5.0f, 5000.0f);
-            // Extend the axis so both shooter level (0) and target elevation are in view.
-            const float y_min_m =
-                std::min(-side_drop_scale_m, target_elev_m - side_drop_scale_m * 0.1f);
-            const float y_max_m =
-                std::max(side_drop_scale_m, target_elev_m + side_drop_scale_m * 0.1f);
-            const float y_span_m = std::max(y_max_m - y_min_m, 0.01f);
-
-            auto map_x = [&](float x_m) { return s_plot_left + (x_m / side_range_scale_m) * s_w; };
-            auto map_y = [&](float y_m) { return s_plot_top + ((y_max_m - y_m) / y_span_m) * s_h; };
-
-            // Grid - Vertical (Range)
-            for (int i = 0; i <= 5; ++i) {
-                float gx_m = i * side_range_step_m;
-                float gx = map_x(gx_m);
-                side_draw_list->AddLine(ImVec2(gx, s_plot_top), ImVec2(gx, s_plot_bottom),
-                                        IM_COL32(60, 60, 70, 150), 1.0f);
-                char tick[32];
-                std::snprintf(tick, sizeof(tick), "%.0f", gx_m * range_m_to_disp);
-                side_draw_list->AddText(ImVec2(gx - 8.0f, s_plot_bottom + 3.0f),
-                                        IM_COL32(180, 180, 190, 255), tick);
-            }
-
-            // Grid - Horizontal (Elevation/Drop)
-            const float y_step_disp = nice_ceil_fn(y_max_m * off_m_to_disp / 3.0f);
-            const float y_step_m = y_step_disp / off_m_to_disp;
-            for (float gy_m = -std::floor(side_drop_scale_m / y_step_m) * y_step_m;
-                 gy_m <= side_drop_scale_m + 0.001f; gy_m += y_step_m) {
-                float gy = map_y(gy_m);
-                if (gy < s_plot_top || gy > s_plot_bottom)
-                    continue;
-                side_draw_list->AddLine(ImVec2(s_plot_left, gy), ImVec2(s_plot_right, gy),
-                                        IM_COL32(60, 60, 70, 80), 1.0f);
-                char tick[32];
-                std::snprintf(tick, sizeof(tick), "%.0f", gy_m * off_m_to_disp);
-                side_draw_list->AddText(ImVec2(side_canvas_pos.x + 5.0f, gy - 7.0f),
-                                        IM_COL32(160, 160, 170, 255), tick);
-            }
-
-            const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
-
-            // Shooter silhouette
-            {
-                const float shooter_h_m = 72.0f * (IN_TO_MM / 1000.0f);
-                const float px_per_m_y = s_h / y_span_m;
-                const float h_px = std::fmax(shooter_h_m * px_per_m_y, 10.0f);
-                const float sx = muzzle_pt.x - 25.0f;
-                const float sy = muzzle_pt.y;
-                const float hip_y = sy + 0.30f * h_px;
-                const float knee_y = sy + 0.55f * h_px;
-                const float feet_y = sy + 0.85f * h_px;
-                const float head_r = std::fmax(0.12f * h_px, 5.0f);
-                const float head_cy = sy - head_r * 1.5f;
-                const float splay = std::fmax(0.10f * h_px, 5.0f);
-                const ImU32 sc = IM_COL32(180, 195, 220, 220);
-                side_draw_list->AddCircle(ImVec2(sx, head_cy), head_r, sc, 16, 1.8f);
-                side_draw_list->AddLine(ImVec2(sx, head_cy + head_r), ImVec2(sx, hip_y), sc, 1.8f);
-                side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx - splay, knee_y), sc, 1.8f);
-                side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx + splay, knee_y), sc, 1.8f);
-                side_draw_list->AddLine(ImVec2(sx - splay, knee_y), ImVec2(sx - splay, feet_y), sc,
-                                        1.8f);
-                side_draw_list->AddLine(ImVec2(sx + splay, knee_y), ImVec2(sx + splay, feet_y), sc,
-                                        1.8f);
-                side_draw_list->AddLine(ImVec2(sx, sy), muzzle_pt, IM_COL32(195, 208, 230, 220),
-                                        1.8f);
-            }
-
-            // Trajectory arc: ends at target_elev_m (the known target height), not at zero.
-            // The quadratic profile approximates a real ballistic arc that leaves the muzzle
-            // at elevation_angle_rad and arrives at (side_range_m, target_elev_m).
-            const int samples = 64;
-            ImVec2 arc[samples + 1];
-            float tan_theta = std::tanf(elevation_angle_rad);
-            for (int i = 0; i <= samples; ++i) {
-                float t = (float)i / samples;
-                float x = t * side_range_m;
-                // Quadratic that starts at 0 and ends at target_elev_m, peaking above the
-                // straight line of aim midway.
-                float y_line = tan_theta * x; // straight line of aim
-                float y_sag = (target_elev_m - tan_theta * side_range_m) * (x / side_range_m) *
-                              (x / side_range_m); // gravity sag term
-                float y = y_line + y_sag;
-                arc[i] = ImVec2(map_x(x), map_y(y));
-            }
-            side_draw_list->AddPolyline(arc, samples + 1, IM_COL32(98, 203, 255, 255), 0, 2.0f);
-
-            // Known shot point: the single point on the terrain we ranged.
-            // We do NOT draw a wall — we only know where this one point is.
-            const ImVec2 impact_pt(map_x(side_range_m), map_y(target_elev_m));
-
-            // The scope line-of-sight (hold angle) projected straight forward to target range.
-            // hold_elevation_moa already encodes: terrain_slope + ballistic_drop_correction.
-            // So aim_line_y = target_elev_m + drop_correction_m.
-            // The aim line sits *above* the impact point by exactly the ballistic drop.
-            const float aim_line_y = std::tan(elevation_angle_rad) * side_range_m;
-            const ImVec2 aim_pt(map_x(side_range_m), map_y(aim_line_y));
-
-            // Draw the target crosshair at the known shot point (impact_pt = target_elev_m)
-            side_draw_list->AddCircle(impact_pt, 5.0f, IM_COL32(255, 100, 100, 220), 0, 1.5f);
-            side_draw_list->AddLine(ImVec2(impact_pt.x - 7.0f, impact_pt.y),
-                                    ImVec2(impact_pt.x + 7.0f, impact_pt.y),
-                                    IM_COL32(255, 100, 100, 180), 1.0f);
-            side_draw_list->AddLine(ImVec2(impact_pt.x, impact_pt.y - 7.0f),
-                                    ImVec2(impact_pt.x, impact_pt.y + 7.0f),
-                                    IM_COL32(255, 100, 100, 180), 1.0f);
-
-            // Scope line-of-sight: the straight dashed line from muzzle to aim_pt.
-            // This visually shows how much above/below the target the scope is pointed.
-            side_draw_list->AddLine(muzzle_pt, aim_pt, IM_COL32(200, 200, 200, 110), 1.0f);
-
-            // Label the gap between aim_pt and impact_pt as "hold" if elevation delta exists
-            if (std::fabs(aim_line_y - target_elev_m) > 0.001f) {
-                const float mid_y = (aim_pt.y + impact_pt.y) * 0.5f;
-                side_draw_list->AddLine(ImVec2(impact_pt.x + 6.0f, aim_pt.y),
-                                        ImVec2(impact_pt.x + 6.0f, impact_pt.y),
-                                        IM_COL32(255, 190, 90, 160), 1.0f);
-                side_draw_list->AddText(ImVec2(impact_pt.x + 9.0f, mid_y - 6.0f),
-                                        IM_COL32(255, 190, 90, 200), "hold");
-            }
-
-            side_draw_list->AddCircleFilled(muzzle_pt, 3.5f, IM_COL32(130, 255, 130, 255));
-            side_draw_list->AddCircleFilled(impact_pt, 4.0f, IM_COL32(255, 90, 90, 255));
-            side_draw_list->AddCircleFilled(aim_pt, 3.0f, IM_COL32(255, 190, 90, 200));
-
-            // Angle overlay box
-
-            side_draw_list->AddRectFilled(ImVec2(s_plot_left + 2.0f, s_plot_bottom - 26.0f),
-                                          ImVec2(s_plot_left + 130.0f, s_plot_bottom - 2.0f),
-                                          IM_COL32(10, 10, 14, 210));
-            char elev_txt[64];
-            std::snprintf(elev_txt, sizeof(elev_txt), "Elev: %.4f deg", elevation_angle_deg);
-            side_draw_list->AddText(ImVec2(s_plot_left + 4.0f, s_plot_bottom - 14.0f),
-                                    IM_COL32(255, 235, 100, 255), elev_txt);
+        // --- Restored bullet arc, muzzle, and impact point rendering ---
+        ImDrawList* side_draw_list = ImGui::GetWindowDrawList();
+        FiringSolution side_sol = frame_sol;
+        float side_range_m = side_sol.horizontal_range_m;
+        if (side_range_m <= 0.0f) {
+            side_range_m = (side_sol.range_m > 0.0f) ? side_sol.range_m : g_state.lrf_range;
         }
+        side_range_m = ClampValue(side_range_m, 1.0f, 5000.0f);
+        const float range_m_to_display = is_imperial ? M_TO_YD : 1.0f;
+        const float range_display_to_m = is_imperial ? YD_TO_M : 1.0f;
+        const float offset_m_to_display = is_imperial ? 39.3700787f : 100.0f;
+        const float offset_display_to_m = is_imperial ? IN_TO_MM / 1000.0f : 0.01f;
+        const float drop_m = std::fabs(side_sol.hold_elevation_moa) * MOA_TO_RAD * side_range_m;
+        const float side_range_display = side_range_m * range_m_to_display;
+        const float side_range_scale_display = ClampValue(nice_ceil_fn(side_range_display * 1.15f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
+        const float side_range_step_display = side_range_scale_display / 5.0f;
+        const float side_range_scale_m = side_range_scale_display * range_display_to_m;
+        const float side_range_step_m = side_range_step_display * range_display_to_m;
+        const float drop_display = drop_m * offset_m_to_display;
+        const char* drop_units = is_imperial ? "in" : "cm";
+        const float range_display = side_range_display;
+        const char* range_units = is_imperial ? "yd" : "m";
+        const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
+        const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
+        ImGui::Text("Range: %.1f %s", range_display, range_units);
+        ImGui::Text("Estimated drop at target: %.2f %s", drop_display, drop_units);
+        ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
+        ImGui::Separator();
+        ImVec2 side_avail = ImGui::GetContentRegionAvail();
+        float side_canvas_w = side_avail.x;
+        if (side_canvas_w < 260.0f)
+            side_canvas_w = 260.0f;
+        if (side_canvas_w > 900.0f)
+            side_canvas_w = 900.0f;
+        float side_canvas_h = side_avail.y;
+        if (side_canvas_h < 180.0f)
+            side_canvas_h = 180.0f;
+        if (side_canvas_h > 320.0f)
+            side_canvas_h = 320.0f;
+        const ImVec2 side_canvas_size(side_canvas_w, side_canvas_h);
+        const ImVec2 side_canvas_pos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##side_view_arc_canvas", side_canvas_size);
+        const ImVec2 side_canvas_end(side_canvas_pos.x + side_canvas_size.x, side_canvas_pos.y + side_canvas_size.y);
+        side_draw_list->AddRectFilled(side_canvas_pos, side_canvas_end, IM_COL32(24, 24, 28, 255));
+        side_draw_list->AddRect(side_canvas_pos, side_canvas_end, IM_COL32(80, 80, 90, 255));
+        const float left_margin = 82.0f;
+        const float right_margin = 20.0f;
+        const float top_margin = 20.0f;
+        const float bottom_margin = 24.0f;
+        const float plot_left = side_canvas_pos.x + left_margin;
+        const float plot_right = side_canvas_end.x - right_margin;
+        const float plot_top = side_canvas_pos.y + top_margin;
+        const float plot_bottom = side_canvas_end.y - bottom_margin;
+        const float plot_width = plot_right - plot_left;
+        const float plot_height = plot_bottom - plot_top;
+        const float side_drop_min_scale_m = drop_m * 1.5f;
+        const float side_drop_scale_m = ClampValue(side_drop_min_scale_m, offset_display_to_m, 5000.0f);
+        // Removed unused variable: side_drop_scale_display
+        // Removed unused variables: side_exaggeration, drop_scale_display
+        const float y_min_m = -side_drop_scale_m;
+        const float y_max_m = side_drop_scale_m;
+        const float y_span_m = (y_max_m - y_min_m > 0.01f) ? (y_max_m - y_min_m) : 0.01f;
+        auto map_x = [&](float x_m) -> float { return plot_left + (x_m / side_range_scale_m) * plot_width; };
+        auto map_y = [&](float y_m) -> float { const float t = (y_max_m - y_m) / y_span_m; return plot_top + t * plot_height; };
+        for (int i = 0; i <= 5; ++i) {
+            const float grid_x_m = side_range_step_m * static_cast<float>(i);
+            const float gx = map_x(grid_x_m);
+            side_draw_list->AddLine(ImVec2(gx, plot_top), ImVec2(gx, plot_bottom), IM_COL32(60, 60, 70, 150), 1.0f);
+            char tick_label[32];
+            const float tick_display = is_imperial ? (grid_x_m * M_TO_YD) : grid_x_m;
+            std::snprintf(tick_label, sizeof(tick_label), "%.0f", tick_display);
+            side_draw_list->AddText(ImVec2(gx - 8.0f, plot_bottom + 3.0f), IM_COL32(180, 180, 190, 255), tick_label);
+        }
+        // Small scale markers (10, 25, 50 yd/m)
+        {
+            const float m_list[] = {10.0f, 25.0f, 50.0f};
+            for (float m_val : m_list) {
+                const float m_m = is_imperial ? (m_val * YD_TO_M) : m_val;
+                if (m_m < side_range_scale_m * 0.98f && m_m > 0.1f) {
+                    const float mx = map_x(m_m);
+                    bool redundant = false;
+                    for (int i = 0; i <= 5; ++i) {
+                        if (std::fabs(m_m - side_range_step_m * i) < (side_range_step_m * 0.02f)) {
+                            redundant = true;
+                            break;
+                        }
+                    }
+                    if (!redundant) {
+                        side_draw_list->AddLine(ImVec2(mx, plot_bottom - 5.0f), ImVec2(mx, plot_bottom), IM_COL32(130, 130, 145, 120), 1.0f);
+                        char m_label[16];
+                        std::snprintf(m_label, sizeof(m_label), "%.0f", m_val);
+                        side_draw_list->AddText(ImVec2(mx - 6.0f, plot_bottom + 3.0f), IM_COL32(130, 130, 145, 180), m_label);
+                    }
+                }
+            }
+        }
+        const float los_y = map_y(0.0f);
+        side_draw_list->AddLine(ImVec2(plot_left, los_y), ImVec2(plot_right, los_y), IM_COL32(170, 170, 180, 220), 1.0f);
+        side_draw_list->AddLine(ImVec2(plot_left, plot_top), ImVec2(plot_left, plot_bottom), IM_COL32(120, 120, 130, 180), 1.0f);
+        const float half_drop_m = -side_drop_scale_m * 0.5f;
+        const float half_drop_y = map_y(half_drop_m);
+        side_draw_list->AddLine(ImVec2(plot_left, half_drop_y), ImVec2(plot_right, half_drop_y), IM_COL32(70, 70, 80, 140), 1.0f);
+        const float half_rise_m = side_drop_scale_m * 0.5f;
+        const float half_rise_y = map_y(half_rise_m);
+        side_draw_list->AddLine(ImVec2(plot_left, half_rise_y), ImVec2(plot_right, half_rise_y), IM_COL32(70, 70, 80, 140), 1.0f);
+        const int sample_count = 64;
+        ImVec2 arc_points[sample_count + 1];
+        const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
+        // Bullet parabolic path (bright cyan)
+        {
+            const float tan_theta_raw = std::tanf(elevation_angle_rad);
+            const float tan_theta = std::isfinite(tan_theta_raw) ? tan_theta_raw : 0.0f;
+            for (int i = 0; i <= sample_count; ++i) {
+                const float t = static_cast<float>(i) / static_cast<float>(sample_count);
+                const float x_m = t * side_range_m;
+                const float curvature_weight = 1.30f - (0.30f * t);
+                float y_m = (tan_theta * x_m) - ((tan_theta / side_range_m) * x_m * x_m * curvature_weight);
+                if (!std::isfinite(y_m)) {
+                    y_m = 0.0f;
+                }
+                arc_points[i] = ImVec2(map_x(x_m), map_y(y_m));
+            }
+            side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
+        }
+        // --- Stick figure (shooter silhouette) ---
+        {
+            const float shooter_height_in = 72.0f;
+            const float shooter_height_m = shooter_height_in * (IN_TO_MM / 1000.0f);
+            const float px_per_m_y = plot_height / (2.0f * side_drop_scale_m);
+            const float h_px_true = shooter_height_m * px_per_m_y;
+            const float h_px = std::fmax(h_px_true, 6.0f);
+            const float shoulder_y = muzzle_pt.y;
+            const float hip_down = 0.30f * h_px;
+            const float knee_down = 0.52f * h_px;
+            const float feet_down = 0.77f * h_px;
+            const float head_r = std::fmax(0.10f * h_px, 4.5f);
+            const float head_cy = shoulder_y - head_r * 1.4f;
+            const float hip_y = shoulder_y + hip_down;
+            const float knee_y = shoulder_y + knee_down;
+            const float feet_y = shoulder_y + feet_down;
+            const float sx = muzzle_pt.x - 22.0f;
+            const float splay = std::fmax(0.08f * h_px, 4.0f);
+            const ImU32 sc = IM_COL32(160, 175, 200, 220);
+            const float sw = 1.6f;
+            side_draw_list->AddCircle(ImVec2(sx, head_cy), head_r, sc, 16, sw);
+            side_draw_list->AddLine(ImVec2(sx, head_cy + head_r), ImVec2(sx, hip_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx - splay, knee_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx, hip_y), ImVec2(sx + splay, knee_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx - splay, knee_y), ImVec2(sx - splay, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx + splay, knee_y), ImVec2(sx + splay, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx - splay, feet_y), ImVec2(sx - splay - 5.0f, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx + splay, feet_y), ImVec2(sx + splay + 5.0f, feet_y), sc, sw);
+            side_draw_list->AddLine(ImVec2(sx, shoulder_y), muzzle_pt, IM_COL32(175, 188, 210, 220), sw);
+            side_draw_list->AddLine(ImVec2(sx, shoulder_y), ImVec2(sx - 12.0f, shoulder_y + 0.07f * h_px), sc, sw);
+            const float brace_x = sx - splay - 7.0f;
+            const float top_y = head_cy - head_r;
+            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x + 3.0f, top_y), IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddText(ImVec2(brace_x - 28.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
+        }
+        // --- Line from muzzle to aim point ---
+        // Only declare 'aim_pt' once, before use
+        side_draw_list->AddLine(muzzle_pt, ImVec2(map_x(side_range_m), map_y(drop_m)), IM_COL32(255, 190, 90, 160), 1.5f);
+        const ImVec2 impact_pt(map_x(side_range_m), map_y(0.0f));
+        const ImVec2 aim_pt(map_x(side_range_m), map_y(drop_m));
+        side_draw_list->AddCircleFilled(muzzle_pt, 3.5f, IM_COL32(130, 255, 130, 255));
+        side_draw_list->AddCircleFilled(impact_pt, 4.0f, IM_COL32(255, 90, 90, 255));
+        side_draw_list->AddCircleFilled(aim_pt, 3.0f, IM_COL32(255, 190, 90, 200));
+        side_draw_list->AddText(ImVec2(muzzle_pt.x + 6.0f, muzzle_pt.y - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
+        side_draw_list->AddText(ImVec2(impact_pt.x - 50.0f, impact_pt.y + 4.0f), IM_COL32(230, 200, 200, 255), "Impact");
+        side_draw_list->AddText(ImVec2(aim_pt.x - 48.0f, aim_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Aim pt");
+        // --- End restored rendering ---
         ImGui::End();
 
         ImGui::Begin("Top Down Drift");
@@ -4363,10 +4341,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             d_range_m = ClampValue(d_range_m, 1.0f, 5000.0f);
 
             float lateral_m = d_sol.hold_windage_moa * MOA_TO_RAD * d_range_m;
-            float d_range_disp = d_range_m * (is_imperial ? M_TO_YD : 1.0f);
-            float d_range_scale_disp = ClampValue(nice_ceil_fn(d_range_disp * 1.05f), 10.0f,
-                                                  is_imperial ? 6000.0f : 5000.0f);
-            float d_range_scale_m = d_range_scale_disp * (is_imperial ? YD_TO_M : 1.0f);
+            // d_range_scale_m will be set later after plot bounds
 
             // More sensitive scale for small drifts
             const float lat_abs_m = std::fabs(lateral_m);
@@ -4385,6 +4360,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             ImGui::InvisibleButton("##drift_canvas", d_canvas_size);
             const ImVec2 d_canvas_end(d_canvas_pos.x + d_canvas_size.x,
                                       d_canvas_pos.y + d_canvas_size.y);
+            // --- Enforce minimum 1:2 scale ratio for shot length ---
+            // y-axis scaling
+            // Use d_range_m and d_range_scale_m, define off_disp_to_m and min_ratio locally
+            const float elevation_angle_rad = 0.0f; // Set to 0 or replace with actual value if available
+            const float arc_peak_m = std::fabs(std::tan(elevation_angle_rad)) * d_range_m * 0.5f;
+            const float off_disp_to_m = is_imperial ? IN_TO_MM / 1000.0f : 0.01f;
+            const float target_elev_m = g_state.target_elevation_m;
+            float max_val = arc_peak_m;
+            max_val = std::max(max_val, std::fabs(target_elev_m));
+            max_val = std::max(max_val, off_disp_to_m * 5.0f);
+            // side_drop_scale_m removed (unused)
+            // Minimum horizontal scale: must be at least half the vertical scale
 
             drift_draw_list->AddRectFilled(d_canvas_pos, d_canvas_end, IM_COL32(24, 24, 28, 255));
             drift_draw_list->AddRect(d_canvas_pos, d_canvas_end, IM_COL32(80, 80, 90, 255));
@@ -4395,6 +4382,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             const float d_plot_bottom = d_canvas_end.y - 25.0f;
             const float d_center_x = d_plot_left + (d_plot_right - d_plot_left) * 0.5f;
 
+            // Set and enforce horizontal scale here
+            const float stick_height_m = 2.0f;
+            float shot_length_m = d_range_m; // horizontal shot length
+            float min_horizontal_scale = std::max(stick_height_m, shot_length_m);
+            float d_range_scale_m = min_horizontal_scale;
+
             auto d_map_x = [&](float lat_m) {
                 return d_center_x + (lat_m / lateral_scale_m) * (d_plot_right - d_plot_left) * 0.5f;
             };
@@ -4403,8 +4396,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             };
 
             // Grid - Range lines
-            const float d_range_step_m =
-                (d_range_scale_disp / 5.0f) * (is_imperial ? YD_TO_M : 1.0f);
+            // Adjust range step to match forced scaling
+            const float d_range_step_m = (d_range_scale_m / 5.0f);
             for (int i = 0; i <= 5; ++i) {
                 float gy_m = i * d_range_step_m;
                 float gy = d_map_y(gy_m);
@@ -4417,9 +4410,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
 
             // Grid - Lateral lines
-            const float lat_step_m =
-                nice_ceil_fn(lateral_scale_m * (is_imperial ? 39.37f : 100.0f) / 3.0f) /
-                (is_imperial ? 39.37f : 100.0f);
+            // Adjust lateral step to match forced scaling
+            const float lat_step_m = nice_ceil_fn(d_range_scale_m * (is_imperial ? 39.37f : 100.0f) / 3.0f) / (is_imperial ? 39.37f : 100.0f);
             for (float lx_m = -std::floor(lateral_scale_m / lat_step_m) * lat_step_m;
                  lx_m <= lateral_scale_m + 0.001f; lx_m += lat_step_m) {
                 float gx = d_map_x(lx_m);
@@ -4449,7 +4441,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             drift_draw_list->AddPolyline(d_pts, 65, IM_COL32(255, 180, 90, 255), 0, 2.2f);
 
             const ImVec2 d_muzzle(d_map_x(0.0f), d_map_y(0.0f));
-            const ImVec2 d_impact(d_map_x(0.0f), d_map_y(d_range_m));
+            // Offset impact vertically by target_elev_m in pixels
+            const ImVec2 d_impact(d_map_x(0.0f), d_map_y(d_range_m) - target_elev_m * ((d_plot_bottom - d_plot_top) / d_range_scale_m));
             const ImVec2 d_aim(d_map_x(-lateral_m), d_map_y(d_range_m)); // Aim point is offset
 
             // Target: single known shot point — draw a crosshair, not a wall.
