@@ -67,9 +67,7 @@
         { "distance_inches": 0, "velocity_ms": 376.4 }
       ],
       "trajectory_profile": [],
-      "sd_mv_fps": 20.0
-        "velocity_sigma_fps": 20.0,
-        "angular_sigma_moa": 0.2
+        "sd_mv_fps": 20.0
     },
     {
       "name": "Remington .22lr Subsonic 40gr CPHP",
@@ -94,9 +92,7 @@
         { "distance_inches":  3600, "trajectory_inches":   0.00  },
         { "distance_inches":  5400, "trajectory_inches":  -16.40 }
       ],
-      "sd_mv_fps": 20.0
-        "velocity_sigma_fps": 20.0,
-        "angular_sigma_moa": 0.2
+        "sd_mv_fps": 20.0
     },
     {
       "name": "9mm 124gr FMJ",
@@ -122,9 +118,7 @@
         { "barrel_in": 16.0, "mv_fps": 1250.0 }
       ],
       "trajectory_profile": [],
-      "sd_mv_fps": 18.0
-        "velocity_sigma_fps": 18.0,
-        "angular_sigma_moa": 0.2
+        "sd_mv_fps": 18.0
     },
     {
       "name": "Federal Premium 9mm HST JHP 124gr",
@@ -159,7 +153,7 @@
         { "distance_inches":  2700, "trajectory_inches":  -3.40 },
         { "distance_inches":  3600, "trajectory_inches":  -8.00 }
       ],
-      "sd_mv_fps": 18.0
+        "sd_mv_fps": 18.0
     },
     {
       "name": "CCI Blazer Brass 9mm FMJ 115gr",
@@ -192,7 +186,7 @@
         { "distance_inches":  2700, "trajectory_inches":  -3.70 },
         { "distance_inches":  3600, "trajectory_inches":  -8.60 }
       ],
-      "sd_mv_fps": 18.0
+        "sd_mv_fps": 18.0
     },
     {
       "name": "Winchester White Box 9mm 115gr FMJ",
@@ -223,7 +217,7 @@
         { "distance_inches": 2700, "trajectory_inches": -3.70 },
         { "distance_inches": 3600, "trajectory_inches": -8.60 }
       ],
-      "sd_mv_fps": 18.0
+        "sd_mv_fps": 18.0
     },
     {
       "name": ".45 ACP 230gr FMJ",
@@ -241,7 +235,7 @@
         { "distance_inches": 0, "velocity_ms": 259.1 }
       ],
       "trajectory_profile": [],
-      "sd_mv_fps": 18.0
+        "sd_mv_fps": 18.0
     },
     {
       "name": ".300 BLK 220gr OTM Subsonic",
@@ -589,7 +583,7 @@
         { "range_m": 800.0, "cep50_moa": 1.40 }
       ],
       "cep_scale_floor": 1.0,
-      "sd_mv_fps": 15.0
+        "sd_mv_fps": 15.0
     },
     {
       "name": ".30-06 Springfield 150gr FMJ",
@@ -629,9 +623,7 @@
         { "range_m": 600.0, "cep50_moa": 2.80 }
       ],
       "cep_scale_floor": 1.0,
-      "sd_mv_fps": 20.0
-        "velocity_sigma_fps": 20.0,
-        "angular_sigma_moa": 0.2
+        "sd_mv_fps": 20.0
     },
     {
       "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
@@ -712,6 +704,6 @@
         { "range_m": 1500.0, "cep50_moa": 1.20 }
       ],
       "cep_scale_floor": 1.0
-    }
+      }
   ]
 }
