@@ -4172,7 +4172,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float range_m_to_display = is_imperial ? M_TO_YD : 1.0f;
         const float range_display_to_m = is_imperial ? YD_TO_M : 1.0f;
         const float offset_m_to_display = is_imperial ? 39.3700787f : 100.0f;
-        const float offset_display_to_m = is_imperial ? IN_TO_MM / 1000.0f : 0.01f;
+
         const float side_range_display = side_range_m * range_m_to_display;
         const float side_range_scale_display = ClampValue(nice_ceil_fn(side_range_display * 1.15f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
         const float side_range_step_display = side_range_scale_display / 5.0f;
@@ -4185,8 +4185,53 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         // Target world-space height (what the user entered as elevation delta)
         const float target_elev_m = g_state.target_elevation_m;
 
-        // Pre-pass: scan the engine trajectory table to find the real arc extents.
-        // World-space height at range x:  y_world = x * tan(launch_angle) + drop_m_from_table
+        // Fetch the solver's actual world-space Y of the bullet at the target range.
+        // tp.drop_m is the absolute Y from the muzzle (y=0), not a "drop below bore".
+        // The solver runs with zero_angle_rad as launch angle; it does NOT know about
+        // hold_elevation_moa, sight-line correction, Coriolis, cant, or boresight offsets —
+        // all of which are folded into hold_elevation_moa but are irrelevant to where the
+        // bullet physically is.
+        float traj_drop_at_target_m = 0.0f;
+        bool  have_traj_at_target   = false;
+        {
+            TrajectoryPoint tp_tgt{};
+            // Use floor (truncation), not round — the solver fills table_[N] at int(x),
+            // so table_[685] is the last valid entry for 685.8 m (750 yd). round() would
+            // request index 686 which is beyond max_valid_range_, causing have_traj_at_target
+            // to be false and silently falling back to the broken hold_elevation_moa slope.
+            const int tgt_idx = static_cast<int>(side_range_m);
+            // Secondary fallback: if tgt_idx itself is just beyond the populated table due to
+            // floating-point noise in side_range_m, try tgt_idx-1. This makes the lookup
+            // robust against any off-by-one at the table boundary regardless of cause.
+            if (DOPE_GetTrajectoryPoint(tgt_idx, &tp_tgt) ||
+                (tgt_idx > 0 && DOPE_GetTrajectoryPoint(tgt_idx - 1, &tp_tgt))) {
+                traj_drop_at_target_m = tp_tgt.drop_m;
+                have_traj_at_target   = true;
+            }
+        }
+
+        // Geometric bore slope that makes the arc end precisely at (side_range_m, target_elev_m).
+        //
+        // Arc formula:  y_arc(x) = x * geom_tan_theta + tp.drop_m(x)
+        // At x = side_range_m:
+        //   y_arc = side_range_m * geom_tan_theta + traj_drop_at_target_m  must equal  target_elev_m
+        //   => geom_tan_theta = (target_elev_m - traj_drop_at_target_m) / side_range_m
+        //
+        // This is always correct because tp.drop_m IS the solver's world-space Y, so adding
+        // this exact linear offset closes the gap between the solver zero-angle run and where
+        // the bullet actually lands after the corrected hold is applied.
+        //
+        // Physically: the bore line y = x*geom_tan_theta points above the target by exactly
+        // |traj_drop_at_target_m|, which is the ballistic drop the bullet must overcome.
+        //
+        // If no trajectory table is available yet, fall back to hold_elevation_moa as a rough
+        // proxy (slightly wrong due to sight-line offset, but arc will still draw something).
+        const float geom_tan_theta = (have_traj_at_target && side_range_m > 0.01f)
+            ? ((target_elev_m - traj_drop_at_target_m) / side_range_m)
+            : (std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f);
+
+        // Pre-pass: scan the engine trajectory table to find the real arc extents using the
+        // corrected geometric slope (not hold_elevation_moa which would shift the extents wrong).
         float arc_y_hi = 0.0f;
         float arc_y_lo = 0.0f;
         {
@@ -4194,7 +4239,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             for (int r = 0; r <= scan_max; ++r) {
                 TrajectoryPoint tp{};
                 if (DOPE_GetTrajectoryPoint(r, &tp)) {
-                    const float y_w = static_cast<float>(r) * std::tan(elevation_angle_rad) + tp.drop_m;
+                    const float y_w = static_cast<float>(r) * geom_tan_theta + tp.drop_m;
                     arc_y_hi = std::max(arc_y_hi, y_w);
                     arc_y_lo = std::min(arc_y_lo, y_w);
                 }
@@ -4205,11 +4250,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo});
         const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi});
         const float span_raw = std::max(y_hi_raw - y_lo_raw, 0.01f);
-        const float y_lo = y_lo_raw - span_raw * 0.18f;   // 18% headroom bottom
-        const float y_hi = y_hi_raw + span_raw * 0.18f;   // 18% headroom top
-        const float y_span_m = y_hi - y_lo;
+        float y_lo = y_lo_raw - span_raw * 0.18f;   // 18% headroom bottom
+        float y_hi = y_hi_raw + span_raw * 0.18f;   // 18% headroom top
+        float y_span_m = y_hi - y_lo;
 
-        const float drop_at_target_m = std::fabs(target_elev_m - (side_range_m * std::tan(elevation_angle_rad)));
+        // "Drop at target" = how far below the bore line the bullet lands.
+        // With geom_tan_theta, the bore line at target range is (target_elev_m - traj_drop_at_target_m),
+        // so the gravitational drop = |traj_drop_at_target_m| (the solver's raw world-Y at that range).
+        // Falls back to the hold-angle estimate if no trajectory table yet.
+        const float drop_at_target_m = have_traj_at_target
+            ? std::fabs(traj_drop_at_target_m)
+            : std::fabs(target_elev_m - (side_range_m * geom_tan_theta));
         const float drop_display = drop_at_target_m * offset_m_to_display;
         const char* drop_units = is_imperial ? "in" : "cm";
         ImGui::Text("Range: %.1f %s", side_range_display, range_units);
@@ -4243,6 +4294,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float plot_bottom = side_canvas_end.y - bottom_margin;
         const float plot_width = plot_right - plot_left;
         const float plot_height = plot_bottom - plot_top;
+
+        // Stick-figure scale enforcement: if the 72in reference figure would render taller
+        // than 80px at the current Y window, expand the Y window (not shrink the figure).
+        // This keeps the pixel:metre scale physically honest — 80px always = 72 inches —
+        // while ensuring the arc and aim point stay within view.
+        // Centred on the content midpoint so both muzzle and target remain visible.
+        {
+            const float shooter_height_m_ref = 72.0f * (IN_TO_MM / 1000.0f); // 1.8288 m
+            const float h_px_uncapped = shooter_height_m_ref * (plot_height / y_span_m);
+            if (h_px_uncapped > 80.0f) {
+                const float new_y_span_m = shooter_height_m_ref * plot_height / 80.0f;
+                const float y_center = (y_lo + y_hi) * 0.5f;
+                y_lo = y_center - new_y_span_m * 0.5f;
+                y_hi = y_center + new_y_span_m * 0.5f;
+                y_span_m = new_y_span_m;
+            }
+        }
+
         auto map_x = [&](float x_m) -> float { return plot_left + (x_m / side_range_scale_m) * plot_width; };
         auto map_y = [&](float y_m) -> float { const float t = (y_hi - y_m) / y_span_m; return plot_top + t * plot_height; };
         for (int i = 0; i <= 5; ++i) {
@@ -4328,14 +4397,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImVec2 arc_points[sample_count + 1];
         const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
         // Bullet arc — use engine RK4 trajectory table when available;
-        // fall back to a physically correct parabola anchored at (0,0) and (range, target_elev_m).
+        // fall back to a physically anchored parabola through (0,0) and (range, target_elev_m).
+        // Both paths use geom_tan_theta so the arc is guaranteed to end at the impact marker.
         {
-            const float tan_theta = std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f;
-            // Fallback parabola coefficient: y = tan_theta*x - K*x²
-            // Solve for K such that y(range) == target_elev_m:
-            //   K = (tan_theta - target_elev_m/range) / range
+            // Fallback parabola: y = geom_tan_theta*x - K*x²
+            // Solve for K so that y(side_range_m) = target_elev_m:
+            //   side_range_m*geom_tan_theta - K*side_range_m² = target_elev_m
+            //   K = (geom_tan_theta - target_elev_m/side_range_m) / side_range_m
+            // = -traj_drop_at_target_m / side_range_m² when trajectory table is available.
             const float K_fallback = (side_range_m > 0.01f)
-                ? ((tan_theta - target_elev_m / side_range_m) / side_range_m)
+                ? ((geom_tan_theta - target_elev_m / side_range_m) / side_range_m)
                 : 0.0f;
 
             for (int i = 0; i <= sample_count; ++i) {
@@ -4343,12 +4414,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 const float x_m = frac * side_range_m;
                 TrajectoryPoint tp{};
                 float y_w;
-                if (DOPE_GetTrajectoryPoint(static_cast<int>(std::round(x_m)), &tp)) {
-                    // World-space height: bore-line projection + solver drop
-                    y_w = x_m * tan_theta + tp.drop_m;
+                if (DOPE_GetTrajectoryPoint(static_cast<int>(x_m), &tp)) {
+                    // World-space height: geometric bore-line slope + solver's absolute Y.
+                    // geom_tan_theta is derived from tp.drop_m at target, so y_w(side_range_m)
+                    // = target_elev_m exactly.
+                    y_w = x_m * geom_tan_theta + tp.drop_m;
                 } else {
-                    // Fallback: correct parabola through (0,0) and (range, target_elev_m)
-                    y_w = tan_theta * x_m - K_fallback * x_m * x_m;
+                    // Fallback parabola anchored at (0,0) and (side_range_m, target_elev_m).
+                    y_w = geom_tan_theta * x_m - K_fallback * x_m * x_m;
                 }
                 if (!std::isfinite(y_w)) y_w = 0.0f;
                 arc_points[i] = ImVec2(map_x(x_m), map_y(y_w));
@@ -4361,7 +4434,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             const float shooter_height_m = shooter_height_in * (IN_TO_MM / 1000.0f);
             const float px_per_m_y = plot_height / y_span_m;
             const float h_px_true = shooter_height_m * px_per_m_y;
-            const float h_px = std::fmax(h_px_true, 6.0f);
+            const float h_px = std::fmin(std::fmax(h_px_true, 6.0f), 80.0f);
             const float shoulder_y = muzzle_pt.y;
             const float hip_down = 0.30f * h_px;
             const float knee_down = 0.52f * h_px;
@@ -4392,9 +4465,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
             side_draw_list->AddText(ImVec2(brace_x - 28.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
         }
-        // Bore projection point: where the barrel axis intersects target range
-        // (sits above impact by the amount gravity drops the bullet)
-        const float bore_proj_y_m = side_range_m * std::tan(elevation_angle_rad);
+        // Bore projection point: where the barrel axis intersects the target range plane.
+        // With geom_tan_theta, this is always at (target_elev_m - traj_drop_at_target_m),
+        // i.e., the barrel points above the target by exactly the ballistic drop — correct.
+        const float bore_proj_y_m = side_range_m * geom_tan_theta;
         const ImVec2 bore_proj_pt(map_x(side_range_m), map_y(bore_proj_y_m));
 
         // Barrel aim line (bore axis): muzzle → bore projection (amber)
