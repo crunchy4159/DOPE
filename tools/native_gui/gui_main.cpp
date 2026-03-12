@@ -3798,10 +3798,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             constexpr float kFtToM = 0.3048f;
             float target_elev_display =
                 is_imperial ? (g_state.target_elevation_m * kMToFt) : g_state.target_elevation_m;
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::InputFloat(is_imperial ? "Elevation Delta (ft, +up/-down)"
-                                              : "Elevation Delta (m, +up/-down)",
-                                  &target_elev_display, is_imperial ? 0.5f : 0.1f,
+            // Input first (no visible label), then place the human-friendly label to the right.
+            const float avail_elev = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(avail_elev * 0.55f);
+            if (ImGui::InputFloat("##target_elev", &target_elev_display,
+                                  is_imperial ? 0.5f : 0.1f,
                                   is_imperial ? 5.0f : 1.0f, "%.2f")) {
                 g_state.target_elevation_m =
                     is_imperial ? (target_elev_display * kFtToM) : target_elev_display;
@@ -3811,6 +3812,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     g_state.target_elevation_m = std::copysign(max_abs, g_state.target_elevation_m);
                 }
             }
+            ImGui::SameLine();
+            ImGui::TextUnformatted(is_imperial ? "Elevation Delta (ft, +up/-down)"
+                                               : "Elevation Delta (m, +up/-down)");
         }
 
         if (uc_on) {
@@ -4169,19 +4173,46 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float range_display_to_m = is_imperial ? YD_TO_M : 1.0f;
         const float offset_m_to_display = is_imperial ? 39.3700787f : 100.0f;
         const float offset_display_to_m = is_imperial ? IN_TO_MM / 1000.0f : 0.01f;
-        const float drop_m = std::fabs(side_sol.hold_elevation_moa) * MOA_TO_RAD * side_range_m;
         const float side_range_display = side_range_m * range_m_to_display;
         const float side_range_scale_display = ClampValue(nice_ceil_fn(side_range_display * 1.15f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
         const float side_range_step_display = side_range_scale_display / 5.0f;
         const float side_range_scale_m = side_range_scale_display * range_display_to_m;
         const float side_range_step_m = side_range_step_display * range_display_to_m;
-        const float drop_display = drop_m * offset_m_to_display;
-        const char* drop_units = is_imperial ? "in" : "cm";
-        const float range_display = side_range_display;
         const char* range_units = is_imperial ? "yd" : "m";
         const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
         const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
-        ImGui::Text("Range: %.1f %s", range_display, range_units);
+
+        // Target world-space height (what the user entered as elevation delta)
+        const float target_elev_m = g_state.target_elevation_m;
+
+        // Pre-pass: scan the engine trajectory table to find the real arc extents.
+        // World-space height at range x:  y_world = x * tan(launch_angle) + drop_m_from_table
+        float arc_y_hi = 0.0f;
+        float arc_y_lo = 0.0f;
+        {
+            const int scan_max = static_cast<int>(std::ceil(side_range_m));
+            for (int r = 0; r <= scan_max; ++r) {
+                TrajectoryPoint tp{};
+                if (DOPE_GetTrajectoryPoint(r, &tp)) {
+                    const float y_w = static_cast<float>(r) * std::tan(elevation_angle_rad) + tp.drop_m;
+                    arc_y_hi = std::max(arc_y_hi, y_w);
+                    arc_y_lo = std::min(arc_y_lo, y_w);
+                }
+            }
+        }
+
+        // Build Y window: must contain muzzle (0), target, and arc extremes.
+        const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo});
+        const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi});
+        const float span_raw = std::max(y_hi_raw - y_lo_raw, 0.01f);
+        const float y_lo = y_lo_raw - span_raw * 0.18f;   // 18% headroom bottom
+        const float y_hi = y_hi_raw + span_raw * 0.18f;   // 18% headroom top
+        const float y_span_m = y_hi - y_lo;
+
+        const float drop_at_target_m = std::fabs(target_elev_m - (side_range_m * std::tan(elevation_angle_rad)));
+        const float drop_display = drop_at_target_m * offset_m_to_display;
+        const char* drop_units = is_imperial ? "in" : "cm";
+        ImGui::Text("Range: %.1f %s", side_range_display, range_units);
         ImGui::Text("Estimated drop at target: %.2f %s", drop_display, drop_units);
         ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
         ImGui::Separator();
@@ -4212,15 +4243,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float plot_bottom = side_canvas_end.y - bottom_margin;
         const float plot_width = plot_right - plot_left;
         const float plot_height = plot_bottom - plot_top;
-        const float side_drop_min_scale_m = drop_m * 1.5f;
-        const float side_drop_scale_m = ClampValue(side_drop_min_scale_m, offset_display_to_m, 5000.0f);
-        // Removed unused variable: side_drop_scale_display
-        // Removed unused variables: side_exaggeration, drop_scale_display
-        const float y_min_m = -side_drop_scale_m;
-        const float y_max_m = side_drop_scale_m;
-        const float y_span_m = (y_max_m - y_min_m > 0.01f) ? (y_max_m - y_min_m) : 0.01f;
         auto map_x = [&](float x_m) -> float { return plot_left + (x_m / side_range_scale_m) * plot_width; };
-        auto map_y = [&](float y_m) -> float { const float t = (y_max_m - y_m) / y_span_m; return plot_top + t * plot_height; };
+        auto map_y = [&](float y_m) -> float { const float t = (y_hi - y_m) / y_span_m; return plot_top + t * plot_height; };
         for (int i = 0; i <= 5; ++i) {
             const float grid_x_m = side_range_step_m * static_cast<float>(i);
             const float gx = map_x(grid_x_m);
@@ -4230,6 +4254,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             std::snprintf(tick_label, sizeof(tick_label), "%.0f", tick_display);
             side_draw_list->AddText(ImVec2(gx - 8.0f, plot_bottom + 3.0f), IM_COL32(180, 180, 190, 255), tick_label);
         }
+
+        // Y-axis ticks and labels (height in m or ft)
+        {
+            // Choose a nice tick interval that produces ~5 ticks across the window
+            const float raw_step = (y_hi - y_lo) / 5.0f;
+            // Round to a clean value: find order of magnitude and snap
+            const float mag = std::pow(10.0f, std::floor(std::log10(std::fabs(raw_step) + 1e-9f)));
+            float y_tick_step = mag;
+            if      (raw_step / mag >= 5.0f) y_tick_step = mag * 5.0f;
+            else if (raw_step / mag >= 2.0f) y_tick_step = mag * 2.0f;
+            y_tick_step = std::max(y_tick_step, 0.001f);
+
+            float tick_y = std::floor(y_lo / y_tick_step) * y_tick_step;
+            const char* y_unit_lbl = is_imperial ? "ft" : "m";
+            // Unit label at top-left corner
+            side_draw_list->AddText(ImVec2(side_canvas_pos.x + 2.0f, plot_top - 2.0f),
+                                    IM_COL32(140, 140, 155, 200), y_unit_lbl);
+            while (tick_y <= y_hi + y_tick_step * 0.01f) {
+                const float sy = map_y(tick_y);
+                if (sy >= plot_top - 1.0f && sy <= plot_bottom + 1.0f) {
+                    // Tick mark
+                    side_draw_list->AddLine(ImVec2(plot_left - 5.0f, sy), ImVec2(plot_left, sy),
+                                            IM_COL32(120, 120, 130, 200), 1.0f);
+                    // Horizontal grid line (very dim)
+                    side_draw_list->AddLine(ImVec2(plot_left, sy), ImVec2(plot_right, sy),
+                                            IM_COL32(55, 55, 65, 80), 1.0f);
+                    // Label
+                    char y_lbl[32];
+                    const float disp_val = is_imperial ? (tick_y * 3.28084f) : tick_y;
+                    std::snprintf(y_lbl, sizeof(y_lbl), "%.1f", disp_val);
+                    side_draw_list->AddText(ImVec2(plot_left - 44.0f, sy - 6.0f),
+                                            IM_COL32(160, 160, 170, 220), y_lbl);
+                }
+                tick_y += y_tick_step;
+            }
+        }
+        
         // Small scale markers (10, 25, 50 yd/m)
         {
             const float m_list[] = {10.0f, 25.0f, 50.0f};
@@ -4253,31 +4314,44 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
             }
         }
-        const float los_y = map_y(0.0f);
-        side_draw_list->AddLine(ImVec2(plot_left, los_y), ImVec2(plot_right, los_y), IM_COL32(170, 170, 180, 220), 1.0f);
-        side_draw_list->AddLine(ImVec2(plot_left, plot_top), ImVec2(plot_left, plot_bottom), IM_COL32(120, 120, 130, 180), 1.0f);
-        const float half_drop_m = -side_drop_scale_m * 0.5f;
-        const float half_drop_y = map_y(half_drop_m);
-        side_draw_list->AddLine(ImVec2(plot_left, half_drop_y), ImVec2(plot_right, half_drop_y), IM_COL32(70, 70, 80, 140), 1.0f);
-        const float half_rise_m = side_drop_scale_m * 0.5f;
-        const float half_rise_y = map_y(half_rise_m);
-        side_draw_list->AddLine(ImVec2(plot_left, half_rise_y), ImVec2(plot_right, half_rise_y), IM_COL32(70, 70, 80, 140), 1.0f);
+        // Horizontal ground reference — always at world Y=0 (muzzle height), dim
+        side_draw_list->AddLine(ImVec2(plot_left, map_y(0.0f)), ImVec2(plot_right, map_y(0.0f)),
+                                IM_COL32(70, 70, 80, 120), 1.0f);
+        // Line of sight — slanted from muzzle (0,0) to target (range, target_elev_m)
+        side_draw_list->AddLine(ImVec2(map_x(0.0f),         map_y(0.0f)),
+                                ImVec2(map_x(side_range_m), map_y(target_elev_m)),
+                                IM_COL32(170, 170, 180, 220), 1.0f);
+        // Y-axis rule
+        side_draw_list->AddLine(ImVec2(plot_left, plot_top), ImVec2(plot_left, plot_bottom),
+                                IM_COL32(120, 120, 130, 180), 1.0f);
         const int sample_count = 64;
         ImVec2 arc_points[sample_count + 1];
         const ImVec2 muzzle_pt(map_x(0.0f), map_y(0.0f));
-        // Bullet parabolic path (bright cyan)
+        // Bullet arc — use engine RK4 trajectory table when available;
+        // fall back to a physically correct parabola anchored at (0,0) and (range, target_elev_m).
         {
-            const float tan_theta_raw = std::tanf(elevation_angle_rad);
-            const float tan_theta = std::isfinite(tan_theta_raw) ? tan_theta_raw : 0.0f;
+            const float tan_theta = std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f;
+            // Fallback parabola coefficient: y = tan_theta*x - K*x²
+            // Solve for K such that y(range) == target_elev_m:
+            //   K = (tan_theta - target_elev_m/range) / range
+            const float K_fallback = (side_range_m > 0.01f)
+                ? ((tan_theta - target_elev_m / side_range_m) / side_range_m)
+                : 0.0f;
+
             for (int i = 0; i <= sample_count; ++i) {
-                const float t = static_cast<float>(i) / static_cast<float>(sample_count);
-                const float x_m = t * side_range_m;
-                const float curvature_weight = 1.30f - (0.30f * t);
-                float y_m = (tan_theta * x_m) - ((tan_theta / side_range_m) * x_m * x_m * curvature_weight);
-                if (!std::isfinite(y_m)) {
-                    y_m = 0.0f;
+                const float frac = static_cast<float>(i) / static_cast<float>(sample_count);
+                const float x_m = frac * side_range_m;
+                TrajectoryPoint tp{};
+                float y_w;
+                if (DOPE_GetTrajectoryPoint(static_cast<int>(std::round(x_m)), &tp)) {
+                    // World-space height: bore-line projection + solver drop
+                    y_w = x_m * tan_theta + tp.drop_m;
+                } else {
+                    // Fallback: correct parabola through (0,0) and (range, target_elev_m)
+                    y_w = tan_theta * x_m - K_fallback * x_m * x_m;
                 }
-                arc_points[i] = ImVec2(map_x(x_m), map_y(y_m));
+                if (!std::isfinite(y_w)) y_w = 0.0f;
+                arc_points[i] = ImVec2(map_x(x_m), map_y(y_w));
             }
             side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
         }
@@ -4285,7 +4359,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         {
             const float shooter_height_in = 72.0f;
             const float shooter_height_m = shooter_height_in * (IN_TO_MM / 1000.0f);
-            const float px_per_m_y = plot_height / (2.0f * side_drop_scale_m);
+            const float px_per_m_y = plot_height / y_span_m;
             const float h_px_true = shooter_height_m * px_per_m_y;
             const float h_px = std::fmax(h_px_true, 6.0f);
             const float shoulder_y = muzzle_pt.y;
@@ -4318,17 +4392,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
             side_draw_list->AddText(ImVec2(brace_x - 28.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
         }
-        // --- Line from muzzle to aim point ---
-        // Only declare 'aim_pt' once, before use
-        side_draw_list->AddLine(muzzle_pt, ImVec2(map_x(side_range_m), map_y(drop_m)), IM_COL32(255, 190, 90, 160), 1.5f);
-        const ImVec2 impact_pt(map_x(side_range_m), map_y(0.0f));
-        const ImVec2 aim_pt(map_x(side_range_m), map_y(drop_m));
-        side_draw_list->AddCircleFilled(muzzle_pt, 3.5f, IM_COL32(130, 255, 130, 255));
-        side_draw_list->AddCircleFilled(impact_pt, 4.0f, IM_COL32(255, 90, 90, 255));
-        side_draw_list->AddCircleFilled(aim_pt, 3.0f, IM_COL32(255, 190, 90, 200));
-        side_draw_list->AddText(ImVec2(muzzle_pt.x + 6.0f, muzzle_pt.y - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
-        side_draw_list->AddText(ImVec2(impact_pt.x - 50.0f, impact_pt.y + 4.0f), IM_COL32(230, 200, 200, 255), "Impact");
-        side_draw_list->AddText(ImVec2(aim_pt.x - 48.0f, aim_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Aim pt");
+        // Bore projection point: where the barrel axis intersects target range
+        // (sits above impact by the amount gravity drops the bullet)
+        const float bore_proj_y_m = side_range_m * std::tan(elevation_angle_rad);
+        const ImVec2 bore_proj_pt(map_x(side_range_m), map_y(bore_proj_y_m));
+
+        // Barrel aim line (bore axis): muzzle → bore projection (amber)
+        side_draw_list->AddLine(muzzle_pt, bore_proj_pt, IM_COL32(255, 190, 90, 160), 1.5f);
+
+        // Impact: bullet arrives at target_elev_m (moves up/down with the delta)
+        const ImVec2 impact_pt(map_x(side_range_m), map_y(target_elev_m));
+
+        side_draw_list->AddCircleFilled(muzzle_pt,    3.5f, IM_COL32(130, 255, 130, 255));
+        side_draw_list->AddCircleFilled(impact_pt,    4.0f, IM_COL32(255, 90,  90,  255));
+        side_draw_list->AddCircleFilled(bore_proj_pt, 3.0f, IM_COL32(255, 190, 90,  200));
+        side_draw_list->AddText(ImVec2(muzzle_pt.x    + 6.0f, muzzle_pt.y    - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
+        side_draw_list->AddText(ImVec2(impact_pt.x    - 50.0f, impact_pt.y   +  4.0f), IM_COL32(230, 200, 200, 255), "Impact");
+        side_draw_list->AddText(ImVec2(bore_proj_pt.x - 48.0f, bore_proj_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Bore axis");
         // --- End restored rendering ---
         ImGui::End();
 
@@ -4370,7 +4450,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             float max_val = arc_peak_m;
             max_val = std::max(max_val, std::fabs(target_elev_m));
             max_val = std::max(max_val, off_disp_to_m * 5.0f);
-            // side_drop_scale_m removed (unused)
+            // removed unused vertical scale
             // Minimum horizontal scale: must be at least half the vertical scale
 
             drift_draw_list->AddRectFilled(d_canvas_pos, d_canvas_end, IM_COL32(24, 24, 28, 255));

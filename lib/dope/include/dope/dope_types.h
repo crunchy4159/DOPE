@@ -360,6 +360,24 @@ struct UncertaintyConfig {
 };
 
 // ---------------------------------------------------------------------------
+// Trajectory Table Point — per-metre record from the ballistic solver
+// ---------------------------------------------------------------------------
+/**
+ * One entry from the solver's 1-metre-resolution trajectory table.
+ * Coordinates are in the bore-axis frame (X = downrange horizontal).
+ *
+ * drop_m is always ≤ 0 at the reference bore line; to convert to world-space
+ * height add  x_m * tan(launch_angle_rad).
+ */
+struct TrajectoryPoint {
+    float drop_m;        // Vertical displacement from bore line (m, negative = below bore)
+    float windage_m;     // Lateral deflection (m, positive = right)
+    float velocity_ms;   // Bullet speed at this range (m/s)
+    float tof_s;         // Time of flight to this range (s)
+    float energy_j;      // Kinetic energy at this range (J)
+};
+
+// ---------------------------------------------------------------------------
 // Boresight / Reticle Offsets — SRS §10
 // ---------------------------------------------------------------------------
 struct BoresightOffset {

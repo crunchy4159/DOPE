@@ -256,6 +256,19 @@ float DOPE_GetHFOV(void);
  */
 float DOPE_GetVFOV(void);
 
+/**
+ * Read one point from the solver's 1-metre-resolution trajectory table.
+ *
+ * @param range_m  Integer range in metres [0, DOPE_MAX_RANGE_M].
+ * @param out      Caller-allocated TrajectoryPoint to fill.
+ * @return true if the point is valid and was written to *out;
+ *         false if range_m is out of range, no solution is ready, or out is null.
+ *
+ * Only valid after DOPE_GetMode() returns SOLUTION_READY.
+ * The table is rebuilt every time DOPE_Update() produces a new solution.
+ */
+bool DOPE_GetTrajectoryPoint(int range_m, TrajectoryPoint* out);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

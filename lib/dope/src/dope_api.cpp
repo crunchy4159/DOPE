@@ -160,4 +160,8 @@ float DOPE_GetVFOV(void) {
     return s_engine.getVFOV();
 }
 
+bool DOPE_GetTrajectoryPoint(int range_m, TrajectoryPoint* out) {
+    return s_engine.getTrajectoryPoint(range_m, out);
+}
+
 } // extern "C"

@@ -348,6 +348,15 @@ void DOPE_Engine::setExternalReferenceMode(bool enabled) {
     external_reference_mode_ = enabled;
 }
 
+bool DOPE_Engine::getTrajectoryPoint(int range_m, TrajectoryPoint* out) const {
+    if (!out) return false;
+    if (mode_ != DOPE_Mode::SOLUTION_READY) return false;
+    const TrajectoryPoint* p = solver_.getPointAt(range_m);
+    if (!p) return false;
+    *out = *p;
+    return true;
+}
+
 void DOPE_Engine::getSolution(FiringSolution* out) const {
     if (out) {
         *out = solution_;

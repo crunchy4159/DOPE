@@ -55,6 +55,12 @@ public:
     uint32_t getFaultFlags() const { return fault_flags_; }
     uint32_t getDiagFlags() const { return diag_flags_; }
 
+    /**
+     * Read one point from the internal trajectory table.
+     * Returns false if range_m is out of range or no solution exists.
+     */
+    bool getTrajectoryPoint(int range_m, TrajectoryPoint* out) const;
+
     // --- Uncertainty / error propagation --- SRS §14
     void setUncertaintyConfig(const UncertaintyConfig* config);
     static void getDefaultUncertaintyConfig(UncertaintyConfig* out);
