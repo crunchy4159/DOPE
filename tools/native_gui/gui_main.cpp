@@ -3966,8 +3966,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         const float hold_windage_moa = sol.hold_windage_moa;
         const float hold_elevation_moa = sol.hold_elevation_moa;
+
+        // Strip the slope-to-target component so the bullseye shows hold relative to the
+        // target face, not the angle to aim up/downhill. Engine adds
+        // (target_elevation_m / range) * RAD_TO_MOA to hold_elevation_moa; subtract it here.
+        const float slope_component_moa = (sol.range_m > 0.0f)
+            ? (g_state.target_elevation_m / sol.range_m) * RAD_TO_MOA
+            : 0.0f;
+        const float bullseye_elevation_moa = hold_elevation_moa - slope_component_moa;
+
+        // Ring scale must use the same value as the dot placement (bullseye_elevation_moa),
+        // not hold_elevation_moa — otherwise the dot lands at the wrong fraction of the radius.
         const float impact_distance_moa = std::sqrt(hold_windage_moa * hold_windage_moa +
-                                                    hold_elevation_moa * hold_elevation_moa);
+                                                    bullseye_elevation_moa * bullseye_elevation_moa);
 
         float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, sin_r = 0.0f;
         if (sol.uncertainty_valid &&
@@ -4105,7 +4116,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         // Positive elevation hold draws up on screen (negative Y in ImGui).
         const ImVec2 impact_point(center.x + hold_windage_moa * moa_to_px,
-                                  center.y - hold_elevation_moa * moa_to_px);
+                                  center.y - bullseye_elevation_moa * moa_to_px);
 
 
         // Analytic Gaussian uncertainty ellipse contours (no shot simulation/sampling).
@@ -4174,7 +4185,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float offset_m_to_display = is_imperial ? 39.3700787f : 100.0f;
 
         const float side_range_display = side_range_m * range_m_to_display;
-        const float side_range_scale_display = ClampValue(nice_ceil_fn(side_range_display * 1.15f), 10.0f, is_imperial ? 6000.0f : 5000.0f);
+        const float side_range_scale_display = [&]() -> float {
+            // Find the smallest "nice" scale that keeps the shot at ≥85% of the window width.
+            // Uses finer increments than nice_ceil_fn to avoid the 500→1000 jump.
+            const float min_scale = side_range_display * 1.05f; // 5% right-edge headroom
+            const float exp = std::floor(std::log10(std::max(min_scale, 1.0f)));
+            const float base = std::pow(10.0f, exp);
+            const float steps[] = {1.0f, 1.2f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f,
+                                   5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f};
+            for (float s : steps) {
+                if (s * base >= min_scale)
+                    return ClampValue(s * base, 10.0f, is_imperial ? 6000.0f : 5000.0f);
+            }
+            return ClampValue(10.0f * base, 10.0f, is_imperial ? 6000.0f : 5000.0f);
+        }();
         const float side_range_step_display = side_range_scale_display / 5.0f;
         const float side_range_scale_m = side_range_scale_display * range_display_to_m;
         const float side_range_step_m = side_range_step_display * range_display_to_m;
@@ -4386,10 +4410,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         // Horizontal ground reference — always at world Y=0 (muzzle height), dim
         side_draw_list->AddLine(ImVec2(plot_left, map_y(0.0f)), ImVec2(plot_right, map_y(0.0f)),
                                 IM_COL32(70, 70, 80, 120), 1.0f);
-        // Line of sight — slanted from muzzle (0,0) to target (range, target_elev_m)
-        side_draw_list->AddLine(ImVec2(map_x(0.0f),         map_y(0.0f)),
-                                ImVec2(map_x(side_range_m), map_y(target_elev_m)),
-                                IM_COL32(170, 170, 180, 220), 1.0f);
         // Y-axis rule
         side_draw_list->AddLine(ImVec2(plot_left, plot_top), ImVec2(plot_left, plot_bottom),
                                 IM_COL32(120, 120, 130, 180), 1.0f);
@@ -4482,7 +4502,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         side_draw_list->AddCircleFilled(bore_proj_pt, 3.0f, IM_COL32(255, 190, 90,  200));
         side_draw_list->AddText(ImVec2(muzzle_pt.x    + 6.0f, muzzle_pt.y    - 16.0f), IM_COL32(200, 230, 200, 255), "Muzzle");
         side_draw_list->AddText(ImVec2(impact_pt.x    - 50.0f, impact_pt.y   +  4.0f), IM_COL32(230, 200, 200, 255), "Impact");
-        side_draw_list->AddText(ImVec2(bore_proj_pt.x - 48.0f, bore_proj_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Bore axis");
+        side_draw_list->AddText(ImVec2(bore_proj_pt.x - 36.0f, bore_proj_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Aim pt");
+
+        // Hold annotation: vertical bracket + label between aim point and impact point.
+        // Uses hold_elevation_moa minus slope component — the ballistic hold above the
+        // target face — identical to what the bullseye graphic shows.
+        {
+            const float sv_slope_moa = (side_sol.range_m > 0.01f)
+                ? (target_elev_m / side_sol.range_m) * RAD_TO_MOA : 0.0f;
+            const float hold_moa = side_sol.hold_elevation_moa - sv_slope_moa;
+            const float gap_in  = hold_moa * MOA_TO_RAD * side_range_m * 39.3701f;
+            // Vertical bracket between aim pt (bore_proj_pt) and impact (impact_pt)
+            const float bx       = bore_proj_pt.x + 12.0f;
+            const float top_y_h  = std::min(bore_proj_pt.y, impact_pt.y);
+            const float bot_y_h  = std::max(bore_proj_pt.y, impact_pt.y);
+            const float mid_y_h  = (top_y_h + bot_y_h) * 0.5f;
+            if (bot_y_h - top_y_h > 4.0f) {
+                side_draw_list->AddLine(ImVec2(bx, top_y_h), ImVec2(bx, bot_y_h), IM_COL32(200, 200, 90, 180), 1.0f);
+                side_draw_list->AddLine(ImVec2(bx - 3.0f, top_y_h), ImVec2(bx + 3.0f, top_y_h), IM_COL32(200, 200, 90, 180), 1.0f);
+                side_draw_list->AddLine(ImVec2(bx - 3.0f, bot_y_h), ImVec2(bx + 3.0f, bot_y_h), IM_COL32(200, 200, 90, 180), 1.0f);
+            }
+            char hold_lbl[64];
+            std::snprintf(hold_lbl, sizeof(hold_lbl), "%.1fin\n%.2f MOA", gap_in, hold_moa);
+            side_draw_list->AddText(ImVec2(bx + 5.0f, mid_y_h - 10.0f), IM_COL32(220, 220, 100, 230), hold_lbl);
+        }
         // --- End restored rendering ---
         ImGui::End();
 
@@ -4503,8 +4546,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 (is_imperial ? 6.0f * IN_TO_MM / 1000.0f : 0.15f); // 6 inches or 15cm
             float lateral_scale_m = std::max(lat_abs_m * 1.5f, min_lat_scale_m);
 
-            ImGui::Text("Aim offset: %.2f %s", lateral_m * (is_imperial ? 39.37f : 100.0f),
-                        is_imperial ? "in" : "cm");
+            // Aim offset text removed from top-down view per user request.
             ImGui::Separator();
 
             ImVec2 d_avail = ImGui::GetContentRegionAvail();
@@ -4532,7 +4574,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
             const float d_plot_left = d_canvas_pos.x + 35.0f;
             const float d_plot_right = d_canvas_end.x - 35.0f;
-            const float d_plot_top = d_canvas_pos.y + 15.0f;
+            const float d_plot_top = d_canvas_pos.y + 20.0f;
             const float d_plot_bottom = d_canvas_end.y - 25.0f;
             const float d_center_x = d_plot_left + (d_plot_right - d_plot_left) * 0.5f;
 
@@ -4658,15 +4700,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                                   IM_COL32(255, 175, 120, 220));
                 }
 
-                // Windage angle indicator overlay
+                // Windage bracket: horizontal line at target range between aim point and target center
+                {
+                    const float wind_in  = std::fabs(d_sol.hold_windage_moa) * inches_per_moa_val;
+                    const ImVec2 td_target_ctr(d_map_x(0.0f), d_map_y(d_range_m));
+                    const float left_x   = std::min(d_aim.x, td_target_ctr.x);
+                    const float right_x  = std::max(d_aim.x, td_target_ctr.x);
+                    const float mid_x    = (left_x + right_x) * 0.5f;
+                    const float by       = d_aim.y - 10.0f; // bracket sits just above the aim point
+                    if (right_x - left_x > 4.0f) {
+                        drift_draw_list->AddLine(ImVec2(left_x,  by), ImVec2(right_x, by), IM_COL32(200, 200, 90, 180), 1.0f);
+                        drift_draw_list->AddLine(ImVec2(left_x,  by - 3.0f), ImVec2(left_x,  by + 3.0f), IM_COL32(200, 200, 90, 180), 1.0f);
+                        drift_draw_list->AddLine(ImVec2(right_x, by - 3.0f), ImVec2(right_x, by + 3.0f), IM_COL32(200, 200, 90, 180), 1.0f);
+                    }
+                    char wind_bracket_lbl[64];
+                    std::snprintf(wind_bracket_lbl, sizeof(wind_bracket_lbl), "%.1fin\n%.2f MOA",
+                                  wind_in, d_sol.hold_windage_moa);
+                    drift_draw_list->AddText(ImVec2(mid_x - 20.0f, by - 22.0f), IM_COL32(220, 220, 100, 230), wind_bracket_lbl);
+                }
+
+                // Windage annotation
                 const float wx = d_plot_right - 60.0f;
                 const float wy = d_plot_bottom - 28.0f;
+                const float wind_in  = std::fabs(d_sol.hold_windage_moa) * inches_per_moa_val;
                 drift_draw_list->AddRectFilled(ImVec2(wx - 54.0f, wy + 6.0f),
                                                ImVec2(wx + 68.0f, wy + 20.0f),
                                                IM_COL32(10, 10, 14, 210));
                 char wind_label_txt[64];
-                std::snprintf(wind_label_txt, sizeof(wind_label_txt), "Windage: %.4f deg",
-                              d_sol.hold_windage_moa / 60.0f);
+                std::snprintf(wind_label_txt, sizeof(wind_label_txt), "Wind: %.2f MOA (%.2f in)",
+                              d_sol.hold_windage_moa, wind_in);
                 drift_draw_list->AddText(ImVec2(wx - 52.0f, wy + 8.0f),
                                          IM_COL32(110, 235, 255, 255), wind_label_txt);
             }
