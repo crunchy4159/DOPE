@@ -4478,12 +4478,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             side_draw_list->AddLine(ImVec2(sx + splay, feet_y), ImVec2(sx + splay + 5.0f, feet_y), sc, sw);
             side_draw_list->AddLine(ImVec2(sx, shoulder_y), muzzle_pt, IM_COL32(175, 188, 210, 220), sw);
             side_draw_list->AddLine(ImVec2(sx, shoulder_y), ImVec2(sx - 12.0f, shoulder_y + 0.07f * h_px), sc, sw);
-            const float brace_x = sx - splay - 7.0f;
+            const float brace_x = sx - splay - 18.0f;
             const float top_y = head_cy - head_r;
             side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
             side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x + 3.0f, top_y), IM_COL32(110, 125, 150, 140), 1.0f);
             side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
-            side_draw_list->AddText(ImVec2(brace_x - 28.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
+            side_draw_list->AddText(ImVec2(brace_x - 33.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
         }
         // Bore projection point: where the barrel axis intersects the target range plane.
         // With geom_tan_theta, this is always at (target_elev_m - traj_drop_at_target_m),
@@ -4714,7 +4714,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         drift_draw_list->AddLine(ImVec2(right_x, by - 3.0f), ImVec2(right_x, by + 3.0f), IM_COL32(200, 200, 90, 180), 1.0f);
                     }
                     char wind_bracket_lbl[64];
-                    std::snprintf(wind_bracket_lbl, sizeof(wind_bracket_lbl), "%.1fin\n%.2f MOA",
+                    std::snprintf(wind_bracket_lbl, sizeof(wind_bracket_lbl), "%.2fin\n%.2f MOA",
                                   wind_in, d_sol.hold_windage_moa);
                     drift_draw_list->AddText(ImVec2(mid_x - 20.0f, by - 22.0f), IM_COL32(220, 220, 100, 230), wind_bracket_lbl);
                 }
