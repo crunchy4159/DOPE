@@ -35,6 +35,21 @@ else
     echo "PlatformIO already installed."
 fi
 
+# Check for GLFW development libraries (system dependency)
+echo "Checking for GLFW development libraries..."
+if ! pkg-config --exists glfw3 2>/dev/null; then
+    echo ""
+    echo "GLFW3 development libraries not found." >&2
+    echo "Install with one of:" >&2
+    echo "  Ubuntu/Debian:  sudo apt install libglfw3-dev" >&2
+    echo "  Fedora/RHEL:    sudo dnf install glfw-devel" >&2
+    echo "  Arch:           sudo pacman -S glfw" >&2
+    echo ""
+    echo "Then rerun: ./scripts/setup_linux.sh" >&2
+    exit 1
+fi
+echo "GLFW3 found."
+
 # Optionally install other requirements here
 # echo "Installing other requirements..."
 # python -m pip install -r requirements.txt

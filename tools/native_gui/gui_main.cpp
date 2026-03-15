@@ -7,9 +7,13 @@
  * and live rendering of solution output/target hold visualization.
  */
 
+#ifdef _WIN32
 #include <d3d11.h>
 #include <tchar.h>
 #include <windows.h>
+#else
+#include <GLFW/glfw3.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -26,8 +30,13 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
+#else
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+#endif
 #include "imgui.h"
 
 #include "dope/dope_api.h"
@@ -40,8 +49,10 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #endif
 
+#ifdef _WIN32
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam,
                                                              LPARAM lParam);
+#endif
 
 namespace {
 
@@ -49,10 +60,14 @@ namespace {
 // D3D11/ImGui host resources (process lifetime)
 // -----------------------------------------------------------------------------
 
+#ifdef _WIN32
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
+#else
+static GLFWwindow* g_window = nullptr;
+#endif
 
 using namespace dope::math;
 
@@ -1570,6 +1585,7 @@ float ComputeAutoDragCoefficient(const BulletProfile& bullet) {
     return ClampValue(coeff, 0.05f, 1.20f);
 }
 
+#ifdef _WIN32
 void CreateRenderTarget() {
     ID3D11Texture2D* pBackBuffer = nullptr;
     g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
@@ -1647,6 +1663,7 @@ void CleanupDeviceD3D() {
         g_pd3dDevice = nullptr;
     }
 }
+#endif // _WIN32
 
 void ResetStateDefaults() {
     // Canonical GUI defaults. This is the first place to tweak startup behavior.
@@ -2765,6 +2782,7 @@ void ResetEngineAndState() {
     RefreshOutput();
 }
 
+#ifdef _WIN32
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
@@ -2814,10 +2832,14 @@ void EngineTickerThread() {
     KickUncertaintyJob();
 }
 
+#ifdef _WIN32
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
+#else
+int main() {
+#endif    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
     ResetStateDefaults();
 
+#ifdef _WIN32
     WNDCLASSEX wc = {sizeof(WNDCLASSEX),       CS_CLASSDC, WndProc, 0L,      0L,
                      GetModuleHandle(nullptr), nullptr,    nullptr, nullptr, nullptr,
                      _T("DOPE_ImGui_Test"),    nullptr};
@@ -2835,6 +2857,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     ShowWindow(hwnd, SW_SHOWDEFAULT);
     UpdateWindow(hwnd);
+#else
+    if (!glfwInit()) return 1;
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    g_window = glfwCreateWindow(1280, 800, "DOPE Basic Test GUI (ImGui)", nullptr, nullptr);
+    if (!g_window) { glfwTerminate(); return 1; }
+    glfwMakeContextCurrent(g_window);
+    glfwSwapInterval(1);
+#endif
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -2842,8 +2874,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     (void)io;
     ImGui::StyleColorsDark();
 
+#ifdef _WIN32
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+#else
+    ImGui_ImplGlfw_InitForOpenGL(g_window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+#endif
 
     ResetEngineAndState();
 
@@ -2853,6 +2890,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
     bool done = false;
     while (!done) {
+#ifdef _WIN32
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             TranslateMessage(&msg);
@@ -2863,6 +2901,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         if (done) {
             break;
         }
+#else
+        glfwPollEvents();
+        if (glfwWindowShouldClose(g_window)) done = true;
+        if (done) break;
+#endif
 
         // Snapshot display state from the ticker thread. g_display_mutex is
         // held only briefly (string copy), so this never blocks on the solver.
@@ -2874,8 +2917,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             frame_output = g_display_output;
         }
 
+#ifdef _WIN32
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
+#else
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+#endif
         ImGui::NewFrame();
 
         ImGui::Begin("DOPE Inputs");
@@ -4737,11 +4785,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         // Rendering
         ImGui::Render();
+#ifdef _WIN32
         const float clear_color_with_alpha[4] = {0.10f, 0.10f, 0.12f, 1.00f};
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         g_pSwapChain->Present(1, 0);
+#else
+        int display_w, display_h;
+        glfwGetFramebufferSize(g_window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClearColor(0.10f, 0.10f, 0.12f, 1.00f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        glfwSwapBuffers(g_window);
+#endif
     }
 
     g_ticker_running = false;
@@ -4749,13 +4807,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ticker_thread.join();
     }
 
+#ifdef _WIN32
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
-
     CleanupDeviceD3D();
     DestroyWindow(hwnd);
     UnregisterClass(wc.lpszClassName, wc.hInstance);
+#else
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwDestroyWindow(g_window);
+    glfwTerminate();
+#endif
 
     return 0;
 }
+#endif // _WIN32
