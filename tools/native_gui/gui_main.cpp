@@ -2807,6 +2807,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
+#endif // _WIN32
 
 } // namespace
 
@@ -2836,7 +2837,8 @@ void EngineTickerThread() {
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #else
 int main() {
-#endif    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
+#endif
+    // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
     ResetStateDefaults();
 
 #ifdef _WIN32
@@ -4824,4 +4826,3 @@ int main() {
 
     return 0;
 }
-#endif // _WIN32
