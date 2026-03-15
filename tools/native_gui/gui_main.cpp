@@ -72,7 +72,7 @@ static GLFWwindow* g_window = nullptr;
 using namespace dope::math;
 
 // ---------------------------------------------------------------------------
-// Engine ticker thread ΓÇö mirrors the FreeRTOS task pattern on the ESP32-P4.
+// Engine ticker thread - mirrors the FreeRTOS task pattern on the ESP32-P4.
 // The ticker owns DOPE_Update() and RefreshOutput(). The render loop reads
 // only the cached display snapshot, so it never blocks on the solver.
 // ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ struct GunPreset {
 };
 
 // ---------------------------------------------------------------------------
-// Sensor hardware presets ΓÇö each entry specifies the 1-sigma accuracy for
+// Sensor hardware presets - each entry specifies the 1-sigma accuracy for
 // the sensor's output(s).  "Custom" (index 0) lets the user type a manual
 // value; all other entries auto-populate the sigma fields.
 // ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ struct GunPreset {
 // points; the effective sigma is interpolated at the current LRF range.
 
 // ---------------------------------------------------------------------------
-// Generic sensor preset ΓÇö name + DOPE_ErrorTable (x = sensor-specific unit,
+// Generic sensor preset - name + DOPE_ErrorTable (x = sensor-specific unit,
 // sigma = 1-sigma uncertainty in the same unit as x).
 // index 0 is always the "Custom / manual" sentinel: {nullptr, 0}.
 // ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ static const DOPE_ErrorPoint kTemp_TMP117[] = {
     {70.0f, 0.15f},
 };
 
-// Bosch BMP581 ΓÇö onboard temperature sensor
+// Bosch BMP581 - onboard temperature sensor
 //    ΓêÆ5 to +55 ┬░C : ┬▒0.52 ┬░C  (calibrated operating range)
 //   outside range  : ┬▒1.52 ┬░C
 static const DOPE_ErrorPoint kTemp_BMP581[] = {
@@ -273,7 +273,7 @@ static const int kNumMagLatPresets = sizeof(kMagLatPresets) / sizeof(kMagLatPres
 // --- GPS / GNSS module presets ---
 // Used when the application feeds latitude directly from a GNSS receiver.
 // sigma_lat_deg reflects the receiver's position accuracy converted to degrees.
-// No presets yet ΓÇö framework ready for specific modules to be added later.
+// No presets yet - framework ready for specific modules to be added later.
 struct GpsLatPreset {
     const char* name;
     float sigma_lat_deg; // 1-sigma latitude uncertainty (degrees)
@@ -2684,7 +2684,7 @@ void LoadPreset() {
         g_state.lrf_range = j.value("lrf_range_m", 500.0f);
         g_state.target_elevation_m = j.value("target_elevation_m", 0.0f);
 
-        // Uncertainty config ΓÇö load with per-field defaults matching DOPE defaults
+        // Uncertainty config - load with per-field defaults matching DOPE defaults
         UncertaintyConfig uc_def = {};
         DOPE_GetDefaultUncertaintyConfig(&uc_def);
         g_state.uc_config.enabled = j.value("uc_enabled", uc_def.enabled);
@@ -2812,7 +2812,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Engine ticker mirrors the FreeRTOS DOPE task on the ESP32-P4.
+// Engine ticker - mirrors the FreeRTOS DOPE task on the ESP32-P4.
 // Runs DOPE_Update + RefreshOutput at FRAME_STEP_US intervals on a background
 // thread so the render loop never blocks on the solver.
 // ---------------------------------------------------------------------------
@@ -2886,7 +2886,7 @@ int main() {
 
     ResetEngineAndState();
 
-    // Start engine ticker thread ΓÇö mirrors the FreeRTOS DOPE task on ESP32-P4.
+    // Start engine ticker thread - mirrors the FreeRTOS DOPE task on ESP32-P4.
     g_ticker_running = true;
     std::thread ticker_thread(EngineTickerThread);
 
@@ -3580,7 +3580,7 @@ int main() {
         }
         // Latitude source / uncertainty presets (shown when uncertainty propagation is on)
         if (uc_on) {
-            // GPS / GNSS module combo ΓÇö direct latitude feed; highest priority source
+            // GPS / GNSS module combo - direct latitude feed; highest priority source
             {
                 const int gps_count = GetNumGpsLatPresets();
                 const char* gps_labels[16];
@@ -3603,7 +3603,7 @@ int main() {
                         "Takes priority over magnetometer estimation and manual entry.\n"
                         "Set to Custom and enter sigma manually if module is not listed.");
             }
-            // Magnetometer preset ΓÇö shown only when no GPS module is selected
+            // Magnetometer preset - shown only when no GPS module is selected
             if (GetMappedGpsLatPresetIndex(g_state.hw_gps_index) == 0) {
                 const int mag_count = GetNumMagLatPresets();
                 const char* mag_labels[16];
@@ -3707,7 +3707,7 @@ int main() {
                         g_state.uc_config.sigma_pressure_pa, delta_temp_c);
         }
 
-        // Thermometer hardware preset ΓÇö shown above temp row when uc_on.
+        // Thermometer hardware preset - shown above temp row when uc_on.
         if (uc_on) {
             const int tmp_count = GetNumTempSensorPresets();
             const char* tmp_labels[16];
