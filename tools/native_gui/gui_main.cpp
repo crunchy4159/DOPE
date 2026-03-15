@@ -2812,7 +2812,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Engine ticker ΓÇö mirrors the FreeRTOS DOPE task on the ESP32-P4.
+// Engine ticker mirrors the FreeRTOS DOPE task on the ESP32-P4.
 // Runs DOPE_Update + RefreshOutput at FRAME_STEP_US intervals on a background
 // thread so the render loop never blocks on the solver.
 // ---------------------------------------------------------------------------
