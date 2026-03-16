@@ -4300,9 +4300,13 @@ int main() {
         // proxy for the arc slope (slightly wrong due to sight-line offset, but arc will
         // still draw something).
         // geom_tan_theta — unchanged, drives bullet arc only
+        // Fallback: draw a straight line to the target as the arc (pure bore-line angle from horizontal)
+        const float fallback_tan = (side_range_m > 0.01f)
+            ? (target_elev_m / side_range_m)
+            : 0.0f;
         const float geom_tan_theta = (have_traj_at_target && side_range_m > 0.01f)
             ? ((target_elev_m - traj_drop_at_target_m) / side_range_m)
-            : (std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f);
+            : fallback_tan;
 
         // bore_tan_theta — separate: LOS angle + full hold_elevation_moa
         // This is what the barrel actually points at when the shooter dials in the full hold.
@@ -4327,8 +4331,9 @@ int main() {
         }
 
         // Build Y window: must contain muzzle (0), target, and arc extremes.
-        const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo});
-        const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi});
+        // Include bore projection in window calculation for elevated/depressed shots
+        const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo, bore_proj_y_m});
+        const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi, bore_proj_y_m});
         const float span_raw = std::max(y_hi_raw - y_lo_raw, 0.01f);
         float y_lo = y_lo_raw - span_raw * 0.18f;   // 18% headroom bottom
         float y_hi = y_hi_raw + span_raw * 0.18f;   // 18% headroom top
@@ -4544,7 +4549,7 @@ int main() {
         // Bore projection point: where the barrel axis intersects the target range plane.
         // Use `bore_tan_theta` (LOS + hold) for the bore axis projection — this is where
         // the barrel actually points when the shooter dials in the full hold.
-        const float bore_proj_y_m = side_range_m * bore_tan_theta;
+        // bore_proj_y_m is now computed from bore_tan_theta above; just use it here.
         const ImVec2 bore_proj_pt(map_x(side_range_m), map_y(bore_proj_y_m));
 
         // Barrel aim line (bore axis): muzzle → bore projection (amber)
@@ -4561,13 +4566,12 @@ int main() {
         side_draw_list->AddText(ImVec2(bore_proj_pt.x - 36.0f, bore_proj_pt.y - 16.0f), IM_COL32(255, 200, 120, 200), "Aim pt");
 
         // Hold annotation: vertical bracket + label between aim point and impact point.
-        // Uses hold_elevation_moa minus slope component — the ballistic hold above the
-        // target face — identical to what the bullseye graphic shows.
+        // Uses full hold_elevation_moa (matches engine output).
+        // Physical gap = bore projection minus impact, exactly matches drawn bracket.
         {
-            const float sv_slope_moa = (side_sol.range_m > 0.01f)
-                ? (target_elev_m / side_sol.range_m) * RAD_TO_MOA : 0.0f;
-            const float hold_moa = side_sol.hold_elevation_moa - sv_slope_moa;
-            const float gap_in  = hold_moa * MOA_TO_RAD * side_range_m * 39.3701f;
+            const float hold_moa = side_sol.hold_elevation_moa; // full hold, matches engine output
+            const float gap_m = bore_proj_y_m - target_elev_m;
+            const float gap_in = gap_m * 39.3701f;
             // Vertical bracket between aim pt (bore_proj_pt) and impact (impact_pt)
             const float bx       = bore_proj_pt.x + 12.0f;
             const float top_y_h  = std::min(bore_proj_pt.y, impact_pt.y);
