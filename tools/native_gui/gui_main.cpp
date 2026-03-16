@@ -4295,14 +4295,20 @@ int main() {
         // this exact linear offset closes the gap between the solver zero-angle run and where
         // the bullet actually lands after the corrected hold is applied.
         //
-        // Physically: the bore line y = x*geom_tan_theta points above the target by exactly
-        // |traj_drop_at_target_m|, which is the ballistic drop the bullet must overcome.
-        //
-        // If no trajectory table is available yet, fall back to hold_elevation_moa as a rough
-        // proxy (slightly wrong due to sight-line offset, but arc will still draw something).
+        // Physically: geom_tan_theta drives the bullet arc only (keeps arc ending at impact).
+        // If no trajectory table is available yet, fall back to sight-line elevation as a rough
+        // proxy for the arc slope (slightly wrong due to sight-line offset, but arc will
+        // still draw something).
+        // geom_tan_theta — unchanged, drives bullet arc only
         const float geom_tan_theta = (have_traj_at_target && side_range_m > 0.01f)
             ? ((target_elev_m - traj_drop_at_target_m) / side_range_m)
             : (std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f);
+
+        // bore_tan_theta — separate: LOS angle + full hold_elevation_moa
+        // This is what the barrel actually points at when the shooter dials in the full hold.
+        const float los_angle_rad = std::atan2(target_elev_m, side_range_m);
+        const float bore_angle_rad = los_angle_rad + side_sol.hold_elevation_moa * MOA_TO_RAD;
+        const float bore_tan_theta = std::isfinite(std::tan(bore_angle_rad)) ? std::tan(bore_angle_rad) : geom_tan_theta;
 
         // Pre-pass: scan the engine trajectory table to find the real arc extents using the
         // corrected geometric slope (not hold_elevation_moa which would shift the extents wrong).
@@ -4536,9 +4542,9 @@ int main() {
             side_draw_list->AddText(ImVec2(brace_x - 33.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
         }
         // Bore projection point: where the barrel axis intersects the target range plane.
-        // With geom_tan_theta, this is always at (target_elev_m - traj_drop_at_target_m),
-        // i.e., the barrel points above the target by exactly the ballistic drop — correct.
-        const float bore_proj_y_m = side_range_m * geom_tan_theta;
+        // Use `bore_tan_theta` (LOS + hold) for the bore axis projection — this is where
+        // the barrel actually points when the shooter dials in the full hold.
+        const float bore_proj_y_m = side_range_m * bore_tan_theta;
         const ImVec2 bore_proj_pt(map_x(side_range_m), map_y(bore_proj_y_m));
 
         // Barrel aim line (bore axis): muzzle → bore projection (amber)
