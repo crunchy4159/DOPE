@@ -8591,31 +8591,31 @@ int main() {
         // geom_tan_theta — unchanged, drives bullet arc only
 
         // Fallback: draw a straight line to the target as the arc (pure bore-line angle from horizontal)
-
         const float fallback_tan = (side_range_m > 0.01f)
-
             ? (target_elev_m / side_range_m)
-
             : 0.0f;
 
-        const float geom_tan_theta = (have_traj_at_target && side_range_m > 0.01f)
-
-            ? ((target_elev_m - traj_drop_at_target_m) / side_range_m)
-
-            : fallback_tan;
 
 
+        // Use the engine's hold (dial adjustment) to define the visual "Aim Point".
+        const float hold_m = side_sol.hold_elevation_moa * MOA_TO_RAD * side_range_m;
 
-        // bore_tan_theta — separate: LOS angle + full hold_elevation_moa
-
-        // This is what the barrel actually points at when the shooter dials in the full hold.
-
-        const float los_angle_rad = std::atan2(target_elev_m, side_range_m);
-
-        const float bore_angle_rad = los_angle_rad + side_sol.hold_elevation_moa * MOA_TO_RAD;
-
-        const float bore_tan_theta = std::isfinite(std::tan(bore_angle_rad)) ? std::tan(bore_angle_rad) : geom_tan_theta;
+        // Aim line slope: from muzzle to this hold point.
+        const float bore_tan_theta = (side_range_m > 0.01f) ? ((target_elev_m + hold_m) / side_range_m) : fallback_tan;
         const float bore_proj_y_m = side_range_m * bore_tan_theta;
+
+        // Find table slope at muzzle (launch angle).
+        float table_slope_at_0 = 0.0f;
+        TrajectoryPoint tp1;
+        if (DOPE_GetTrajectoryPoint(1, &tp1)) { table_slope_at_0 = tp1.drop_m; }
+
+        // We use a quadratic shear (y += ax + bx^2) to ensure the arc:
+        // 1. Starts tangent to the Aim Line (ax).
+        // 2. Ends exactly at the Target (bx^2).
+        const float q_a = bore_tan_theta - table_slope_at_0;
+        const float q_b = (side_range_m > 0.01f) 
+            ? (target_elev_m - (traj_drop_at_target_m + q_a * side_range_m)) / (side_range_m * side_range_m)
+            : 0.0f;
 
 
 
@@ -8636,13 +8636,10 @@ int main() {
                 TrajectoryPoint tp{};
 
                 if (DOPE_GetTrajectoryPoint(r, &tp)) {
-
-                    const float y_w = static_cast<float>(r) * geom_tan_theta + tp.drop_m;
-
+                    const float rf = static_cast<float>(r);
+                    const float y_w = rf * q_a + rf * rf * q_b + tp.drop_m;
                     arc_y_hi = std::max(arc_y_hi, y_w);
-
                     arc_y_lo = std::min(arc_y_lo, y_w);
-
                 }
 
             }
@@ -8677,19 +8674,11 @@ int main() {
 
         // Falls back to the hold-angle estimate if no trajectory table yet.
 
-        const float drop_at_target_m = have_traj_at_target
-
-            ? std::fabs(traj_drop_at_target_m)
-
-            : std::fabs(target_elev_m - (side_range_m * geom_tan_theta));
-
-        const float drop_display = drop_at_target_m * offset_m_to_display;
-
         const char* drop_units = is_imperial ? "in" : "cm";
 
         ImGui::Text("Range: %.1f %s", side_range_display, range_units);
 
-        ImGui::Text("Estimated drop at target: %.2f %s", drop_display, drop_units);
+        ImGui::Text("Hold distance at target: %.2f %s", hold_m * offset_m_to_display, drop_units);
 
         ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
 
@@ -8952,61 +8941,20 @@ int main() {
         // Both paths use geom_tan_theta so the arc is guaranteed to end at the impact marker.
 
         {
-
-            // Fallback parabola: y = geom_tan_theta*x - K*x²
-
-            // Solve for K so that y(side_range_m) = target_elev_m:
-
-            //   side_range_m*geom_tan_theta - K*side_range_m² = target_elev_m
-
-            //   K = (geom_tan_theta - target_elev_m/side_range_m) / side_range_m
-
-            // = -traj_drop_at_target_m / side_range_m² when trajectory table is available.
-
-            const float K_fallback = (side_range_m > 0.01f)
-
-                ? ((geom_tan_theta - target_elev_m / side_range_m) / side_range_m)
-
-                : 0.0f;
-
-
-
             for (int i = 0; i <= sample_count; ++i) {
-
                 const float frac = static_cast<float>(i) / static_cast<float>(sample_count);
-
                 const float x_m = frac * side_range_m;
-
                 TrajectoryPoint tp{};
-
                 float y_w;
-
                 if (DOPE_GetTrajectoryPoint(static_cast<int>(x_m), &tp)) {
-
-                    // World-space height: geometric bore-line slope + solver's absolute Y.
-
-                    // geom_tan_theta is derived from tp.drop_m at target, so y_w(side_range_m)
-
-                    // = target_elev_m exactly.
-
-                    y_w = x_m * geom_tan_theta + tp.drop_m;
-
+                    y_w = x_m * q_a + x_m * x_m * q_b + tp.drop_m;
                 } else {
-
-                    // Fallback parabola anchored at (0,0) and (side_range_m, target_elev_m).
-
-                    y_w = geom_tan_theta * x_m - K_fallback * x_m * x_m;
-
+                    y_w = x_m * q_a + x_m * x_m * q_b;
                 }
-
                 if (!std::isfinite(y_w)) y_w = 0.0f;
-
                 arc_points[i] = ImVec2(map_x(x_m), map_y(y_w));
-
             }
-
             side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
-
         }
 
         // --- Stick figure (shooter silhouette) ---
