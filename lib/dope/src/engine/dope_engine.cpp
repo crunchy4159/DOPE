@@ -552,8 +552,8 @@ void DOPE_Engine::computeSolution() {
 
         // Convert to angular adjustment in MOA    [MATH §14.2]
         drop_moa = -(relative_drop / horizontal_range_m) * dope::math::RAD_TO_MOA; // [MATH §14.2]
-        // Additional vertical angle needed for non-level target geometry.
-        drop_moa += (target_elevation_m / range) * dope::math::RAD_TO_MOA;
+        // Additional vertical angle needed for non-level target geometry (tangent-based).
+        drop_moa += (target_elevation_m / horizontal_range_m) * dope::math::RAD_TO_MOA;
         wind_from_wind_moa =
             -(result.windage_at_target_m / horizontal_range_m) * dope::math::RAD_TO_MOA; // [MATH §14.2]
     }
@@ -994,10 +994,8 @@ void DOPE_Engine::computeUncertainty() {
         float rel_drop = r.drop_at_target_m - sl_drop;
 
         const float safe_h = std::fmax(1.0f, p.target_range_m);
-        const float safe_slant = std::fmax(1.0f, std::sqrt((safe_h * safe_h) +
-                                                           (target_elevation_m * target_elevation_m)));
         float em = -(rel_drop / safe_h) * dope::math::RAD_TO_MOA + r.coriolis_elev_moa;
-        em += (target_elevation_m / safe_slant) * dope::math::RAD_TO_MOA;
+        em += (target_elevation_m / safe_h) * dope::math::RAD_TO_MOA;
         float wm = -(r.windage_at_target_m / safe_h) * dope::math::RAD_TO_MOA +
                    r.coriolis_wind_moa + r.spin_drift_moa;
 
@@ -1080,9 +1078,8 @@ void DOPE_Engine::computeUncertainty() {
             float zr = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : horiz_rng;
             float sl_drop = sight_h - (sight_h / zr) * horiz_rng;
             float rel_drop = r.drop_at_target_m - sl_drop;
-            const float safe_slant = std::fmax(1.0f, slant_rng);
             float em = -(rel_drop / horiz_rng) * dope::math::RAD_TO_MOA + r.coriolis_elev_moa;
-            em += (target_elevation_m / safe_slant) * dope::math::RAD_TO_MOA;
+            em += (target_elevation_m / horiz_rng) * dope::math::RAD_TO_MOA;
             float wm = -(r.windage_at_target_m / horiz_rng) * dope::math::RAD_TO_MOA + r.coriolis_wind_moa +
                        r.spin_drift_moa;
             float ce, cw2;
