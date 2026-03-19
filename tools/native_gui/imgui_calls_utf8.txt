@@ -1,0 +1,275 @@
+﻿2838:    ImGui::CreateContext();
+2839:    ImGuiIO& io = ImGui::GetIO();
+2841:    ImGui::StyleColorsDark();
+2877:        ImGui::NewFrame();
+2879:        ImGui::Begin("DOPE Inputs");
+2881:        if (ImGui::Combo("Unit System", &unit_mode, kUnitSystemLabels,
+2891:        if (ImGui::CollapsingHeader("Cartridge Presets (GUI-only)")) {
+2892:            ImGui::PushID("cartridge_presets");
+2893:            ImGui::TextUnformatted(
+2896:            ImGui::InputText("Cartridge Preset Name", g_state.new_cartridge_preset_name,
+2899:            ImGui::TextUnformatted("Preset Tags:");
+2902:            if (ImGui::Combo("Tier", &tier_idx, kBulletTierLabels, kNumBulletTiers)) {
+2907:            if (ImGui::Combo("Construction", &cons_idx, kBulletConstructionLabels,
+2913:            if (ImGui::Combo("Shape", &shape_idx, kBulletShapeLabels, kNumBulletShapes)) {
+2943:            if (ImGui::Button("Add/Update Cartridge Preset")) {
+2974:            ImGui::SameLine();
+2975:            if (ImGui::Button("Apply Selected Cartridge") &&
+2986:            ImGui::SameLine();
+2987:            if (ImGui::Button("Remove Selected Cartridge") &&
+3004:            ImGui::SameLine();
+3005:            if (ImGui::Button("Save Presets to File")) {
+3014:            ImGui::SameLine();
+3015:            if (ImGui::Button("Load Presets from File")) {
+3030:            ImGui::Separator();
+3031:            ImGui::TextUnformatted("Drag");
+3032:            ImGui::Checkbox("Override Drag Coefficient", &g_state.override_drag_coefficient);
+3034:                const float avail_bc = ImGui::GetContentRegionAvail().x;
+3036:                    ImGui::SetNextItemWidth(uc_on ? avail_bc * 0.45f : -1.0f);
+3037:                    ImGui::InputFloat("Drag Coefficient (G-model)",
+3041:                    ImGui::Text("Drag Coefficient (auto): %.4f", auto_drag);
+3047:            ImGui::Combo("Drag Model", &g_state.drag_model_index, kDragModelLabels,
+3049:            ImGui::Separator();
+3051:            if (ImGui::BeginListBox("##cartridge_presets", ImVec2(-FLT_MIN, 110.0f))) {
+3054:                    if (ImGui::Selectable(g_cartridge_presets[i].name.c_str(), is_selected)) {
+3080:                        ImGui::SetItemDefaultFocus();
+3083:                ImGui::EndListBox();
+3091:                ImGui::Separator();
+3092:                ImGui::TextDisabled("Cartridge MV SD (fps):");
+3093:                ImGui::SetNextItemWidth(120.0f);
+3094:                if (ImGui::InputFloat("SD MV (fps)", &selected_cp.sd_mv_fps, 0.1f, 1.0f, "%.2f")) {
+3106:                ImGui::Separator();
+3107:                ImGui::TextDisabled("Cartridge Barrel-MV: %s", selected_cp.name.c_str());
+3108:                ImGui::SetNextItemWidth(120.0f);
+3109:                if (ImGui::InputFloat("Ref Barrel (in)##cp_ref_barrel",
+3115:                    ImGui::TextDisabled("Profile (%d pts ΓÇö edit JSON to modify):",
+3118:                        ImGui::TextDisabled("  %.0f\" \u2192 %.0f fps", bp.first, bp.second);
+3121:                    ImGui::SetNextItemWidth(120.0f);
+3122:                    if (ImGui::InputFloat("MV Adj (fps/in)##cp_mv_adj",
+3131:            ImGui::Separator();
+3133:                const float avail_mass = ImGui::GetContentRegionAvail().x;
+3134:                ImGui::SetNextItemWidth(uc_on ? avail_mass * 0.35f : -1.0f);
+3135:                ImGui::InputFloat("Mass (gr)", &g_state.bullet.mass_grains, 1.0f, 10.0f, "%.2f");
+3143:                const float avail_len = ImGui::GetContentRegionAvail().x;
+3144:                ImGui::SetNextItemWidth(uc_on ? avail_len * 0.35f : -1.0f);
+3145:                if (ImGui::InputFloat(is_imperial ? "Length (in)" : "Length (mm)", &length_display,
+3158:                const float avail_cal = ImGui::GetContentRegionAvail().x;
+3159:                ImGui::SetNextItemWidth(uc_on ? avail_cal * 0.35f : -1.0f);
+3160:                if (ImGui::InputFloat(is_imperial ? "Caliber (in)" : "Caliber (mm)",
+3171:            ImGui::PopID();
+3174:        if (ImGui::CollapsingHeader("Gun Presets (GUI-only)")) {
+3175:            ImGui::PushID("gun_presets");
+3177:            ImGui::InputText("Gun Preset Name", g_state.new_gun_preset_name,
+3179:            if (ImGui::Button("Add/Update Gun Preset")) {
+3195:            ImGui::SameLine();
+3196:            if (ImGui::Button("Apply Selected Gun") && g_state.selected_gun_preset >= 0 &&
+3208:            ImGui::SameLine();
+3209:            if (ImGui::Button("Remove Selected Gun") && g_state.selected_gun_preset >= 0 &&
+3223:            ImGui::SameLine();
+3224:            if (ImGui::Button("Save Presets to File")) {
+3232:            ImGui::SameLine();
+3233:            if (ImGui::Button("Load Presets from File")) {
+3246:            if (ImGui::BeginListBox("##gun_presets", ImVec2(-FLT_MIN, 110.0f))) {
+3252:                    if (ImGui::Selectable(g_gun_presets[i].name.c_str(), is_selected)) {
+3256:                        ImGui::SetItemDefaultFocus();
+3259:                ImGui::EndListBox();
+3262:            ImGui::Separator();
+3266:                const float avail_tw = ImGui::GetContentRegionAvail().x;
+3267:                ImGui::SetNextItemWidth(uc_on ? avail_tw * 0.45f : -1.0f);
+3268:                if (ImGui::InputFloat(is_imperial ? "Twist (in/turn)" : "Twist (mm/turn)",
+3275:                    ImGui::SameLine();
+3276:                    ImGui::SetNextItemWidth(-1.0f);
+3280:                    ImGui::Text(is_imperial ? "+/-Twist (1%%) = %.2f in"
+3285:            if (ImGui::InputFloat("Barrel Length (in)", &g_state.bullet.barrel_length_in, 0.1f,
+3291:            if (ImGui::InputFloat("Muzzle OD (in)", &g_state.bullet.muzzle_diameter_in, 0.01f, 0.1f,
+3304:            if (ImGui::BeginCombo("Barrel Material", current_material)) {
+3307:                    if (ImGui::Selectable(kBarrelMaterialPresets[i].label, selected)) {
+3316:                        ImGui::SetItemDefaultFocus();
+3318:                ImGui::EndCombo();
+3320:            ImGui::TextDisabled("Stiffness MOA: %.2f", g_state.bullet.stiffness_moa);
+3327:                if (ImGui::BeginCombo("Barrel Finish", current_finish)) {
+3330:                        if (ImGui::Selectable(kBarrelFinishPresets[i].name, selected)) {
+3338:                            ImGui::SetItemDefaultFocus();
+3340:                    ImGui::EndCombo();
+3343:                if (ImGui::InputFloat("Cold Bore MV Bias (fps)", &input_bias, 0.1f, 1.0f, "%.2f")) {
+3347:                if (ImGui::InputFloat("Angular Sigma (MOA)", &input_angular, 0.01f, 0.1f, "%.2f")) {
+3351:            ImGui::SeparatorText("Barrel Attachments");
+3352:            ImGui::Checkbox("Free-Floated", &g_state.free_floated);
+3353:            ImGui::SameLine();
+3354:            ImGui::Checkbox("Suppressor", &g_state.suppressor_attached);
+3355:            ImGui::SameLine();
+3356:            ImGui::Checkbox("Barrel Tuner", &g_state.barrel_tuner_attached);
+3362:                const float avail_mva = ImGui::GetContentRegionAvail().x;
+3366:                ImGui::SetNextItemWidth(uc_on ? avail_mva * 0.45f : -1.0f);
+3368:                    ImGui::TextDisabled("MV Adj: profile (curr %.0f fps)",
+3371:                    ImGui::TextDisabled("MV Adj (fps/in): %.1f (est.)", active_fps_per_in);
+3373:                    ImGui::TextDisabled("MV Adj (fps/in): %.1f", active_fps_per_in);
+3376:                    ImGui::SameLine();
+3377:                    ImGui::SetNextItemWidth(-1.0f);
+3378:                    if (ImGui::InputFloat("+/-MVAdj(fps/in)##mva",
+3386:            ImGui::PopID();
+3389:        ImGui::Checkbox("Enable Uncertainty Propagation", &g_state.uc_config.enabled);
+3391:            ImGui::SameLine();
+3392:            if (ImGui::SmallButton("Reset Sigmas")) {
+3410:            ImGui::SameLine();
+3411:            ImGui::TextDisabled("(+/- shown inline with each value)");
+3414:        ImGui::TextUnformatted("Manual Inputs");
+3424:            const float avail_mv = ImGui::GetContentRegionAvail().x;
+3425:            ImGui::BeginDisabled(true);
+3426:            ImGui::SetNextItemWidth(uc_on ? avail_mv * 0.45f : -1.0f);
+3427:            ImGui::InputFloat(is_imperial ? "Muzzle Velocity (fps)" : "Muzzle Velocity (m/s)",
+3430:                ImGui::SameLine();
+3431:                ImGui::SetNextItemWidth(-1.0f);
+3432:                ImGui::InputFloat(is_imperial ? "+/-MV(fps)" : "+/-MV(m/s)##mv", &mv_sig_display,
+3435:            ImGui::EndDisabled();
+3437:        ImGui::TextDisabled("Muzzle velocity is derived from cartridge + barrel; sigma = "
+3439:        ImGui::Separator();
+3443:            const float avail_zr = ImGui::GetContentRegionAvail().x;
+3444:            ImGui::SetNextItemWidth(uc_on ? avail_zr * 0.45f : -1.0f);
+3445:            if (ImGui::InputFloat(is_imperial ? "Zero Range (yd)" : "Zero Range (m)", &zero_display,
+3450:                ImGui::SameLine();
+3453:                ImGui::SetNextItemWidth(-1.0f);
+3454:                if (ImGui::InputFloat(is_imperial ? "+/-Zero(yd)##zr" : "+/-Zero(m)##zr", &zr_sig,
+3466:            const float avail_sh = ImGui::GetContentRegionAvail().x;
+3467:            ImGui::SetNextItemWidth(uc_on ? avail_sh * 0.45f : -1.0f);
+3468:            if (ImGui::InputFloat(is_imperial ? "Sight Height (in)" : "Sight Height (mm)",
+3475:                ImGui::SameLine();
+3478:                ImGui::SetNextItemWidth(-1.0f);
+3479:                if (ImGui::InputFloat(is_imperial ? "+/-SightH(in)##sh" : "+/-SightH(mm)##sh",
+3492:            const float avail_ws = ImGui::GetContentRegionAvail().x;
+3493:            ImGui::SetNextItemWidth(uc_on ? avail_ws * 0.45f : -1.0f);
+3494:            if (ImGui::InputFloat(is_imperial ? "Wind Speed (mph)" : "Wind Speed (m/s)",
+3500:                ImGui::SameLine();
+3503:                ImGui::SetNextItemWidth(-1.0f);
+3504:                if (ImGui::InputFloat(is_imperial ? "+/-Wind(mph)##ws" : "+/-Wind(m/s)##ws",
+3514:            const float avail_wh = ImGui::GetContentRegionAvail().x;
+3515:            ImGui::SetNextItemWidth(uc_on ? avail_wh * 0.45f : -1.0f);
+3516:            ImGui::InputFloat("Wind Heading (deg)", &g_state.wind_heading, 1.0f, 5.0f, "%.1f");
+3518:                ImGui::SameLine();
+3519:                ImGui::SetNextItemWidth(-1.0f);
+3520:                if (ImGui::InputFloat("+/-WindDir(deg)##wd",
+3536:                if (ImGui::Combo("GPS / GNSS Module", &g_state.hw_gps_index, gps_labels,
+3547:                if (ImGui::IsItemHovered())
+3548:                    ImGui::SetTooltip(
+3559:                if (ImGui::Combo("Magnetometer (lat est.)", &g_state.hw_mag_lat_index, mag_labels,
+3569:                if (ImGui::IsItemHovered())
+3570:                    ImGui::SetTooltip("Magnetometer used for autonomous latitude estimation via "
+3582:            const float avail_lat = ImGui::GetContentRegionAvail().x;
+3583:            ImGui::SetNextItemWidth(uc_on ? avail_lat * 0.45f : -1.0f);
+3584:            ImGui::InputFloat("Latitude (deg)", &g_state.latitude, 0.1f, 1.0f, "%.3f");
+3586:                ImGui::SameLine();
+3588:                    ImGui::BeginDisabled();
+3589:                ImGui::SetNextItemWidth(-1.0f);
+3590:                if (ImGui::InputFloat("+/-Lat(deg)##lat", &g_state.uc_config.sigma_latitude_deg,
+3596:                    ImGui::EndDisabled();
+3600:        ImGui::Separator();
+3601:        ImGui::TextUnformatted("Sensor Frame");
+3608:            if (ImGui::Combo("Barometer", &g_state.hw_barometer_index, baro_labels, baro_count)) {
+3611:            if (ImGui::IsItemHovered())
+3612:                ImGui::SetTooltip(
+3618:                    if (ImGui::Button("Calibrate Barometer")) {
+3627:                    if (ImGui::Button("Barometer: Calibrated  (click to clear)")) {
+3639:                if (ImGui::InputFloat(is_imperial ? "Cal Temp (F, internal)"
+3653:            ImGui::Text("Barometer sigma pressure: %.2f Pa (\u0394T used: %.2f C)",
+3663:            if (ImGui::Combo("Thermometer", &g_state.hw_temp_sensor_index, tmp_labels, tmp_count)) {
+3666:            if (ImGui::IsItemHovered())
+3667:                ImGui::SetTooltip("Thermometer sensor: accuracy varies with temperature.\n"
+3681:            const float avail_pr = ImGui::GetContentRegionAvail().x;
+3682:            ImGui::SetNextItemWidth(uc_on ? avail_pr * 0.45f : -1.0f);
+3683:            if (ImGui::InputFloat("Baro Pressure (Pa)", &pressure_display, 10.0f, 100.0f, "%.1f")) {
+3689:                ImGui::SameLine();
+3691:                    ImGui::BeginDisabled();
+3692:                ImGui::SetNextItemWidth(-1.0f);
+3693:                if (ImGui::InputFloat("+/-Press(Pa)##pr", &g_state.uc_config.sigma_pressure_pa,
+3699:                    ImGui::EndDisabled();
+3705:            const float avail_tm = ImGui::GetContentRegionAvail().x;
+3706:            ImGui::SetNextItemWidth(uc_on ? avail_tm * 0.45f : -1.0f);
+3707:            if (ImGui::InputFloat(is_imperial ? "Temp (F)" : "Temp (C)", &temp_display,
+3716:                ImGui::SameLine();
+3718:                    ImGui::BeginDisabled();
+3721:                ImGui::SetNextItemWidth(-1.0f);
+3722:                if (ImGui::InputFloat(is_imperial ? "+/-Temp(F)##tm" : "+/-Temp(C)##tm", &tmp_sig,
+3730:                    ImGui::EndDisabled();
+3734:            const float avail_hm = ImGui::GetContentRegionAvail().x;
+3735:            ImGui::SetNextItemWidth(uc_on ? avail_hm * 0.45f : -1.0f);
+3736:            ImGui::InputFloat("Humidity (0..1)", &g_state.baro_humidity, 0.01f, 0.1f, "%.2f");
+3738:                ImGui::SameLine();
+3740:                    ImGui::BeginDisabled();
+3741:                ImGui::SetNextItemWidth(-1.0f);
+3742:                if (ImGui::InputFloat("+/-Humid(frac)##hm", &g_state.uc_config.sigma_humidity, 0.0f,
+3748:                    ImGui::EndDisabled();
+3758:            if (ImGui::Combo("Rangefinder", &g_state.hw_lrf_index, lrf_labels, lrf_count)) {
+3765:            const float avail_lrf = ImGui::GetContentRegionAvail().x;
+3766:            ImGui::SetNextItemWidth(uc_on ? avail_lrf * 0.45f : -1.0f);
+3767:            if (ImGui::InputFloat(is_imperial ? "LRF Range (yd)" : "LRF Range (m)", &lrf_display,
+3775:                ImGui::SameLine();
+3777:                    ImGui::BeginDisabled();
+3781:                ImGui::SetNextItemWidth(-1.0f);
+3782:                if (ImGui::InputFloat(is_imperial ? "+/-Range(yd)##lrf" : "+/-Range(m)##lrf",
+3790:                    ImGui::EndDisabled();
+3798:            ImGui::SetNextItemWidth(-1.0f);
+3799:            if (ImGui::InputFloat(is_imperial ? "Elevation Delta (ft, +up/-down)"
+3814:            ImGui::Separator();
+3815:            if (ImGui::CollapsingHeader("Cant Uncertainty (1-sigma)")) {
+3816:                ImGui::Indent();
+3824:                    if (ImGui::Combo("Cant Sensor", &g_state.hw_cant_index, cant_labels,
+3833:                    ImGui::BeginDisabled();
+3834:                if (ImGui::InputFloat("+/- Cant (deg)", &g_state.uc_config.sigma_cant_deg, 0.1f,
+3840:                    ImGui::EndDisabled();
+3842:                ImGui::Unindent();
+3846:        if (ImGui::Button("Apply Config")) {
+3853:        ImGui::SameLine();
+3854:        if (ImGui::Button("Step Update")) {
+3862:        ImGui::SameLine();
+3863:        if (ImGui::Button("Shot Fired")) {
+3870:        ImGui::SameLine();
+3872:        ImGui::BeginDisabled(run_100_busy);
+3873:        if (ImGui::Button("Run 100")) {
+3908:        ImGui::EndDisabled();
+3909:        ImGui::SameLine();
+3911:        if (ImGui::Checkbox("Auto Tick", &auto_tick)) {
+3914:        ImGui::SameLine();
+3915:        if (ImGui::Button("Reset Engine")) {
+3921:        ImGui::Separator();
+3922:        ImGui::InputText("Profile Library Path", g_state.profile_library_path,
+3924:        if (ImGui::Button("Save Profile Library")) {
+3928:        ImGui::SameLine();
+3929:        if (ImGui::Button("Load Profile Library")) {
+3934:        ImGui::Separator();
+3935:        ImGui::InputText("Preset Path", g_state.preset_path, IM_ARRAYSIZE(g_state.preset_path));
+3936:        if (ImGui::Button("Save Preset")) {
+3941:        ImGui::SameLine();
+3942:        if (ImGui::Button("Load Preset")) {
+3950:        ImGui::End();
+3952:        ImGui::Begin("DOPE Output");
+3953:        ImGui::InputTextMultiline("##output", frame_output.data(), frame_output.size() + 1,
+3955:        ImGui::End();
+3957:        ImGui::Begin("Target View");
+3958:        // ImDrawList* draw_list = ImGui::GetWindowDrawList();
+4017:                return ImGui::GetStyleColorVec4(ImGuiCol_PlotHistogram);
+4019:                return ImGui::GetStyleColorVec4(ImGuiCol_PlotLines);
+4020:            return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+4023:        ImGui::Text("Bullseye rings: %.0f MOA (%.2f in) @ %.1f yd", moa_per_ring, inches_per_ring,
+4025:        ImGui::Text("Offset: Elev %.2f MOA (%.2f in), Wind %.2f MOA (%.2f in)", hold_elevation_moa,
+4027:        ImGui::SameLine();
+4028:        ImGui::TextColored(direction_color(hold_windage_moa), "[%s]",
+4030:        ImGui::Text("Wind breakdown:");
+4031:        ImGui::Text("  Wind:       %.2f MOA (%.2f in)", sol.wind_only_windage_moa, wind_only_in);
+4032:        ImGui::SameLine();
+4033:        ImGui::TextColored(direction_color(sol.wind_only_windage_moa), "[%s]",
+4035:        ImGui::Text("  Earth spin: %.2f MOA (%.2f in)", sol.earth_spin_windage_moa, earth_spin_in);
+4036:        ImGui::SameLine();
+4037:        ImGui::TextColored(direction_color(sol.earth_spin_windage_moa), "[%s]",
+4039:        ImGui::Text("  Offsets total:    %f [%s]", sol.offsets_windage_moa,
+4041:        ImGui::Text("  Cant added:       %f [%s]", sol.cant_windage_moa,
+4043:        ImGui::Text("  Total windage:    %f [%s]", sol.hold_windage_moa,
+4052:            ImGui::Text("\nUncertainty (1-sigma propagation):");
+4053:            ImGui::Text("  Elevation: %.4f MOA", sol.sigma_elevation_moa);
+4054:            ImGui::Text("  Windage:   %.4f MOA", sol.sigma_windage_moa);
+4055:            ImGui::Text("  50%% CEP:   %.4f MOA", cep50);
+4056:            ImGui::Text("  95%% CEP:   %.4f MOA", cep95);
+4064:            ImGui::Text("  --- Per-input variance (MOA^2):  Elev / Wind ---");
+4070:                ImGui::Text("  %-8s %8.5f (%5.1f%%)  %8.5f (%5.1f%%)", input_names[i],
+4074:            ImGui::Text("\nUncertainty: enabled but not yet computed (need valid solution).");
+4076:            ImGui::Text("\nUncertainty: disabled.");
+4093:    ImGui::DestroyContext();

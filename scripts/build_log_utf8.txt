@@ -1,0 +1,51 @@
+﻿Using PlatformIO runner: venv-python (C:\Users\jakek\Documents\GitHub\DOPE\.venv\Scripts\python.exe)
+Building native_gui...
+Processing native_gui (platform: native)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 2 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- dope @ 1.3.0
+Building in release mode
+Compiling .pio\build\native_gui\tools\native_gui\gui_main.o
+.\run_native_gui.bat : tools\native_gui\gui_main.cpp: In function 'int 
+WinMain(HINSTANCE, HINSTANCE, LPSTR, int)':
+At line:1 char:1
++ .\run_native_gui.bat > build_log.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (tools\native_gu..., LPSTR, int 
+   )'::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+tools\native_gui\gui_main.cpp:3971:15: warning: variable 'axis1_moa' set 
+but not used [-Wunused-but-set-variable]
+ 3971 |         float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, 
+sin_r = 0.0f;
+      |               ^~~~~~~~~
+tools\native_gui\gui_main.cpp:3971:33: warning: variable 'axis2_moa' set 
+but not used [-Wunused-but-set-variable]
+ 3971 |         float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, 
+sin_r = 0.0f;
+      |                                 ^~~~~~~~~
+tools\native_gui\gui_main.cpp:3971:51: warning: variable 'cos_r' set but 
+not used [-Wunused-but-set-variable]
+ 3971 |         float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, 
+sin_r = 0.0f;
+      |                                                   ^~~~~
+tools\native_gui\gui_main.cpp:3971:65: warning: variable 'sin_r' set but 
+not used [-Wunused-but-set-variable]
+ 3971 |         float axis1_moa = 0.0f, axis2_moa = 0.0f, cos_r = 1.0f, 
+sin_r = 0.0f;
+      |                                                                 
+^~~~~
+Linking .pio\build\native_gui\program.exe
+========================= [SUCCESS] Took 5.71 seconds =========================
+
+Environment    Status    Duration
+-------------  --------  ------------
+native_gui     SUCCESS   00:00:05.713
+========================= 1 succeeded in 00:00:05.713 =========================
+Launching GUI...

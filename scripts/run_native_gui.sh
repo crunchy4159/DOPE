@@ -6,7 +6,7 @@ set -e
 
 # Move to repo root
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-REPO_ROOT="$(realpath "$SCRIPT_DIR/../..")"
+REPO_ROOT="$(realpath "$SCRIPT_DIR/..")"
 cd "$REPO_ROOT"
 
 # PlatformIO runner detection
@@ -61,13 +61,13 @@ if [[ $NO_BUILD -eq 0 ]]; then
 	echo "Building native_gui..."
 	case "$RUNNER_TYPE" in
 		venv-python|py-module|python-module)
-			"$RUNNER_PATH" -m platformio run -e native_gui
+			"$RUNNER_PATH" -m platformio run -e native_gui_linux
 			;;
 		pio)
-			pio run -e native_gui
+			pio run -e native_gui_linux
 			;;
 		platformio)
-			platformio run -e native_gui
+			platformio run -e native_gui_linux
 			;;
 		*)
 			echo "No PlatformIO runner available." >&2
@@ -81,7 +81,7 @@ if [[ $NO_BUILD -eq 0 ]]; then
 	fi
 fi
 
-EXE=".pio/build/native_gui/program"
+EXE=".pio/build/native_gui_linux/program"
 if [[ ! -x "$EXE" ]]; then
 	echo "GUI executable not found at: $EXE" >&2
 	echo "Try building first: pio run -e native_gui" >&2

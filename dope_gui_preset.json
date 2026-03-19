@@ -50,7 +50,7 @@
   "uc_mass_error_preset_index": 1,
   "uc_sigma_bc": 0.009999999776482582,
   "uc_sigma_caliber_inches": 0.00019999999494757503,
-  "uc_sigma_cant_deg": 1.5,
+  "uc_sigma_cant_deg": 1.0,
   "uc_sigma_humidity": 0.05000000074505806,
   "uc_sigma_latitude_deg": 1.5,
   "uc_sigma_length_mm": 0.10000000149011612,

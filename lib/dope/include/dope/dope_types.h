@@ -105,6 +105,11 @@ struct SensorFrame {
     float    lrf_range_m;             // meters
     uint64_t lrf_timestamp_us;        // timestamp of LRF reading
     bool     lrf_valid;
+    // Target vertical offset relative to shooter/muzzle reference.
+    // Positive = target above shooter, negative = below (meters).
+    float    target_elevation_m;
+    // If false, target_elevation_m is ignored and treated as 0.
+    bool     target_elevation_valid;
 
     // Zoom Encoder — SRS §7.5
     float encoder_focal_length_mm;    // mm
@@ -147,7 +152,8 @@ struct BulletProfile {
     float     mv_adjustment_factor;   // fps per inch deviation from reference barrel
     float     muzzle_diameter_in;     // Muzzle outside diameter (inches) for stiffness classification
     BarrelMaterial barrel_material;   // Material type (stiffness/thermal props)
-    float     barrel_finish_sigma_mv_fps; // Base MV sigma from barrel finish (fps)
+    float     cold_bore_velocity_bias; // First-shot MV jump in fps
+    float     angular_sigma_moa; // Rifle's physical cone in MOA
     float     measured_cep50_moa;     // Measured CEP50 (MOA) from manufacturer/test barrel; 0 when absent
     float     manufacturer_spec_moa;  // Manufacturer accuracy guarantee (MOA); 0 when absent
     float     category_radial_moa;    // Category-based radial dispersion default (MOA); 0 when absent
@@ -235,13 +241,12 @@ struct FiringSolution {
     // Per-input variance contributions (var_elev, var_wind) for diagnostics.
     // Each pair is (elevation_variance_moa2, windage_variance_moa2) from that input.
     // Total var_e = sum of [i][0], total var_w = sum of [i][1].
-    // Index: 0=MV, 1=BC, 2=Range, 3=WindSpeed, 4=WindHeading,
-    //        5=Temperature, 6=Pressure, 7=Humidity, 8=SightHeight, 9=Cant,
-    //        10=Latitude, 11=Mass, 12=Length, 13=Caliber, 14=Twist,
-    //        15=ZeroRange, 16=MVAdjustment
-    static const int kNumUncertaintyInputs = 17;
-    float uc_var_elev[17];            // per-input elevation variance (MOA²)
-    float uc_var_wind[17];            // per-input windage variance (MOA²)
+    // Index: 0=MV, 1=Range, 2=WindSpeed, 3=WindHeading,
+    //        4=Temperature, 5=Pressure, 6=Humidity, 7=SightHeight, 8=Cant,
+    //        9=Latitude, 10=Twist, 11=ZeroRange, 12=MVAdjustment
+    static const int kNumUncertaintyInputs = 13;
+    float uc_var_elev[13];            // per-input elevation variance (MOA²)
+    float uc_var_wind[13];            // per-input windage variance (MOA²)
 };
 
 // ---------------------------------------------------------------------------
@@ -305,16 +310,6 @@ struct DOPE_CEPPoint {
     float cep50_moa; // CEP50 radius (MOA)
 };
 
-/**
- * @brief A reference to an array of CEP breakpoints.
- *
- * The engine treats CEP50 radii as a target dispersion envelope and scales the
- * computed uncertainty to match, preserving directional variance ratios.
- */
-struct DOPE_CEPTable {
-    const DOPE_CEPPoint* points;
-    int                 count;
-};
 
 // ---------------------------------------------------------------------------
 // Uncertainty / Error Propagation Config — SRS §14
@@ -332,7 +327,6 @@ struct DOPE_CEPTable {
 struct UncertaintyConfig {
     bool  enabled;                    // Master enable
     float sigma_muzzle_velocity_ms;   // 1-sigma MV uncertainty (m/s)
-    float sigma_bc;                   // 1-sigma BC uncertainty as fraction (e.g. 0.02 = 2%)
     float sigma_range_m;              // 1-sigma range uncertainty (m)
     float sigma_wind_speed_ms;        // 1-sigma wind speed uncertainty (m/s)
     float sigma_wind_heading_deg;     // 1-sigma wind direction uncertainty (degrees)
@@ -342,9 +336,6 @@ struct UncertaintyConfig {
     float sigma_sight_height_mm;      // 1-sigma sight height uncertainty (mm)
     float sigma_cant_deg;             // 1-sigma cant angle uncertainty (degrees)
     float sigma_latitude_deg;         // 1-sigma latitude uncertainty (degrees); Coriolis only
-    float sigma_mass_grains;          // 1-sigma bullet mass uncertainty (grains)
-    float sigma_length_mm;            // 1-sigma bullet length uncertainty (mm)
-    float sigma_caliber_inches;       // 1-sigma bullet caliber uncertainty (inches)
     float sigma_twist_rate_inches;    // 1-sigma twist rate uncertainty (in/turn)
     float sigma_zero_range_m;         // 1-sigma zero range uncertainty (m)
     float sigma_mv_adjustment_fps_per_in; // 1-sigma MV/barrel adjustment uncertainty (fps/in)
@@ -366,10 +357,24 @@ struct UncertaintyConfig {
     float         pressure_calibration_temp_c;
 
     // Optional cartridge-specific dispersion model (CEP50 in MOA) to scale
-    // propagated uncertainty at each range.  Disabled when table is null/empty.
-    bool         use_cartridge_cep_table;
-    DOPE_CEPTable cartridge_cep_table; // x = range_m, cep50_moa = CEP radius (MOA)
-    float        cartridge_cep_scale_floor; // minimum multiplicative scale (>=1 recommended)
+};
+
+// ---------------------------------------------------------------------------
+// Trajectory Table Point — per-metre record from the ballistic solver
+// ---------------------------------------------------------------------------
+/**
+ * One entry from the solver's 1-metre-resolution trajectory table.
+ * Coordinates are in the bore-axis frame (X = downrange horizontal).
+ *
+ * drop_m is always ≤ 0 at the reference bore line; to convert to world-space
+ * height add  x_m * tan(launch_angle_rad).
+ */
+struct TrajectoryPoint {
+    float drop_m;        // Vertical displacement from bore line (m, negative = below bore)
+    float windage_m;     // Lateral deflection (m, positive = right)
+    float velocity_ms;   // Bullet speed at this range (m/s)
+    float tof_s;         // Time of flight to this range (s)
+    float energy_j;      // Kinetic energy at this range (J)
 };
 
 // ---------------------------------------------------------------------------

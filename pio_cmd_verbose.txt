@@ -1,0 +1,33 @@
+Collected 1 tests (*)
+
+Processing * in native environment
+--------------------------------------------------------------------------------
+Building...
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 3 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- dope @ 1.3.0 (License: Unknown, Path: C:\Users\jakek\OneDrive\Documents\github\DOPE_myRepo\DOPE\lib\dope)
+|-- googletest @ 1.17.0 (License: BSD-3-Clause, Path: C:\Users\jakek\OneDrive\Documents\github\DOPE_myRepo\DOPE\.pio\libdeps\native\googletest)
+Building in test mode
+g++ -o .pio\build\native\test\test_ahrs.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DPIO_UNIT_TESTING -DUNIT_TEST -Isrc -I.pio\libdeps\native\googletest -I.pio\libdeps\native\googletest\googlemock -I.pio\libdeps\native\googletest\googlemock\include -I.pio\libdeps\native\googletest\googletest -I.pio\libdeps\native\googletest\googletest\include -Ilib\dope\include -Ilib\dope\src -Itest -Ithird_party test\test_ahrs.cpp
+g++ -o .pio\build\native\test\test_atmosphere.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DPIO_UNIT_TESTING -DUNIT_TEST -Isrc -I.pio\libdeps\native\googletest -I.pio\libdeps\native\googletest\googlemock -I.pio\libdeps\native\googletest\googlemock\include -I.pio\libdeps\native\googletest\googletest -I.pio\libdeps\native\googletest\googletest\include -Ilib\dope\include -Ilib\dope\src -Itest -Ithird_party test\test_atmosphere.cpp
+g++ -o .pio\build\native\test\test_cartridges.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DPIO_UNIT_TESTING -DUNIT_TEST -Isrc -I.pio\libdeps\native\googletest -I.pio\libdeps\native\googletest\googlemock -I.pio\libdeps\native\googletest\googlemock\include -I.pio\libdeps\native\googletest\googletest -I.pio\libdeps\native\googletest\googletest\include -Ilib\dope\include -Ilib\dope\src -Itest -Ithird_party test\test_cartridges.cpp
+g++ -o .pio\build\native\test\test_corrections.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DPIO_UNIT_TESTING -DUNIT_TEST -Isrc -I.pio\libdeps\native\googletest -I.pio\libdeps\native\googletest\googlemock -I.pio\libdeps\native\googletest\googlemock\include -I.pio\libdeps\native\googletest\googletest -I.pio\libdeps\native\googletest\googletest\include -Ilib\dope\include -Ilib\dope\src -Itest -Ithird_party test\test_corrections.cpp
+g++ -o .pio\build\native\test\test_drag.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DPIO_UNIT_TESTING -DUNIT_TEST -Isrc -I.pio\libdeps\native\googletest -I.pio\libdeps\native\googletest\googlemock -I.pio\libdeps\native\googletest\googlemock\include -I.pio\libdeps\native\googletest\googletest -I.pio\libdeps\native\googletest\googletest\include -Ilib\dope\include -Ilib\dope\src -Itest -Ithird_party test\test_drag.cpp
+*** [.pio\build\native\test\test_ahrs.o] Error 1
+*** [.pio\build\native\test\test_atmosphere.o] Error 1
+*** [.pio\build\native\test\test_cartridges.o] Error 1
+*** [.pio\build\native\test\test_corrections.o] Error 1
+*** [.pio\build\native\test\test_drag.o] Error 1
+Building stage has failed, see errors above. Use `pio test -vvv` option to enable verbose output.
+--------------------- native:* [ERRORED] Took 2.24 seconds ---------------------
+
+=================================== SUMMARY ===================================
+Environment    Test    Status    Duration
+-------------  ------  --------  ------------
+esp32sim       *       SKIPPED
+native         *       ERRORED   00:00:02.237
+native_gui     *       SKIPPED
+================== 1 test cases: 0 succeeded in 00:00:02.237 ==================

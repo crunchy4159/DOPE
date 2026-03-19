@@ -129,9 +129,7 @@ TEST_F(UncertaintyTest, CartridgeCEPSetsScale) {
     const float target_factor = 1.8f;
     const float target_cep50_moa = base_radius * target_factor * 1.17741f; // CEP50 -> 1-sigma
     DOPE_CEPPoint cep_point = {500.0f, target_cep50_moa};
-    uc.use_cartridge_cep_table = true;
     uc.cartridge_cep_table = {&cep_point, 1};
-    uc.cartridge_cep_scale_floor = 1.0f;
     DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f2 = makeDefaultFrame(10000 * 500);
@@ -335,7 +333,6 @@ TEST_F(UncertaintyTest, DefaultConfigHasSensibleValues) {
 
     EXPECT_TRUE(uc.enabled);
     EXPECT_GT(uc.sigma_muzzle_velocity_ms, 0.0f);
-    EXPECT_GT(uc.sigma_bc, 0.0f);
     EXPECT_GT(uc.sigma_range_m, 0.0f);
     EXPECT_GT(uc.sigma_wind_speed_ms, 0.0f);
     EXPECT_GT(uc.sigma_wind_heading_deg, 0.0f);
@@ -454,7 +451,6 @@ TEST_F(UncertaintyTest, BCSigmaAffectsElevation) {
 
     UncertaintyConfig uc = {};
     uc.enabled = true;
-    uc.sigma_bc = 0.05f; // 5% — large
     DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);
@@ -475,7 +471,6 @@ TEST_F(UncertaintyTest, LengthSigmaContributesToUncertainty) {
 
     UncertaintyConfig uc = {};
     uc.enabled = true;
-    uc.sigma_length_mm = 1.0f;
     DOPE_SetUncertaintyConfig(&uc);
 
     SensorFrame f = makeDefaultFrame(10000 * 400);

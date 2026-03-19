@@ -15,17 +15,6 @@
 #include "dope/dope_types.h"
 
 /**
- * Per-meter trajectory record stored in the static table.
- */
-struct TrajectoryPoint {
-    float drop_m;           // Vertical drop from bore line (m, negative = below)
-    float windage_m;        // Lateral deflection (m, positive = right)
-    float velocity_ms;      // Velocity at this range
-    float tof_s;            // Time of flight to this range (seconds)
-    float energy_j;         // Kinetic energy at this range (joules)
-};
-
-/**
  * Solver input parameters — everything needed for one trajectory solution.
  */
 struct SolverParams {

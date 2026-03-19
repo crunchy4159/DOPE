@@ -104,29 +104,30 @@ Requires [PlatformIO](https://platformio.org/).
 py -m platformio test -e native
 ```
 
-### Desktop (basic GUI test harness, Windows)
+### Desktop (native GUI)
+
+Dear ImGui is vendored in `third_party/imgui/` — no setup step needed.
+
+#### Windows
 
 Build:
-
 ```bash
 py -m platformio run -e native_gui
 ```
+Launch: `.pio/build/native_gui/program.exe`  
+Launch helper: `scripts\\run_native_gui.bat` or `./scripts/run_native_gui.ps1`
 
-Launch:
+#### Linux
 
+Prerequisites: GLFW3 dev libraries (`sudo apt install libglfw3-dev` on Debian/Ubuntu).  
+First-time setup: `./scripts/setup_linux.sh`
+
+Build:
 ```bash
-.pio/build/native_gui/program.exe
+py -m platformio run -e native_gui_linux
 ```
-
-Launch helpers (also build unless `-NoBuild` is passed):
-
-```bash
-./scripts/run_native_gui.ps1
-```
-
-```bat
-scripts\run_native_gui.bat
-```
+Launch: `.pio/build/native_gui_linux/program`  
+Launch helper: `./scripts/run_native_gui.sh`
 
 If PlatformIO is missing, install one of:
 
@@ -151,8 +152,7 @@ GUI controls include:
 - Barometric pressure input is always `Pa` (even when `Imperial` is selected)
 - Preset `Save` / `Load` (JSON via preset path field)
 
-Vendored GUI dependency location:
-- `third_party/imgui/`
+Dear ImGui is vendored at third_party/imgui/ (committed to the repo). To upgrade, delete the folder contents, re-run scripts/setup_imgui.ps1 with the desired version tag, and commit the result.
 
 ### ESP32-P4 (cross-compile)
 
@@ -265,3 +265,7 @@ All internal calculations are SI (meters, m/s, Pascals, Celsius/Kelvin, radians)
 - ISA-consistent defaults are used when optional environmental inputs are missing (pressure `101325 Pa`, temperature `15 °C`, humidity `0.5`, wind `0 m/s`, altitude `0 m`)
 - Hard faults are reserved for critical missing/invalid inputs (for example no valid range, missing BC/MV, unsolvable zero, AHRS instability)
 - Non-critical gaps use defaults and set diagnostic flags rather than forcing `FAULT`
+
+## License
+
+Proprietary. All rights reserved.
