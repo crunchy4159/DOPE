@@ -1,4 +1,4 @@
-/**
+﻿/**
 
  * @file gui_main.cpp
 
@@ -9133,7 +9133,8 @@ int main() {
 
 
 
-            float lateral_m = d_sol.hold_windage_moa * MOA_TO_RAD * d_range_m;
+            // Invert windage direction for correct top-down aiming
+            float lateral_m = -d_sol.hold_windage_moa * MOA_TO_RAD * d_range_m;
 
             // d_range_scale_m will be set later after plot bounds
 
