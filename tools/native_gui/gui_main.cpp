@@ -4200,55 +4200,80 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float elevation_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
         const float elevation_angle_deg = side_sol.hold_elevation_moa / 60.0f;
 
-        // Target world-space height (what the user entered as elevation delta)
-        const float target_elev_m = g_state.target_elevation_m;
-
-        // Account for Look Angle (incline). Compute the slant range -> horizontal projection
-        // and the target vertical offset due to incline.
+        // Use solved geometry from engine output so target marker and arc endpoint share
+        // the same reference frame even when UI input is clamped/filtered in-engine.
+        // Account for Look Angle (incline). Compute slant->horizontal projection first.
         const float PI = 3.14159265f;
         const float look_angle_rad = side_sol.look_angle_deg * (PI / 180.0f);
         const float target_range_m = (side_sol.range_m > 0.0f) ? side_sol.range_m : g_state.lrf_range;
-        const float target_height_from_incline_m = target_range_m * std::sin(look_angle_rad);
-        const float target_dist_horiz_m = target_range_m * std::cos(look_angle_rad);
+        const float target_dist_horiz_m =
+            (side_sol.horizontal_range_m > 0.0f) ? side_sol.horizontal_range_m
+                                                 : (target_range_m * std::cos(look_angle_rad));
+        const float target_elev_m_engine = target_dist_horiz_m * std::tan(look_angle_rad);
+        const float target_elev_m =
+            std::isfinite(target_elev_m_engine) ? target_elev_m_engine : g_state.target_elevation_m;
 
-        // Fetch the solver's trajectory point at the (horizontal) target distance and
-        // rotate it from Bore-Axis frame into world-space using the incline + launch pitch.
-        float traj_drop_at_target_m = 0.0f;
-        bool  have_traj_at_target   = false;
-        {
-            TrajectoryPoint tp_tgt{};
-            const int tgt_idx = static_cast<int>(std::floor(target_dist_horiz_m));
-            if (DOPE_GetTrajectoryPoint(tgt_idx, &tp_tgt) ||
-                (tgt_idx > 0 && DOPE_GetTrajectoryPoint(tgt_idx - 1, &tp_tgt))) {
-                const float total_pitch = side_sol.launch_angle_rad + look_angle_rad;
-                // Rotate the bore-frame point into world-frame (x along horizontal, y up):
-                // y_world = x_local * sin(total_pitch) + tp.drop_m * cos(total_pitch)
-                traj_drop_at_target_m = static_cast<float>(tgt_idx) * std::sin(total_pitch) + tp_tgt.drop_m * std::cos(total_pitch);
-                have_traj_at_target   = true;
+        // Shared drop interpolation at horizontal distance.
+        auto interpolate_drop_at_horizontal = [&](float dist_horiz, float& out_drop_m) -> bool {
+            const int idx = static_cast<int>(std::floor(dist_horiz));
+            const float frac = dist_horiz - static_cast<float>(idx);
+            TrajectoryPoint tp0{}, tp1{};
+            const bool h0 = DOPE_GetTrajectoryPoint(idx, &tp0);
+            const bool h1 = DOPE_GetTrajectoryPoint(idx + 1, &tp1);
+            if (h0 && h1) {
+                out_drop_m = tp0.drop_m * (1.0f - frac) + tp1.drop_m * frac;
+                return true;
             }
-        }
+            if (h0) {
+                out_drop_m = tp0.drop_m;
+                return true;
+            }
+            if (h1) {
+                out_drop_m = tp1.drop_m;
+                return true;
+            }
+            out_drop_m = 0.0f;
+            return false;
+        };
 
-        // Geometric bore slope that makes the arc end precisely at (side_range_m, target_elev_m).
-        //
-        // Arc formula:  y_arc(x) = x * geom_tan_theta + tp.drop_m(x)
-        // At x = side_range_m:
-        //   y_arc = side_range_m * geom_tan_theta + traj_drop_at_target_m  must equal  target_elev_m
-        //   => geom_tan_theta = (target_elev_m - traj_drop_at_target_m) / side_range_m
-        //
-        // This is always correct because tp.drop_m IS the solver's world-space Y, so adding
-        // this exact linear offset closes the gap between the solver zero-angle run and where
-        // the bullet actually lands after the corrected hold is applied.
-        //
-        // Physically: the bore line y = x*geom_tan_theta points above the target by exactly
-        // |traj_drop_at_target_m|, which is the ballistic drop the bullet must overcome.
-        //
-        // If no trajectory table is available yet, fall back to hold_elevation_moa as a rough
-        // proxy (slightly wrong due to sight-line offset, but arc will still draw something).
-        // Geometric tangent for bore projection computed over the horizontal distance
-        // to the target (not the slant range). Falls back to hold elevation.
+        // Fetch solver trajectory state at target horizontal distance.
+        float drop_at_target_interp = 0.0f;
+        const bool have_traj_at_target =
+            interpolate_drop_at_horizontal(target_dist_horiz_m, drop_at_target_interp);
+        float impact_y_at_target_m = 0.0f;
+        if (have_traj_at_target) {
+            impact_y_at_target_m =
+                target_dist_horiz_m * std::tan(side_sol.launch_angle_rad) + drop_at_target_interp;
+        }
+        // Keep this as raw trajectory-table drop (not impact height). The side-view
+        // endpoint constraint is y(x)=x*q_a+x^2*q_b+drop(x), so q_b must be solved
+        // against drop(target_x) to guarantee arc->target closure.
+        const float traj_drop_at_target_m = drop_at_target_interp;
+
+        // Legacy/proven side-view shaping:
+        // - Aim (POA) comes from hold at target distance.
+        // - Arc is sheared quadratically so it is tangent-consistent near muzzle and
+        //   still lands on the selected target at target distance.
         const float geom_tan_theta = (have_traj_at_target && target_dist_horiz_m > 0.01f)
             ? ((target_elev_m - traj_drop_at_target_m) / target_dist_horiz_m)
             : (std::isfinite(std::tan(elevation_angle_rad)) ? std::tan(elevation_angle_rad) : 0.0f);
+        const float hold_m = side_sol.hold_elevation_moa * MOA_TO_RAD * target_dist_horiz_m;
+        const float bore_tan_theta = (target_dist_horiz_m > 0.01f)
+            ? ((target_elev_m + hold_m) / target_dist_horiz_m)
+            : geom_tan_theta;
+        const float bore_proj_y_m = target_dist_horiz_m * bore_tan_theta;
+        float table_slope_at_0 = 0.0f;
+        {
+            TrajectoryPoint tp1{};
+            if (DOPE_GetTrajectoryPoint(1, &tp1)) {
+                table_slope_at_0 = tp1.drop_m;
+            }
+        }
+        const float q_a = bore_tan_theta - table_slope_at_0;
+        const float q_b = (target_dist_horiz_m > 0.01f)
+            ? ((target_elev_m - (traj_drop_at_target_m + q_a * target_dist_horiz_m)) /
+               (target_dist_horiz_m * target_dist_horiz_m))
+            : 0.0f;
 
         // Pre-pass: scan the engine trajectory table to find the real arc extents using the
         // corrected geometric slope (not hold_elevation_moa which would shift the extents wrong).
@@ -4256,38 +4281,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         float arc_y_lo = 0.0f;
         {
             const int scan_max = static_cast<int>(std::ceil(target_dist_horiz_m));
-            const float total_pitch = side_sol.launch_angle_rad + look_angle_rad;
             for (int r = 0; r <= scan_max; ++r) {
                 TrajectoryPoint tp{};
                 if (DOPE_GetTrajectoryPoint(r, &tp)) {
-                    // Rotate each sampled point into world-space
-                    const float x_local = static_cast<float>(r);
-                    const float y_world = x_local * std::sin(total_pitch) + tp.drop_m * std::cos(total_pitch);
+                    const float rf = static_cast<float>(r);
+                    const float y_world = rf * q_a + rf * rf * q_b + tp.drop_m;
                     arc_y_hi = std::max(arc_y_hi, y_world);
                     arc_y_lo = std::min(arc_y_lo, y_world);
                 }
             }
         }
 
-        // Build Y window: must contain muzzle (0), target, and arc extremes.
-        const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo});
-        const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi});
+        // Build Y window: include target, arc, and bore/POA line.
+        const float y_lo_raw = std::min({0.0f, target_elev_m, arc_y_lo, bore_proj_y_m});
+        const float y_hi_raw = std::max({0.0f, target_elev_m, arc_y_hi, bore_proj_y_m});
         const float span_raw = std::max(y_hi_raw - y_lo_raw, 0.01f);
         float y_lo = y_lo_raw - span_raw * 0.18f;   // 18% headroom bottom
         float y_hi = y_hi_raw + span_raw * 0.18f;   // 18% headroom top
         float y_span_m = y_hi - y_lo;
 
-        // "Drop at target" = how far below the bore line the bullet lands.
-        // With geom_tan_theta, the bore line at target range is (target_elev_m - traj_drop_at_target_m),
-        // so the gravitational drop = |traj_drop_at_target_m| (the solver's raw world-Y at that range).
-        // Falls back to the hold-angle estimate if no trajectory table yet.
-        const float drop_at_target_m = have_traj_at_target
-            ? std::fabs(traj_drop_at_target_m)
-            : std::fabs(target_elev_m - (target_dist_horiz_m * geom_tan_theta));
+        // Keep the top-line metric consistent with the engine "Offset: Elev ..." readout:
+        // hold distance at target derived from hold_elevation_moa.
+        const float range_for_hold_m = (side_sol.range_m > 0.0f) ? side_sol.range_m : target_range_m;
+        const float moa_linear_m = range_for_hold_m * std::tan(MOA_TO_RAD);
+        const float drop_at_target_m = std::fabs(side_sol.hold_elevation_moa) * moa_linear_m;
         const float drop_display = drop_at_target_m * offset_m_to_display;
         const char* drop_units = is_imperial ? "in" : "cm";
         ImGui::Text("Range: %.1f %s", side_range_display, range_units);
-        ImGui::Text("Estimated drop at target: %.2f %s", drop_display, drop_units);
+        ImGui::Text("Elevation hold at target: %.2f %s", drop_display, drop_units);
         ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
         ImGui::Separator();
         ImVec2 side_avail = ImGui::GetContentRegionAvail();
@@ -4406,51 +4427,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
             }
         }
-        // Horizontal ground reference — always at world Y=0 (muzzle height), dim
-        side_draw_list->AddLine(ImVec2(plot_left, map_y(0.0f)), ImVec2(plot_right, map_y(0.0f)),
-                                IM_COL32(70, 70, 80, 120), 1.0f);
         // Y-axis rule
         side_draw_list->AddLine(ImVec2(plot_left, plot_top), ImVec2(plot_left, plot_bottom),
                                 IM_COL32(120, 120, 130, 180), 1.0f);
-        const int sample_count = 64;
-        ImVec2 arc_points[sample_count + 1];
         const float sight_height_m = g_state.zero.sight_height_mm / 1000.0f;
         const ImVec2 muzzle_pt(map_x(0.0f), map_y(sight_height_m));
-        // Bullet arc — use engine RK4 trajectory table when available;
-        // fall back to a physically anchored parabola through (0,0) and (range, target_elev_m).
-        // Both paths use geom_tan_theta so the arc is guaranteed to end at the impact marker.
-        {
-            // Fallback parabola: y = geom_tan_theta*x - K*x²
-            // Solve for K so that y(side_range_m) = target_elev_m:
-            //   side_range_m*geom_tan_theta - K*side_range_m² = target_elev_m
-            //   K = (geom_tan_theta - target_elev_m/side_range_m) / side_range_m
-            // = -traj_drop_at_target_m / side_range_m² when trajectory table is available.
-            // 1. Get the base angles
-            const float look_rad = side_sol.look_angle_deg * (PI / 180.0f);
-            const float launch_rad = side_sol.launch_angle_rad;
-            const float total_pitch = look_rad + launch_rad;
 
-            // 2. Clear and rebuild the arc
-            for (int i = 0; i <= sample_count; ++i) {
-                float x_local = (target_range_m * i) / sample_count;
-                TrajectoryPoint tp;
-                if (DOPE_GetTrajectoryPoint((int)x_local, &tp)) {
-                    // ROTATION LOGIC
-                    // x_local is distance down the bore
-                    // tp.drop_m is vertical distance from the bore (usually negative)
-
-                    float x_rotated = x_local * std::cos(total_pitch) - tp.drop_m * std::sin(total_pitch);
-                    float y_rotated = x_local * std::sin(total_pitch) + tp.drop_m * std::cos(total_pitch);
-
-                    // OFFSET: Add sight height AFTER rotation so it stays vertical relative to gravity
-                    // then map to screen pixels
-                    arc_points[i] = ImVec2(map_x(x_rotated), map_y(y_rotated + sight_height_m));
-                } else {
-                    arc_points[i] = ImVec2(map_x(0.0f), map_y(sight_height_m));
-                }
-            }
-            side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
-        }
         // --- Stick figure (shooter silhouette) ---
         {
             const float shooter_height_in = 72.0f;
@@ -4483,65 +4465,94 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             side_draw_list->AddLine(ImVec2(sx, shoulder_y), ImVec2(sx - 12.0f, shoulder_y + 0.07f * h_px), sc, sw);
             const float brace_x = sx - splay - 18.0f;
             const float top_y = head_cy - head_r;
-            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
-            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x + 3.0f, top_y), IM_COL32(110, 125, 150, 140), 1.0f);
-            side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y), IM_COL32(110, 125, 150, 140), 1.0f);
-            side_draw_list->AddText(ImVec2(brace_x - 33.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f), IM_COL32(130, 140, 165, 210), "72in\n(ref)");
+            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x, feet_y),
+                                    IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, top_y), ImVec2(brace_x + 3.0f, top_y),
+                                    IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddLine(ImVec2(brace_x, feet_y), ImVec2(brace_x + 3.0f, feet_y),
+                                    IM_COL32(110, 125, 150, 140), 1.0f);
+            side_draw_list->AddText(
+                ImVec2(brace_x - 33.0f, top_y + (feet_y - top_y) * 0.5f - 5.0f),
+                IM_COL32(130, 140, 165, 210), "72in\n(ref)");
         }
-        // Bore projection / trajectory rendering replaced with corrected view logic.
-        // 1. Calculate the Target's World Coordinates
-        const float look_rad = side_sol.look_angle_deg * (3.14159265f / 180.0f);
+
+        // Side-view geometry: one selected target, one POA at target distance,
+        // sightline from sight marker, and trajectory from muzzle marker.
         const float launch_rad = side_sol.launch_angle_rad;
+        const float target_x_m = target_dist_horiz_m;
+        const float target_y_m = target_elev_m;
+        const float hold_angle_rad = side_sol.hold_elevation_moa * MOA_TO_RAD;
+        const float poa_y_m = target_y_m + target_x_m * std::tan(hold_angle_rad);
+        const float zero_range_m = std::max(1.0f, g_state.zero.zero_range_m);
+        const float sightline_tan =
+            (target_x_m > 1e-6f) ? ((poa_y_m - sight_height_m) / target_x_m) : 0.0f;
+        const float bore_visual_tan = sightline_tan + (sight_height_m / zero_range_m);
 
-        // Target position relative to the muzzle
-        float target_x_world = target_range_m * std::cos(look_rad);
-        float target_y_world = target_range_m * std::sin(look_rad);
-
-        // 2. Dynamic View Scaling (Fixes the "Squashed" look)
-        // We find the largest dimension (X or Y) and use it to set the scale.
-        float max_scene_extent = std::max(std::abs(target_x_world), std::abs(target_y_world));
-        if (max_scene_extent < 10.0f) max_scene_extent = 100.0f; // Safety floor
-        float view_margin = 1.2f; // 20% padding
-        float world_scale = max_scene_extent * view_margin;
-
-        auto map_x = [&](float x_w) {
-            return side_canvas_pos.x + (x_w / world_scale) * side_canvas_size.x;
-        };
-        auto map_y = [&](float y_w) {
-            // Start at center of canvas and scale up/down
-            return side_canvas_pos.y + (side_canvas_size.y * 0.8f) - (y_w / world_scale) * side_canvas_size.y;
-        };
-
-        // 3. Draw the Trajectory Arc (Sampled to Slant Range)
-        const int sample_count = 100;
-        ImVec2 arc_points[sample_count + 1];
-        for (int i = 0; i <= sample_count; ++i) {
-            // CRITICAL: Sample all the way to target_range_m (the slant range)
-            float dist_along_bore = (target_range_m * i) / sample_count;
-            TrajectoryPoint tp;
-            
-            if (DOPE_GetTrajectoryPoint((int)dist_along_bore, &tp)) {
-                float total_pitch = look_rad + launch_rad;
-
-                // Rotate local bore coordinates into world coordinates
-                float x_w = dist_along_bore * std::cos(total_pitch) - tp.drop_m * std::sin(total_pitch);
-                float y_w = dist_along_bore * std::sin(total_pitch) + tp.drop_m * std::cos(total_pitch);
-
-                // Adjust for sight height and map to pixels
-                arc_points[i] = ImVec2(map_x(x_w), map_y(y_w - sight_height_m));
-            } else {
-                arc_points[i] = ImVec2(map_x(0.0f), map_y(-sight_height_m));
+        // Draw trajectory arc in muzzle/world frame:
+        // y(x) = x*q_a + x^2*q_b + drop_interp(x)
+        const int sample_count2 = 100;
+        ImVec2 arc_points2[sample_count2 + 1];
+        for (int i = 0; i <= sample_count2; ++i) {
+            const float dist_horiz = (target_x_m * i) / sample_count2;
+            float drop_m_interp = 0.0f;
+            if (!interpolate_drop_at_horizontal(dist_horiz, drop_m_interp)) {
+                arc_points2[i] = ImVec2(map_x(dist_horiz), map_y(0.0f));
+                continue;
             }
+            const float y_w = dist_horiz * q_a + dist_horiz * dist_horiz * q_b + drop_m_interp;
+            arc_points2[i] = ImVec2(map_x(dist_horiz), map_y(y_w));
         }
-        side_draw_list->AddPolyline(arc_points, sample_count + 1, IM_COL32(98, 203, 255, 255), ImDrawFlags_None, 2.0f);
+        side_draw_list->AddPolyline(arc_points2, sample_count2 + 1, IM_COL32(98, 203, 255, 255),
+                                    ImDrawFlags_None, 2.0f);
 
-        // 4. Draw the Target (Moves with look angle)
-        ImVec2 target_pixel_pos = ImVec2(map_x(target_x_world), map_y(target_y_world));
-        // Muzzle marker at origin + sight height
-        ImVec2 muzzle_pixel = ImVec2(map_x(0.0f), map_y(sight_height_m));
+        const ImVec2 muzzle_pixel(map_x(0.0f), map_y(0.0f));
+        const ImVec2 sight_pixel(map_x(0.0f), map_y(sight_height_m));
+        const ImVec2 target_pixel_pos(map_x(target_x_m), map_y(target_y_m));
+        const ImVec2 aim_pixel(map_x(target_x_m), map_y(poa_y_m));
+
+        // Marker semantics: muzzle, sight, target, and POA.
         side_draw_list->AddCircleFilled(muzzle_pixel, 3.5f, IM_COL32(130, 255, 130, 255));
-        side_draw_list->AddCircleFilled(target_pixel_pos, 5.0f, IM_COL32(255, 50, 50, 255));
-        // --- End replaced rendering ---
+        side_draw_list->AddCircle(sight_pixel, 6.0f, IM_COL32(150, 175, 220, 220), 0, 1.8f);
+        side_draw_list->AddCircleFilled(target_pixel_pos, 5.0f, IM_COL32(255, 90, 90, 255));
+        side_draw_list->AddCircleFilled(aim_pixel, 4.5f, IM_COL32(255, 200, 60, 255));
+
+        // Bore direction line from muzzle using sight-height + zero-range convergence.
+        const ImVec2 bore_end_pixel(map_x(target_x_m), map_y(target_x_m * bore_visual_tan));
+        side_draw_list->AddLine(muzzle_pixel, bore_end_pixel, IM_COL32(205, 170, 95, 150), 1.2f);
+
+        // Draw full sightline from sight marker to POA at target distance.
+        side_draw_list->AddLine(sight_pixel, aim_pixel, IM_COL32(255, 200, 60, 200), 1.6f);
+
+        side_draw_list->AddText(ImVec2(muzzle_pixel.x + 6.0f, muzzle_pixel.y + 4.0f),
+                                IM_COL32(140, 245, 140, 220), "Muzzle");
+        side_draw_list->AddText(ImVec2(sight_pixel.x + 8.0f, sight_pixel.y - 12.0f),
+                                IM_COL32(170, 190, 230, 220), "Sight");
+        side_draw_list->AddText(ImVec2(target_pixel_pos.x + 6.0f, target_pixel_pos.y - 10.0f),
+                                IM_COL32(255, 120, 120, 220), "Target");
+        side_draw_list->AddText(ImVec2(aim_pixel.x + 6.0f, aim_pixel.y - 10.0f),
+                                IM_COL32(255, 200, 140, 220), "Aim pt");
+        side_draw_list->AddText(ImVec2(bore_end_pixel.x - 40.0f, bore_end_pixel.y + 6.0f),
+                                IM_COL32(205, 170, 95, 200), "Bore");
+
+        // Debug diagnostics for deterministic side-view geometry.
+        static bool side_view_debug = false;
+        ImGui::Checkbox("Show Side View Debug", &side_view_debug);
+        if (side_view_debug) {
+            ImGui::Indent();
+            ImGui::Text("DBG: target_x_m=%.3f m, target_y_m=%.3f m, poa_y_m=%.3f m",
+                        target_x_m, target_y_m, poa_y_m);
+            ImGui::Text("DBG: launch_angle_rad=%.6f, hold_moa=%.3f",
+                        launch_rad, side_sol.hold_elevation_moa);
+            ImGui::Text("DBG: bore_tan=%.6f, q_a=%.6f, q_b=%.9f",
+                        bore_tan_theta, q_a, q_b);
+            ImGui::Text("DBG: sightline_tan=%.6f, bore_visual_tan=%.6f",
+                        sightline_tan, bore_visual_tan);
+            ImGui::Text("DBG: zero_range_m=%.3f m, sight_height_m=%.3f m",
+                        zero_range_m, sight_height_m);
+            ImGui::Text("DBG: impact_y_at_target_m=%.3f m, drop_at_target_m=%.3f m",
+                        impact_y_at_target_m, drop_at_target_m);
+            ImGui::Unindent();
+        }
         ImGui::End();
 
         ImGui::Begin("Top Down Drift");
@@ -4552,7 +4563,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 d_sol.horizontal_range_m > 0.0f ? d_sol.horizontal_range_m : g_state.lrf_range;
             d_range_m = ClampValue(d_range_m, 1.0f, 5000.0f);
 
-            float lateral_m = d_sol.hold_windage_moa * MOA_TO_RAD * d_range_m;
+            // Flip lateral sign so positive `hold_windage_moa` (right) maps to
+            // positive X to the right in the top-down canvas.
+            float lateral_m = -d_sol.hold_windage_moa * MOA_TO_RAD * d_range_m;
             // d_range_scale_m will be set later after plot bounds
 
             // More sensitive scale for small drifts
@@ -4734,17 +4747,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     drift_draw_list->AddText(ImVec2(mid_x - 20.0f, by - 22.0f), IM_COL32(220, 220, 100, 230), wind_bracket_lbl);
                 }
 
-                // Windage annotation
-                const float wx = d_plot_right - 60.0f;
+                // Windage annotation (measure text and clamp inside canvas)
                 const float wy = d_plot_bottom - 28.0f;
-                const float wind_in  = std::fabs(d_sol.hold_windage_moa) * inches_per_moa_val;
-                drift_draw_list->AddRectFilled(ImVec2(wx - 54.0f, wy + 6.0f),
-                                               ImVec2(wx + 68.0f, wy + 20.0f),
-                                               IM_COL32(10, 10, 14, 210));
+                const float wind_in = std::fabs(d_sol.hold_windage_moa) * inches_per_moa_val;
                 char wind_label_txt[64];
                 std::snprintf(wind_label_txt, sizeof(wind_label_txt), "Wind: %.2f MOA (%.2f in)",
                               d_sol.hold_windage_moa, wind_in);
-                drift_draw_list->AddText(ImVec2(wx - 52.0f, wy + 8.0f),
+
+                // Measure text width and add small horizontal padding
+                ImVec2 txt_sz = ImGui::CalcTextSize(wind_label_txt);
+                const float pad_h = 8.0f;
+                const float label_w = txt_sz.x + pad_h;
+                const float max_right = d_canvas_end.x - 4.0f;
+                const float min_left = d_plot_left + 4.0f;
+
+                // Anchor near plot right but ensure fully inside canvas
+                float rect_right = std::min(d_plot_right - 4.0f, max_right);
+                float rect_left = rect_right - label_w;
+                if (rect_left < min_left) {
+                    rect_left = min_left;
+                    rect_right = rect_left + label_w;
+                    if (rect_right > max_right)
+                        rect_right = max_right;
+                }
+
+                drift_draw_list->AddRectFilled(ImVec2(rect_left, wy + 6.0f),
+                                               ImVec2(rect_right, wy + 20.0f),
+                                               IM_COL32(10, 10, 14, 210));
+                drift_draw_list->AddText(ImVec2(rect_left + pad_h * 0.5f, wy + 8.0f),
                                          IM_COL32(110, 235, 255, 255), wind_label_txt);
             }
         }

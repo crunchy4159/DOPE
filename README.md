@@ -2,7 +2,9 @@
 
 **Digital Open-Source Precise Extrapolator**
 
-DOPE engine implementing the DOPE SRS v1.6 draft (2026-02-25): a C++17 ballistic trajectory computation library targeting the ESP32-P4 @ 400MHz.
+DOPE 2.0 engine: a C++17 ballistic trajectory computation library targeting ESP32-P4 @ 400MHz and native desktop harnesses.
+
+DOPE 2.0 runs a table-first hybrid path (`AmmoDatasetV2`) with deterministic solver fallback, runtime context scaling, and persistent rifle+ammo calibration. See `V2_MIGRATION.md`.
 
 **Recent updates (2026-03-04):** LOS zero now aligns at bore crossing, Coriolis windage is azimuth-aware, RK4 per-metre outputs are interpolated, and drag retains density sensitivity alongside corrected BC.
 
@@ -160,7 +162,7 @@ Dear ImGui is vendored at third_party/imgui/ (committed to the repo). To upgrade
 pio run -e esp32p4
 ```
 
-## API Quick Start
+## API Quick Start (DOPE 2.0)
 
 ```cpp
 #include "dope/dope_api.h"
@@ -168,21 +170,39 @@ pio run -e esp32p4
 // Initialize
 DOPE_Init();
 
-// Configure bullet
-BulletProfile bullet = {};
-bullet.bc = 0.505f;
-bullet.drag_model = DragModel::G1;
-bullet.muzzle_velocity_ms = 792.0f;
-bullet.mass_grains = 175.0f;
-bullet.caliber_inches = 0.308f;
-bullet.twist_rate_inches = 10.0f;
-DOPE_SetBulletProfile(&bullet);
+// Configure v2 ammo dataset (table-first)
+AmmoDatasetV2 ammo = {};
+ammo.num_trajectories = 1;
+ammo.trajectories[0].zero_range_m = 100.0f;
+ammo.trajectories[0].num_points = 2;
+ammo.trajectories[0].points[0] = {100.0f, 0.0f};
+ammo.trajectories[0].points[1] = {500.0f, -4.2f};
+ammo.bc = 0.505f;                  // sparse fallback
+ammo.drag_model = DragModel::G1;   // sparse fallback
+ammo.muzzle_velocity_ms = 792.0f;  // sparse fallback
+ammo.mass_grains = 175.0f;
+ammo.length_mm = 31.2f;
+ammo.caliber_inches = 0.308f;
+ammo.twist_rate_inches = 10.0f;
+DOPE_SetAmmoDatasetV2(&ammo);
 
 // Set zero
 ZeroConfig zero = {};
 zero.zero_range_m = 100.0f;
 zero.sight_height_mm = 38.1f;
 DOPE_SetZeroConfig(&zero);
+
+// Optional runtime context and calibration
+BallisticContext ctx = {};
+ctx.use_runtime_wind = true;
+ctx.wind_speed_ms = 3.0f;
+ctx.wind_heading_deg = 90.0f;
+DOPE_SetBallisticContext(&ctx);
+
+RifleAmmoCalibrationProfile cal = {};
+cal.muzzle_velocity_scale = 1.0f;
+cal.uncertainty_scale = 1.0f;
+DOPE_SetRifleAmmoCalibrationProfile(&cal);
 
 // Feed sensor data each cycle
 DOPE_Update(&sensorFrame);

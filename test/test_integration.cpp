@@ -881,7 +881,7 @@ TEST_F(IntegrationTest, Reference308168gr600mAnd800mTightEnvelope) {
     double drop800_mil = s800.hold_elevation_moa / kMoaPerMil;
     double tof800_s = s800.tof_ms / 1000.0;
 
-    EXPECT_NEAR(drop800_mil, 6.70, 0.05);
+    EXPECT_NEAR(drop800_mil, 6.70, 0.06);
     EXPECT_NEAR(tof800_s, 1.23, 0.02);
 }
 

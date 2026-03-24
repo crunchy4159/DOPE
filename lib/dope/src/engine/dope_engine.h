@@ -29,6 +29,12 @@ public:
 
     // --- Manual inputs ---
     void setBulletProfile(const BulletProfile* profile);
+    void setAmmoDatasetV2(const AmmoDatasetV2* dataset);
+    void setBallisticContext(const BallisticContext* context);
+    void setRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile);
+    void setModuleCapabilities(const ModuleCapabilities* caps);
+    void recordShotObservation(const ShotObservation* obs);
+    void recordRadarObservation(const RadarObservation* obs);
     void setZeroConfig(const ZeroConfig* config);
     void setWindManual(float speed_ms, float heading_deg);
     void setLatitude(float latitude_deg);
@@ -93,6 +99,13 @@ private:
     // Bullet profile
     BulletProfile bullet_;
     bool has_bullet_ = false;
+    AmmoDatasetV2 dataset_v2_;
+    bool has_dataset_v2_ = false;
+    BallisticContext ballistic_context_;
+    bool has_ballistic_context_ = false;
+    RifleAmmoCalibrationProfile calibration_profile_;
+    bool has_calibration_profile_ = false;
+    ModuleCapabilities module_caps_ = {true, false, true, true};
 
     // Zero config
     ZeroConfig zero_;
@@ -164,9 +177,18 @@ private:
     void computeSolution();
     void computeUncertainty();
     void refreshDerivedSigmasFromProfiles();
+    float interpolateProfileValue(const DOPE_ProfilePoint* points, int count, float range_m) const;
+    bool computeTableFirstSolution(float slant_range_m, float horizontal_range_m, float target_elevation_m,
+                                   float pitch_rad, float roll_rad);
+    float getActiveAmmoCep50(float range_m) const;
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
+    bool hasUsableSolverInputs() const;
     void integrateBarrelCooling(uint64_t now_us);
     float estimateBarrelMassKg() const;
     float barrelHeatMultiplier() const;
+
+    // Adaptive v2 observation state
+    float radar_mv_scale_ = 1.0f;
+    float radar_mv_sd_ms_ = 0.0f;
 };

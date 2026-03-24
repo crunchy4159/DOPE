@@ -143,9 +143,16 @@ struct DOPE_DefaultOverrides {
 // ---------------------------------------------------------------------------
 // Bullet Profile — SRS §8
 // ---------------------------------------------------------------------------
+#define DOPE_MAX_TRAJECTORY_POINTS 50
+
+struct ProfileTrajectoryPoint {
+    float distance_m;
+    float drop_m;
+};
+
 struct BulletProfile {
-    float     bc;                     // Ballistic coefficient
-    DragModel drag_model;             // G1–G8
+    ProfileTrajectoryPoint trajectory_profile[DOPE_MAX_TRAJECTORY_POINTS];
+    int       num_trajectory_points;
     float     muzzle_velocity_ms;     // m/s at reference_barrel_length_in
     float     barrel_length_in;       // actual barrel length, inches
     float     reference_barrel_length_in; // SAAMI reference barrel (rifle=24", 9mm=4"); 0 → default 24"
@@ -163,9 +170,128 @@ struct BulletProfile {
     float     length_mm;              // mm
     float     caliber_inches;         // inches
     float     twist_rate_inches;      // signed: positive = RH, negative = LH
+    float     bc;                     // Ballistic coefficient
+    DragModel drag_model;             // Selection (G1, G7, etc.)
     bool      free_floated;           // True when barrel is free-floated (no stock contact)
     bool      suppressor_attached;    // True when a suppressor is attached
     bool      barrel_tuner_attached;  // True when a barrel tuner is installed
+};
+
+// ---------------------------------------------------------------------------
+// V2 Table-First Ammo Dataset
+// ---------------------------------------------------------------------------
+#define DOPE_MAX_TABLE_POINTS 128
+#define DOPE_MAX_TRAJECTORY_FAMILIES 8
+#define DOPE_MAX_CALIBRATION_POINTS 32
+
+struct DOPE_ProfilePoint {
+    float range_m;
+    float value;
+};
+
+struct DOPE_TrajectoryPoint {
+    float range_m;
+    float drop_m;
+};
+
+struct DOPE_TrajectoryFamily {
+    float zero_range_m;
+    DOPE_TrajectoryPoint points[DOPE_MAX_TABLE_POINTS];
+    int num_points;
+};
+
+struct AmmoDatasetV2 {
+    float source_confidence;          // 0..1 data confidence
+
+    // Baseline metadata for table correction.
+    float baseline_temperature_c;
+    float baseline_pressure_pa;
+    float baseline_humidity;
+    float baseline_altitude_m;
+    float baseline_barrel_length_in;
+    float baseline_wind_speed_ms;
+
+    // Primary manufacturer channels.
+    DOPE_TrajectoryFamily trajectories[DOPE_MAX_TRAJECTORY_FAMILIES];
+    int num_trajectories;
+    DOPE_ProfilePoint velocity_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_velocity_points;
+    DOPE_ProfilePoint wind_drift_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_wind_drift_points;
+    DOPE_ProfilePoint energy_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_energy_points;
+    DOPE_ProfilePoint cep50_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_cep50_points;
+
+    // Sparse fallback params for solver paths.
+    float bc;
+    DragModel drag_model;
+    float muzzle_velocity_ms;
+    float mass_grains;
+    float length_mm;
+    float caliber_inches;
+    float twist_rate_inches;
+    float mv_adjustment_fps_per_in;
+};
+
+struct BallisticContext {
+    bool use_runtime_atmosphere;
+    float temperature_c;
+    float pressure_pa;
+    float humidity;
+    float altitude_m;
+
+    bool use_runtime_wind;
+    float wind_speed_ms;
+    float wind_heading_deg;
+
+    bool use_range_override;
+    float range_m;
+    bool use_target_elevation_override;
+    float target_elevation_m;
+};
+
+struct RifleAmmoCalibrationProfile {
+    float muzzle_velocity_bias_ms;
+    float muzzle_velocity_scale;
+    float drop_bias_moa;
+    float wind_bias_moa;
+    DOPE_ProfilePoint drop_residual_by_range[DOPE_MAX_CALIBRATION_POINTS];
+    int num_drop_residual_points;
+    DOPE_ProfilePoint wind_residual_by_range[DOPE_MAX_CALIBRATION_POINTS];
+    int num_wind_residual_points;
+    float uncertainty_scale;
+    uint64_t updated_at_unix_s;
+    uint32_t revision;
+};
+
+struct ShotObservation {
+    uint64_t timestamp_us;
+    float range_m;
+    float impact_vertical_moa;
+    float impact_horizontal_moa;
+    float wind_speed_ms;
+    float wind_heading_deg;
+    float temperature_c;
+    float pressure_pa;
+    float humidity;
+    bool valid;
+};
+
+struct RadarObservation {
+    uint64_t timestamp_us;
+    float measured_muzzle_velocity_ms;
+    float measured_velocity_sd_ms;
+    float measured_shot_heading_deg;
+    bool velocity_valid;
+    bool heading_valid;
+};
+
+struct ModuleCapabilities {
+    bool enable_solver_fallback;
+    bool enable_radar_assist;
+    bool enable_shot_learning;
+    bool enable_uncertainty_refine;
 };
 
 // ---------------------------------------------------------------------------
@@ -228,6 +354,7 @@ struct FiringSolution {
     float cant_windage_moa;           // Windage added by cant correction
 
     float cant_angle_deg;            // Current cant / roll angle
+    float look_angle_deg;            // Current look / incline angle
     float heading_deg_true;          // True heading from AHRS + mag
 
     float air_density_kgm3;          // Computed air density
@@ -243,10 +370,12 @@ struct FiringSolution {
     // Total var_e = sum of [i][0], total var_w = sum of [i][1].
     // Index: 0=MV, 1=Range, 2=WindSpeed, 3=WindHeading,
     //        4=Temperature, 5=Pressure, 6=Humidity, 7=SightHeight, 8=Cant,
-    //        9=Latitude, 10=Twist, 11=ZeroRange, 12=MVAdjustment
-    static const int kNumUncertaintyInputs = 13;
-    float uc_var_elev[13];            // per-input elevation variance (MOA²)
-    float uc_var_wind[13];            // per-input windage variance (MOA²)
+    //        9=Latitude, 10=Twist, 11=ZeroRange, 12=MVAdjustment,
+    //        13=GunAng (mechanical angular dispersion), 14=AmmoAng (intrinsic ammo dispersion)
+    static const int kNumUncertaintyInputs = 15;
+    float uc_var_elev[kNumUncertaintyInputs];            // per-input elevation variance (MOA²)
+    float uc_var_wind[kNumUncertaintyInputs];            // per-input windage variance (MOA²)
+    float launch_angle_rad;           // Bore pitch at launch
 };
 
 // ---------------------------------------------------------------------------
@@ -310,6 +439,11 @@ struct DOPE_CEPPoint {
     float cep50_moa; // CEP50 radius (MOA)
 };
 
+// Simple table reference for CEP50 breakpoints (range -> CEP50 MOA)
+struct DOPE_CEPTable {
+    const DOPE_CEPPoint* points;
+    int                  count;
+};
 
 // ---------------------------------------------------------------------------
 // Uncertainty / Error Propagation Config — SRS §14
@@ -357,6 +491,13 @@ struct UncertaintyConfig {
     float         pressure_calibration_temp_c;
 
     // Optional cartridge-specific dispersion model (CEP50 in MOA) to scale
+    // propagated uncertainty to match measured ammo dispersion.
+    // Scalar: interpolated CEP50 at current slant range (MOA).
+    float         ammo_cep50_moa;
+    // Optional per-cartridge CEP50 table (range_m -> cep50_moa)
+    DOPE_CEPTable cartridge_cep_table;
+    
+    // End of UncertaintyConfig
 };
 
 // ---------------------------------------------------------------------------

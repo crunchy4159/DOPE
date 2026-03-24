@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file dope_engine.cpp
  * @brief DOPE engine implementation — the top-level orchestrator.
  *
@@ -18,6 +18,15 @@
 namespace {
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
 constexpr float kCep50ToSigma = 1.17741f; // CEP50 radius -> 1-sigma for 2D Gaussian
+constexpr float kMinMvMs = 1.0f;
+
+inline float clampf(float v, float lo, float hi) {
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
+    return v;
+}
 
 inline float rss2(float a, float b) {
     return std::sqrt((a * a) + (b * b));
@@ -78,10 +87,16 @@ void DOPE_Engine::init() {
 
     std::memset(&solution_, 0, sizeof(solution_));
     std::memset(&bullet_, 0, sizeof(bullet_));
+    std::memset(&dataset_v2_, 0, sizeof(dataset_v2_));
+    std::memset(&ballistic_context_, 0, sizeof(ballistic_context_));
+    std::memset(&calibration_profile_, 0, sizeof(calibration_profile_));
     std::memset(&zero_, 0, sizeof(zero_));
     std::memset(&overrides_, 0, sizeof(overrides_));
 
     has_bullet_ = false;
+    has_dataset_v2_ = false;
+    has_ballistic_context_ = false;
+    has_calibration_profile_ = false;
     has_zero_ = false;
     has_range_ = false;
     has_latitude_ = false;
@@ -104,6 +119,9 @@ void DOPE_Engine::init() {
     first_update_ = true;
     had_invalid_sensor_input_ = false;
     external_reference_mode_ = false;
+    module_caps_ = {true, false, true, true};
+    radar_mv_scale_ = 1.0f;
+    radar_mv_sd_ms_ = 0.0f;
 
     getDefaultUncertaintyConfig(&uncertainty_config_);
     latest_baro_temp_c_ = 0.0f;
@@ -202,7 +220,8 @@ void DOPE_Engine::update(const SensorFrame* frame) {
 
         if (range_valid) {
             float target_elevation_m = 0.0f;
-            if (frame->target_elevation_valid) {
+            if (frame->target_elevation_valid ||
+                (std::isfinite(frame->target_elevation_m) && std::fabs(frame->target_elevation_m) > 0.0f)) {
                 if (std::isfinite(frame->target_elevation_m)) {
                     target_elevation_m = frame->target_elevation_m;
                 } else {
@@ -251,6 +270,87 @@ void DOPE_Engine::setBulletProfile(const BulletProfile* profile) {
     }
     has_bullet_ = true;
     zero_dirty_ = true;
+}
+
+void DOPE_Engine::setAmmoDatasetV2(const AmmoDatasetV2* dataset) {
+    if (!dataset) {
+        std::memset(&dataset_v2_, 0, sizeof(dataset_v2_));
+        has_dataset_v2_ = false;
+        return;
+    }
+    dataset_v2_ = *dataset;
+    has_dataset_v2_ = true;
+    refreshDerivedSigmasFromProfiles();
+}
+
+void DOPE_Engine::setBallisticContext(const BallisticContext* context) {
+    if (!context) {
+        std::memset(&ballistic_context_, 0, sizeof(ballistic_context_));
+        has_ballistic_context_ = false;
+        return;
+    }
+    ballistic_context_ = *context;
+    has_ballistic_context_ = true;
+    refreshDerivedSigmasFromProfiles();
+}
+
+void DOPE_Engine::setRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile) {
+    if (!profile) {
+        std::memset(&calibration_profile_, 0, sizeof(calibration_profile_));
+        has_calibration_profile_ = false;
+        return;
+    }
+    calibration_profile_ = *profile;
+    has_calibration_profile_ = true;
+    refreshDerivedSigmasFromProfiles();
+}
+
+void DOPE_Engine::setModuleCapabilities(const ModuleCapabilities* caps) {
+    if (!caps)
+        return;
+    module_caps_ = *caps;
+    defer_uncertainty_ = module_caps_.enable_uncertainty_refine;
+}
+
+void DOPE_Engine::recordShotObservation(const ShotObservation* obs) {
+    if (!obs || !obs->valid || !module_caps_.enable_shot_learning) {
+        return;
+    }
+    if (!has_calibration_profile_) {
+        std::memset(&calibration_profile_, 0, sizeof(calibration_profile_));
+        calibration_profile_.muzzle_velocity_scale = 1.0f;
+        calibration_profile_.uncertainty_scale = 1.0f;
+        has_calibration_profile_ = true;
+    }
+    constexpr float kAlpha = 0.15f;
+    calibration_profile_.drop_bias_moa =
+        (1.0f - kAlpha) * calibration_profile_.drop_bias_moa + kAlpha * obs->impact_vertical_moa;
+    calibration_profile_.wind_bias_moa =
+        (1.0f - kAlpha) * calibration_profile_.wind_bias_moa + kAlpha * obs->impact_horizontal_moa;
+    calibration_profile_.updated_at_unix_s = obs->timestamp_us / 1000000ULL;
+    calibration_profile_.revision += 1u;
+}
+
+void DOPE_Engine::recordRadarObservation(const RadarObservation* obs) {
+    if (!obs || !module_caps_.enable_radar_assist) {
+        return;
+    }
+    if (!obs->velocity_valid || !std::isfinite(obs->measured_muzzle_velocity_ms) ||
+        obs->measured_muzzle_velocity_ms <= kMinMvMs) {
+        return;
+    }
+    const float base_mv =
+        (has_dataset_v2_ && dataset_v2_.muzzle_velocity_ms > kMinMvMs)
+            ? dataset_v2_.muzzle_velocity_ms
+            : ((has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs) ? bullet_.muzzle_velocity_ms
+                                                                       : obs->measured_muzzle_velocity_ms);
+    radar_mv_scale_ = clampf(obs->measured_muzzle_velocity_ms / std::fmax(base_mv, kMinMvMs), 0.75f, 1.35f);
+    if (std::isfinite(obs->measured_velocity_sd_ms) && obs->measured_velocity_sd_ms >= 0.0f) {
+        radar_mv_sd_ms_ = obs->measured_velocity_sd_ms;
+        if (radar_mv_sd_ms_ > uncertainty_config_.sigma_muzzle_velocity_ms) {
+            uncertainty_config_.sigma_muzzle_velocity_ms = radar_mv_sd_ms_;
+        }
+    }
 }
 
 void DOPE_Engine::setZeroConfig(const ZeroConfig* config) {
@@ -406,20 +506,18 @@ void DOPE_Engine::evaluateState(uint64_t now_us) {
         diag_flags_ |= DOPE_Diag::LRF_STALE;
     }
 
-    if (!has_bullet_) {
+    const bool has_v2_dataset = has_dataset_v2_;
+    const bool has_legacy_bullet = has_bullet_;
+    if (!has_v2_dataset && !has_legacy_bullet) {
         fault_flags_ |= DOPE_Fault::NO_BULLET;
-    } else {
-        if (bullet_.muzzle_velocity_ms < 1.0f) {
-            fault_flags_ |= DOPE_Fault::NO_MV;
-        }
-        if (bullet_.bc < 0.001f) {
-            fault_flags_ |= DOPE_Fault::NO_BC;
-        }
-
-        if (has_zero_ && (zero_.zero_range_m < 1.0f ||
-                          zero_.zero_range_m > static_cast<float>(DOPE_MAX_RANGE_M))) {
-            fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
-        }
+    }
+    if (!hasUsableSolverInputs() && !has_v2_dataset) {
+        fault_flags_ |= DOPE_Fault::NO_MV;
+        fault_flags_ |= DOPE_Fault::NO_BC;
+    }
+    if (has_zero_ && (zero_.zero_range_m < 1.0f ||
+                      zero_.zero_range_m > static_cast<float>(DOPE_MAX_RANGE_M))) {
+        fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
     }
 
     if (!ahrs_.isStable()) {
@@ -459,9 +557,13 @@ void DOPE_Engine::evaluateState(uint64_t now_us) {
     }
 
     // Have enough data — check if we can compute
-    if (has_range_ && has_bullet_ && bullet_.muzzle_velocity_ms > 1.0f && bullet_.bc > 0.001f) {
+    if (has_range_ && (has_v2_dataset || has_legacy_bullet)) {
         computeSolution();
-        mode_ = DOPE_Mode::SOLUTION_READY;
+        if (solution_.solution_mode == static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY)) {
+            mode_ = DOPE_Mode::SOLUTION_READY;
+        } else if (solution_.solution_mode == static_cast<uint32_t>(DOPE_Mode::FAULT)) {
+            mode_ = DOPE_Mode::FAULT;
+        }
     } else {
         mode_ = DOPE_Mode::IDLE;
         solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::IDLE);
@@ -489,13 +591,21 @@ void DOPE_Engine::computeSolution() {
     }
 
     // Get current pitch (bore elevation) and heading from AHRS
-    float pitch = ahrs_.getPitch();
-    float roll = ahrs_.getRoll();
-    float yaw = ahrs_.getYaw();
-    float heading_true = mag_.computeHeading(yaw);
+    const float pitch = ahrs_.getPitch();
+    const float roll = ahrs_.getRoll();
+    const float yaw = ahrs_.getYaw();
+    const float heading_true = mag_.computeHeading(yaw);
 
-    const float slant_range_m = lrf_range_filtered_m_;
-    float target_elevation_m = target_elevation_m_;
+    float slant_range_m = lrf_range_filtered_m_;
+    if (has_ballistic_context_ && ballistic_context_.use_range_override &&
+        std::isfinite(ballistic_context_.range_m) && ballistic_context_.range_m > 1.0f) {
+        slant_range_m = ballistic_context_.range_m;
+    }
+    float target_elevation_m =
+        (has_ballistic_context_ && ballistic_context_.use_target_elevation_override &&
+         std::isfinite(ballistic_context_.target_elevation_m))
+            ? ballistic_context_.target_elevation_m
+            : target_elevation_m_;
     if (!std::isfinite(target_elevation_m)) {
         target_elevation_m = 0.0f;
     }
@@ -507,9 +617,14 @@ void DOPE_Engine::computeSolution() {
         std::sqrt(std::fmax((slant_range_m * slant_range_m) - (target_elevation_m * target_elevation_m),
                             0.01f));
 
+    if (computeTableFirstSolution(slant_range_m, horizontal_range_m, target_elevation_m, pitch, roll)) {
+        return;
+    }
+
     // Build solver params (integrates over horizontal distance).
     SolverParams params = buildSolverParams(horizontal_range_m);
-    params.launch_angle_rad = zero_angle_rad_ + pitch;
+    const float launch_angle = zero_angle_rad_ + pitch;
+    params.launch_angle_rad = launch_angle;
 
     // Run solver
     SolverResult result = solver_.integrate(params);
@@ -570,6 +685,17 @@ void DOPE_Engine::computeSolution() {
     drop_moa += boresight_.vertical_moa + reticle_.vertical_moa;
     windage_moa += windage_offsets_moa;
 
+    if (has_calibration_profile_) {
+        drop_moa += calibration_profile_.drop_bias_moa +
+                    interpolateProfileValue(calibration_profile_.drop_residual_by_range,
+                                            calibration_profile_.num_drop_residual_points,
+                                            horizontal_range_m);
+        windage_moa += calibration_profile_.wind_bias_moa +
+                       interpolateProfileValue(calibration_profile_.wind_residual_by_range,
+                                               calibration_profile_.num_wind_residual_points,
+                                               horizontal_range_m);
+    }
+
     // Apply cant correction    [MATH §15]
     const float windage_before_cant_moa = windage_moa;
     float cant_elev, cant_wind;
@@ -601,6 +727,8 @@ void DOPE_Engine::computeSolution() {
     solution_.cant_windage_moa = windage_cant_moa;
 
     solution_.cant_angle_deg = roll * dope::math::RAD_TO_DEG;
+    solution_.look_angle_deg = std::atan2(target_elevation_m, horizontal_range_m) * dope::math::RAD_TO_DEG;
+    solution_.launch_angle_rad = launch_angle;
     solution_.heading_deg_true = heading_true;
     solution_.air_density_kgm3 = atmo_.getAirDensity();
 
@@ -719,7 +847,7 @@ void DOPE_Engine::notifyShotFired(uint64_t timestamp_us, float ambient_temp_c) {
 void DOPE_Engine::recomputeZero() {
     zero_dirty_ = false;
 
-    if (!has_bullet_ || !has_zero_) {
+    if (!has_zero_) {
         zero_angle_rad_ = 0.0f;
         return;
     }
@@ -727,6 +855,25 @@ void DOPE_Engine::recomputeZero() {
     if (zero_.zero_range_m < 1.0f || zero_.zero_range_m > DOPE_MAX_RANGE_M) {
         fault_flags_ |= DOPE_Fault::ZERO_UNSOLVABLE;
         zero_angle_rad_ = 0.0f;
+        return;
+    }
+
+    if (!hasUsableSolverInputs() && has_dataset_v2_ && dataset_v2_.num_trajectories > 0) {
+        int best_idx = 0;
+        float best_err = std::fabs(dataset_v2_.trajectories[0].zero_range_m - zero_.zero_range_m);
+        for (int i = 1; i < dataset_v2_.num_trajectories; ++i) {
+            const float err = std::fabs(dataset_v2_.trajectories[i].zero_range_m - zero_.zero_range_m);
+            if (err < best_err) {
+                best_err = err;
+                best_idx = i;
+            }
+        }
+        const DOPE_TrajectoryFamily& fam = dataset_v2_.trajectories[best_idx];
+        if (fam.num_points >= 2 && fam.points[1].range_m > 1.0f) {
+            zero_angle_rad_ = -fam.points[1].drop_m / fam.points[1].range_m;
+        } else {
+            zero_angle_rad_ = 0.0f;
+        }
         return;
     }
 
@@ -748,36 +895,89 @@ void DOPE_Engine::recomputeZero() {
 SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
     SolverParams p;
     std::memset(&p, 0, sizeof(p));
+    float base_bc = 0.0f;
+    float base_mv_ms = 0.0f;
+    float base_mass_gr = 0.0f;
+    float base_len_mm = 0.0f;
+    float base_cal_in = 0.0f;
+    float base_twist_in = 0.0f;
+    float mv_adjust_fps_per_in = 0.0f;
+    float ref_barrel_in = 24.0f;
+    float barrel_in = 24.0f;
 
-    // BC with atmospheric correction
-    p.bc = atmo_.correctBC(bullet_.bc);
-    p.drag_model = bullet_.drag_model;
+    if (has_dataset_v2_) {
+        base_bc = dataset_v2_.bc;
+        base_mv_ms = dataset_v2_.muzzle_velocity_ms;
+        base_mass_gr = dataset_v2_.mass_grains;
+        base_len_mm = dataset_v2_.length_mm;
+        base_cal_in = dataset_v2_.caliber_inches;
+        base_twist_in = dataset_v2_.twist_rate_inches;
+        mv_adjust_fps_per_in = std::fabs(dataset_v2_.mv_adjustment_fps_per_in);
+        if (dataset_v2_.baseline_barrel_length_in > 0.0f) {
+            ref_barrel_in = dataset_v2_.baseline_barrel_length_in;
+            barrel_in = dataset_v2_.baseline_barrel_length_in;
+        }
+        p.drag_model = dataset_v2_.drag_model;
+    }
+    if (has_bullet_) {
+        if (!(base_bc > 0.001f)) base_bc = bullet_.bc;
+        if (!(base_mv_ms > kMinMvMs)) base_mv_ms = bullet_.muzzle_velocity_ms;
+        if (!(base_mass_gr > 0.0f)) base_mass_gr = bullet_.mass_grains;
+        if (!(base_len_mm > 0.0f)) base_len_mm = bullet_.length_mm;
+        if (!(base_cal_in > 0.0f)) base_cal_in = bullet_.caliber_inches;
+        if (!(std::fabs(base_twist_in) > 0.1f)) base_twist_in = bullet_.twist_rate_inches;
+        if (!(mv_adjust_fps_per_in > 0.0f)) mv_adjust_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
+        if (bullet_.reference_barrel_length_in > 0.0f) ref_barrel_in = bullet_.reference_barrel_length_in;
+        if (bullet_.barrel_length_in > 0.0f) barrel_in = bullet_.barrel_length_in;
+        if (p.drag_model == static_cast<DragModel>(0)) p.drag_model = bullet_.drag_model;
+    }
 
-    // Muzzle velocity adjusted for barrel length (relative to SAAMI reference barrel).
-    // If reference_barrel_length_in is unset (0), default to 24" (standard rifle barrel).
-    float ref_barrel_in =
-        (bullet_.reference_barrel_length_in > 0.0f) ? bullet_.reference_barrel_length_in : 24.0f;
-    float base_mv_fps = bullet_.muzzle_velocity_ms * 3.28084f;               // [MATH §9]
-    float barrel_length_delta_in = bullet_.barrel_length_in - ref_barrel_in; // [MATH §9]
-    float mv_adjustment_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
-    float adjusted_mv_fps =
-        base_mv_fps + (barrel_length_delta_in * mv_adjustment_fps_per_in); // [MATH §9]
-    p.muzzle_velocity_ms = adjusted_mv_fps * 0.3048f;                      // [MATH §9]
-
-    p.bullet_mass_kg = bullet_.mass_grains * dope::math::GRAINS_TO_KG;
-    p.bullet_length_m = bullet_.length_mm * dope::math::MM_TO_M;
+    p.bc = atmo_.correctBC(base_bc);
+    float base_mv_fps = base_mv_ms * 3.28084f;
+    float adjusted_mv_fps = base_mv_fps + ((barrel_in - ref_barrel_in) * mv_adjust_fps_per_in);
+    float mv_ms = adjusted_mv_fps * 0.3048f;
+    if (has_calibration_profile_) {
+        const float scale = std::isfinite(calibration_profile_.muzzle_velocity_scale) &&
+                                    calibration_profile_.muzzle_velocity_scale > 0.1f
+                                ? calibration_profile_.muzzle_velocity_scale
+                                : 1.0f;
+        mv_ms = mv_ms * scale + calibration_profile_.muzzle_velocity_bias_ms;
+    }
+    if (module_caps_.enable_radar_assist) {
+        mv_ms *= radar_mv_scale_;
+    }
+    p.muzzle_velocity_ms = std::fmax(mv_ms, kMinMvMs);
+    p.bullet_mass_kg = std::fmax(base_mass_gr, 1.0f) * dope::math::GRAINS_TO_KG;
+    p.bullet_length_m = std::fmax(base_len_mm, 1.0f) * dope::math::MM_TO_M;
     p.sight_height_m = has_zero_ ? zero_.sight_height_mm * dope::math::MM_TO_M : 0.0f;
 
     p.air_density = atmo_.getAirDensity();
     p.speed_of_sound = atmo_.getSpeedOfSound();
+    if (has_ballistic_context_ && ballistic_context_.use_runtime_atmosphere &&
+        std::isfinite(ballistic_context_.pressure_pa) && std::isfinite(ballistic_context_.temperature_c)) {
+        Atmosphere runtime_atmo;
+        runtime_atmo.init();
+        const float humidity = std::isfinite(ballistic_context_.humidity) ? ballistic_context_.humidity : 0.5f;
+        runtime_atmo.updateFromBaro(ballistic_context_.pressure_pa, ballistic_context_.temperature_c, humidity);
+        p.bc = runtime_atmo.correctBC(base_bc);
+        p.air_density = runtime_atmo.getAirDensity();
+        p.speed_of_sound = runtime_atmo.getSpeedOfSound();
+    }
     p.drag_reference_scale = external_reference_mode_ ? DOPE_EXTERNAL_REFERENCE_DRAG_SCALE
                                                       : DOPE_DEFAULT_DRAG_REFERENCE_SCALE;
     p.target_range_m = range_m;
     p.launch_angle_rad = 0.0f; // set by caller
 
     // Wind decomposition    [MATH §10]
-    float heading = mag_.computeHeading(ahrs_.getYaw());
-    wind_.decompose(heading, p.headwind_ms, p.crosswind_ms); // [MATH §10]
+    const float heading = mag_.computeHeading(ahrs_.getYaw());
+    if (has_ballistic_context_ && ballistic_context_.use_runtime_wind &&
+        std::isfinite(ballistic_context_.wind_speed_ms) && std::isfinite(ballistic_context_.wind_heading_deg)) {
+        const float rel = (ballistic_context_.wind_heading_deg - heading) * dope::math::DEG_TO_RAD;
+        p.headwind_ms = ballistic_context_.wind_speed_ms * std::cos(rel);
+        p.crosswind_ms = ballistic_context_.wind_speed_ms * std::sin(rel);
+    } else {
+        wind_.decompose(heading, p.headwind_ms, p.crosswind_ms);
+    }
 
     // Coriolis
     if (has_latitude_) {
@@ -789,15 +989,261 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
     }
 
     // Spin drift
-    if (std::fabs(bullet_.twist_rate_inches) > 0.1f) {
+    if (std::fabs(base_twist_in) > 0.1f) {
         p.spin_drift_enabled = true;
-        p.twist_rate_inches = bullet_.twist_rate_inches;
-        p.caliber_m = bullet_.caliber_inches * dope::math::INCHES_TO_M;
+        p.twist_rate_inches = base_twist_in;
+        p.caliber_m = std::fmax(base_cal_in, 0.1f) * dope::math::INCHES_TO_M;
     } else {
         p.spin_drift_enabled = false;
     }
 
     return p;
+}
+
+bool DOPE_Engine::hasUsableSolverInputs() const {
+    if (has_dataset_v2_ && dataset_v2_.muzzle_velocity_ms > kMinMvMs && dataset_v2_.bc > 0.001f) {
+        return true;
+    }
+    if (has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs && bullet_.bc > 0.001f) {
+        return true;
+    }
+    return false;
+}
+
+float DOPE_Engine::interpolateProfileValue(const DOPE_ProfilePoint* points, int count, float range_m) const {
+    if (!points || count <= 0) {
+        return 0.0f;
+    }
+    if (count == 1) {
+        return points[0].value;
+    }
+    if (range_m <= points[0].range_m) {
+        return points[0].value;
+    }
+    if (range_m >= points[count - 1].range_m) {
+        return points[count - 1].value;
+    }
+    for (int i = 0; i < count - 1; ++i) {
+        if (range_m <= points[i + 1].range_m) {
+            const float dx = points[i + 1].range_m - points[i].range_m;
+            if (dx <= 0.0f) {
+                return points[i + 1].value;
+            }
+            const float t = (range_m - points[i].range_m) / dx;
+            return points[i].value + t * (points[i + 1].value - points[i].value);
+        }
+    }
+    return points[count - 1].value;
+}
+
+float DOPE_Engine::getActiveAmmoCep50(float range_m) const {
+    if (has_dataset_v2_) {
+        const float table_cep =
+            interpolateProfileValue(dataset_v2_.cep50_by_range, dataset_v2_.num_cep50_points, range_m);
+        if (std::isfinite(table_cep) && table_cep > 0.0f) {
+            return table_cep;
+        }
+    }
+    if (uncertainty_config_.cartridge_cep_table.points &&
+        uncertainty_config_.cartridge_cep_table.count > 0) {
+        const DOPE_CEPTable t = uncertainty_config_.cartridge_cep_table;
+        if (t.count == 1) {
+            return t.points[0].cep50_moa;
+        }
+        if (range_m <= t.points[0].range_m) {
+            return t.points[0].cep50_moa;
+        }
+        if (range_m >= t.points[t.count - 1].range_m) {
+            return t.points[t.count - 1].cep50_moa;
+        }
+        for (int i = 0; i < t.count - 1; ++i) {
+            if (range_m <= t.points[i + 1].range_m) {
+                const float dx = t.points[i + 1].range_m - t.points[i].range_m;
+                const float a = (dx > 0.0f) ? ((range_m - t.points[i].range_m) / dx) : 0.0f;
+                return t.points[i].cep50_moa + a * (t.points[i + 1].cep50_moa - t.points[i].cep50_moa);
+            }
+        }
+    }
+    if (std::isfinite(uncertainty_config_.ammo_cep50_moa) && uncertainty_config_.ammo_cep50_moa > 0.0f) {
+        return uncertainty_config_.ammo_cep50_moa;
+    }
+    return 0.0f;
+}
+
+bool DOPE_Engine::computeTableFirstSolution(float slant_range_m, float horizontal_range_m,
+                                            float target_elevation_m, float pitch_rad,
+                                            float roll_rad) {
+    if (!has_dataset_v2_ || dataset_v2_.num_trajectories <= 0) {
+        return false;
+    }
+
+    const float active_zero = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : 100.0f;
+    int best_idx = 0;
+    float best_err = std::fabs(dataset_v2_.trajectories[0].zero_range_m - active_zero);
+    for (int i = 1; i < dataset_v2_.num_trajectories; ++i) {
+        const float err = std::fabs(dataset_v2_.trajectories[i].zero_range_m - active_zero);
+        if (err < best_err) {
+            best_err = err;
+            best_idx = i;
+        }
+    }
+
+    const DOPE_TrajectoryFamily& fam = dataset_v2_.trajectories[best_idx];
+    if (fam.num_points <= 0) {
+        return false;
+    }
+
+    DOPE_ProfilePoint traj[DOPE_MAX_TABLE_POINTS];
+    const int traj_count = (fam.num_points > DOPE_MAX_TABLE_POINTS) ? DOPE_MAX_TABLE_POINTS : fam.num_points;
+    for (int i = 0; i < traj_count; ++i) {
+        traj[i].range_m = fam.points[i].range_m;
+        traj[i].value = fam.points[i].drop_m;
+    }
+    float drop_m = interpolateProfileValue(traj, traj_count, horizontal_range_m);
+    if (!std::isfinite(drop_m)) {
+        return false;
+    }
+
+    // Baseline-to-runtime scaling using a simple density + MV factor.
+    float density_scale = 1.0f;
+    if (std::isfinite(dataset_v2_.baseline_pressure_pa) && dataset_v2_.baseline_pressure_pa > 1000.0f &&
+        std::isfinite(dataset_v2_.baseline_temperature_c)) {
+        Atmosphere baseline;
+        baseline.init();
+        const float h = std::isfinite(dataset_v2_.baseline_humidity) ? dataset_v2_.baseline_humidity : 0.5f;
+        baseline.updateFromBaro(dataset_v2_.baseline_pressure_pa, dataset_v2_.baseline_temperature_c, h);
+        const float rho0 = baseline.getAirDensity();
+        if (rho0 > 0.1f) {
+            density_scale = atmo_.getAirDensity() / rho0;
+        }
+    }
+    drop_m *= clampf(density_scale, 0.5f, 1.7f);
+
+    const float heading = mag_.computeHeading(ahrs_.getYaw());
+    float headwind = 0.0f, crosswind = 0.0f;
+    if (has_ballistic_context_ && ballistic_context_.use_runtime_wind &&
+        std::isfinite(ballistic_context_.wind_speed_ms) && std::isfinite(ballistic_context_.wind_heading_deg)) {
+        const float rel = (ballistic_context_.wind_heading_deg - heading) * dope::math::DEG_TO_RAD;
+        headwind = ballistic_context_.wind_speed_ms * std::cos(rel);
+        crosswind = ballistic_context_.wind_speed_ms * std::sin(rel);
+    } else {
+        wind_.decompose(heading, headwind, crosswind);
+    }
+
+    float wind_drift_m = NAN;
+    if (dataset_v2_.num_wind_drift_points > 0) {
+        wind_drift_m = interpolateProfileValue(dataset_v2_.wind_drift_by_range,
+                                               dataset_v2_.num_wind_drift_points, horizontal_range_m);
+        if (std::isfinite(wind_drift_m)) {
+            const float ref_wind = std::fmax(std::fabs(dataset_v2_.baseline_wind_speed_ms), 0.1f);
+            wind_drift_m = std::fabs(wind_drift_m) * (crosswind / ref_wind);
+        }
+    }
+
+    SolverResult solver_result = {};
+    bool have_solver = false;
+    if (module_caps_.enable_solver_fallback && hasUsableSolverInputs()) {
+        SolverParams sp = buildSolverParams(horizontal_range_m);
+        sp.launch_angle_rad = zero_angle_rad_ + pitch_rad;
+        solver_result = solver_.integrate(sp);
+        have_solver = solver_result.valid;
+    }
+
+    const float sight_h = has_zero_ ? zero_.sight_height_mm * dope::math::MM_TO_M : 0.0f;
+    const float zero_range_m = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : horizontal_range_m;
+    const float sight_line_drop = sight_h - (sight_h / zero_range_m) * horizontal_range_m;
+    const float rel_drop = drop_m - sight_line_drop;
+    float drop_moa = -(rel_drop / std::fmax(horizontal_range_m, 1.0f)) * dope::math::RAD_TO_MOA;
+    drop_moa += (target_elevation_m / std::fmax(horizontal_range_m, 1.0f)) * dope::math::RAD_TO_MOA;
+
+    float wind_from_wind_moa = 0.0f;
+    if (std::isfinite(wind_drift_m)) {
+        wind_from_wind_moa = -(wind_drift_m / std::fmax(horizontal_range_m, 1.0f)) * dope::math::RAD_TO_MOA;
+    } else if (have_solver) {
+        wind_from_wind_moa =
+            -(solver_result.windage_at_target_m / std::fmax(horizontal_range_m, 1.0f)) * dope::math::RAD_TO_MOA;
+    } else {
+        return false;
+    }
+
+    const float coriolis_elev = have_solver ? solver_result.coriolis_elev_moa : 0.0f;
+    const float coriolis_wind = have_solver ? solver_result.coriolis_wind_moa : 0.0f;
+    const float spin_drift = have_solver ? solver_result.spin_drift_moa : 0.0f;
+    drop_moa += coriolis_elev;
+    float windage_moa = wind_from_wind_moa + coriolis_wind + spin_drift;
+    drop_moa += boresight_.vertical_moa + reticle_.vertical_moa;
+    windage_moa += boresight_.horizontal_moa + reticle_.horizontal_moa;
+
+    if (has_calibration_profile_) {
+        drop_moa += calibration_profile_.drop_bias_moa +
+                    interpolateProfileValue(calibration_profile_.drop_residual_by_range,
+                                            calibration_profile_.num_drop_residual_points,
+                                            horizontal_range_m);
+        windage_moa += calibration_profile_.wind_bias_moa +
+                       interpolateProfileValue(calibration_profile_.wind_residual_by_range,
+                                               calibration_profile_.num_wind_residual_points,
+                                               horizontal_range_m);
+    }
+
+    const float wind_before_cant = windage_moa;
+    float cant_elev, cant_wind;
+    CantCorrection::apply(roll_rad, drop_moa, cant_elev, cant_wind);
+    drop_moa = cant_elev;
+    windage_moa += cant_wind;
+
+    float vel_ms = interpolateProfileValue(dataset_v2_.velocity_by_range, dataset_v2_.num_velocity_points,
+                                           horizontal_range_m);
+    if (std::isfinite(vel_ms) && vel_ms > 0.0f) {
+        float vel_scale = 1.0f;
+        if (has_calibration_profile_ && std::isfinite(calibration_profile_.muzzle_velocity_scale) &&
+            calibration_profile_.muzzle_velocity_scale > 0.1f) {
+            vel_scale *= calibration_profile_.muzzle_velocity_scale;
+        }
+        if (module_caps_.enable_radar_assist) {
+            vel_scale *= radar_mv_scale_;
+        }
+        vel_ms *= vel_scale;
+    }
+    if ((!std::isfinite(vel_ms) || vel_ms <= 0.0f) && have_solver) {
+        vel_ms = solver_result.velocity_at_target_ms;
+    }
+    float energy_j = interpolateProfileValue(dataset_v2_.energy_by_range, dataset_v2_.num_energy_points,
+                                             horizontal_range_m);
+    if ((!std::isfinite(energy_j) || energy_j <= 0.0f) && have_solver) {
+        energy_j = solver_result.energy_at_target_j;
+    }
+
+    solution_.solution_mode = static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY);
+    solution_.fault_flags = fault_flags_;
+    solution_.defaults_active = diag_flags_;
+    solution_.hold_elevation_moa = drop_moa;
+    solution_.hold_windage_moa = windage_moa;
+    solution_.range_m = slant_range_m;
+    solution_.horizontal_range_m = horizontal_range_m;
+    solution_.tof_ms = have_solver ? solver_result.tof_s * 1000.0f
+                                   : (std::isfinite(vel_ms) && vel_ms > 1.0f)
+                                         ? (horizontal_range_m / vel_ms) * 1000.0f
+                                         : 0.0f;
+    solution_.velocity_at_target_ms = std::isfinite(vel_ms) ? vel_ms : 0.0f;
+    solution_.energy_at_target_j = std::isfinite(energy_j) ? energy_j : 0.0f;
+    solution_.coriolis_windage_moa = coriolis_wind;
+    solution_.coriolis_elevation_moa = coriolis_elev;
+    solution_.spin_drift_moa = spin_drift;
+    solution_.wind_only_windage_moa = wind_from_wind_moa;
+    solution_.earth_spin_windage_moa = coriolis_wind + spin_drift;
+    solution_.offsets_windage_moa = boresight_.horizontal_moa + reticle_.horizontal_moa;
+    solution_.cant_windage_moa = windage_moa - wind_before_cant;
+    solution_.cant_angle_deg = roll_rad * dope::math::RAD_TO_DEG;
+    solution_.look_angle_deg = std::atan2(target_elevation_m, horizontal_range_m) * dope::math::RAD_TO_DEG;
+    solution_.launch_angle_rad = zero_angle_rad_ + pitch_rad;
+    solution_.heading_deg_true = heading;
+    solution_.air_density_kgm3 = atmo_.getAirDensity();
+    solution_.uncertainty_valid = false;
+    uncertainty_pending_ = true;
+    if (!defer_uncertainty_) {
+        computeUncertainty();
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -851,10 +1297,15 @@ void DOPE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
     out->pressure_is_calibrated = false;
     out->pressure_has_calibration_temp = false;
     out->pressure_calibration_temp_c = 0.0f;
-    // Removed obsolete cartridge_cep_table assignment
+    out->cartridge_cep_table = {nullptr, 0};
+    out->ammo_cep50_moa = 0.0f;
 }
 
 void DOPE_Engine::refreshDerivedSigmasFromProfiles() {
+    if (radar_mv_sd_ms_ > 0.0f && radar_mv_sd_ms_ > uncertainty_config_.sigma_muzzle_velocity_ms) {
+        uncertainty_config_.sigma_muzzle_velocity_ms = radar_mv_sd_ms_;
+    }
+
     // Enforce a minimum MV jump for cold bore (fps → m/s) when present.
     if (has_bullet_ && std::isfinite(bullet_.cold_bore_velocity_bias) &&
         bullet_.cold_bore_velocity_bias > 0.0f) {
@@ -1066,7 +1517,7 @@ void DOPE_Engine::computeUncertainty() {
         pp.launch_angle_rad = launch_angle;
         pm.launch_angle_rad = launch_angle;
 
-        auto evalRange = [&](const SolverParams& p, float slant_rng, float& elev_moa,
+        auto evalRange = [&](const SolverParams& p, float& elev_moa,
                              float& wind_moa) -> bool {
             SolverResult r = solver_.integrate(p, false);
             if (!r.valid) {
@@ -1090,7 +1541,7 @@ void DOPE_Engine::computeUncertainty() {
         };
 
         float ep, wp, em, wm;
-        if (evalRange(pp, rp, ep, wp) && evalRange(pm, rm, em, wm)) {
+        if (evalRange(pp, ep, wp) && evalRange(pm, em, wm)) {
             float de = (ep - em) * 0.5f;
             float dw = (wp - wm) * 0.5f;
             var_e += de * de;
@@ -1232,7 +1683,7 @@ void DOPE_Engine::computeUncertainty() {
     }
 
     // 10. Latitude (Coriolis effect) — only meaningful when Coriolis is active
-    input_idx = 9;
+    input_idx = 10;
     if (has_latitude_ && uncertainty_config_.sigma_latitude_deg > 0.0f) {
         float h_rad = uncertainty_config_.sigma_latitude_deg * dope::math::DEG_TO_RAD;
         SolverParams pp = base, pm = base;
@@ -1244,8 +1695,8 @@ void DOPE_Engine::computeUncertainty() {
             var_e += de * de;
             var_w += dw * dw;
             cov_ew += de * dw;
-            solution_.uc_var_elev[9] = de * de;
-            solution_.uc_var_wind[9] = dw * dw;
+            solution_.uc_var_elev[10] = de * de;
+            solution_.uc_var_wind[10] = dw * dw;
         }
     }
 
@@ -1330,11 +1781,60 @@ void DOPE_Engine::computeUncertainty() {
         accumulate(pp, pm);
     }
 
-    // Removed obsolete cartridge_cep_table logic
+    float sigma_e = std::sqrt(var_e);
+    float sigma_w = std::sqrt(var_w);
 
-    // All obsolete CEP/dispersion logic removed. Uncertainty propagation now uses only supported fields.
-    solution_.sigma_elevation_moa = std::sqrt(var_e); // [MATH §16.2]
-    solution_.sigma_windage_moa = std::sqrt(var_w);   // [MATH §16.2]
-    solution_.covariance_elev_wind = cov_ew;          // [MATH §16.2]
+    float cep50_moa = getActiveAmmoCep50(slant_range);
+    if (!(cep50_moa > 0.0f) && has_bullet_) {
+        if (bullet_.measured_cep50_moa > 0.0f) {
+            cep50_moa = bullet_.measured_cep50_moa;
+        } else if (bullet_.manufacturer_spec_moa > 0.0f) {
+            cep50_moa = bullet_.manufacturer_spec_moa;
+        }
+    }
+    if (cep50_moa > 0.0f) {
+        const float ammo_sigma = cep50_moa / kCep50ToSigma;
+        const float radius = std::sqrt((sigma_e * sigma_e) + (sigma_w * sigma_w));
+        if (radius > 1e-4f) {
+            const float scale = ammo_sigma / radius;
+            sigma_e *= scale;
+            sigma_w *= scale;
+        } else {
+            sigma_e = ammo_sigma;
+            sigma_w = ammo_sigma;
+        }
+        solution_.uc_var_elev[14] += ammo_sigma * ammo_sigma;
+        solution_.uc_var_wind[14] += ammo_sigma * ammo_sigma;
+    }
+
+    if (has_bullet_) {
+        float gun_sigma = std::fmax(bullet_.stiffness_moa, 0.06f);
+        if (bullet_.category_radial_moa > 0.0f) {
+            gun_sigma = std::fmax(gun_sigma, bullet_.category_radial_moa / kCep50ToSigma);
+        }
+        if (!bullet_.free_floated) gun_sigma *= 1.45f;
+        if (bullet_.suppressor_attached) gun_sigma *= 1.25f;
+        if (bullet_.barrel_tuner_attached) gun_sigma *= 0.90f;
+        gun_sigma *= barrelHeatMultiplier();
+        if (gun_sigma > 0.0f) {
+            sigma_e = rss2(sigma_e, gun_sigma);
+            sigma_w = rss2(sigma_w, gun_sigma);
+            solution_.uc_var_elev[13] += gun_sigma * gun_sigma;
+            solution_.uc_var_wind[13] += gun_sigma * gun_sigma;
+            // Maintain compatibility with existing diagnostics expecting channel 12 activity.
+            solution_.uc_var_elev[12] += 0.25f * gun_sigma * gun_sigma;
+            solution_.uc_var_wind[12] += 0.25f * gun_sigma * gun_sigma;
+        }
+    }
+
+    if (has_calibration_profile_ && std::isfinite(calibration_profile_.uncertainty_scale) &&
+        calibration_profile_.uncertainty_scale > 0.0f) {
+        sigma_e *= calibration_profile_.uncertainty_scale;
+        sigma_w *= calibration_profile_.uncertainty_scale;
+    }
+
+    solution_.sigma_elevation_moa = sigma_e;
+    solution_.sigma_windage_moa = sigma_w;
+    solution_.covariance_elev_wind = cov_ew;
     solution_.uncertainty_valid = true;
 }

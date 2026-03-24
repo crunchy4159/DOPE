@@ -13,10 +13,10 @@
 // Version
 // ---------------------------------------------------------------------------
 #ifndef DOPE_VERSION_MAJOR
-#define DOPE_VERSION_MAJOR 1
+#define DOPE_VERSION_MAJOR 2
 #endif
 #ifndef DOPE_VERSION_MINOR
-#define DOPE_VERSION_MINOR 3
+#define DOPE_VERSION_MINOR 0
 #endif
 
 // ---------------------------------------------------------------------------

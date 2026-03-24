@@ -1,0 +1,17 @@
+﻿Processing native_gui (platform: native)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 2 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- dope @ 1.3.0
+Building in release mode
+`.pio\build\native_gui\program.exe' is up to date.
+========================= [SUCCESS] Took 0.78 seconds =========================
+
+Environment    Status    Duration
+-------------  --------  ------------
+native_gui     SUCCESS   00:00:00.781
+========================= 1 succeeded in 00:00:00.781 =========================

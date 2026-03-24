@@ -74,6 +74,7 @@ public:
      * @param bc_standard  BC at standard (ISA) conditions
      * @return             Corrected BC for current atmosphere
      */
+    float calculateDensityRatio() const;
     float correctBC(float bc_standard) const;
 
     /**

@@ -46,6 +46,12 @@ void DOPE_Update(const SensorFrame* frame);
  * Set the bullet profile. Triggers zero recomputation.
  */
 void DOPE_SetBulletProfile(const BulletProfile* profile);
+void DOPE_SetAmmoDatasetV2(const AmmoDatasetV2* dataset);
+void DOPE_SetBallisticContext(const BallisticContext* context);
+void DOPE_SetRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile);
+void DOPE_SetModuleCapabilities(const ModuleCapabilities* caps);
+void DOPE_RecordShotObservation(const ShotObservation* obs);
+void DOPE_RecordRadarObservation(const RadarObservation* obs);
 
 /**
  * Set zero configuration (zero range + sight height). Triggers zero recomputation.
