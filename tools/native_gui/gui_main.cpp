@@ -4517,7 +4517,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         side_draw_list->AddCircleFilled(aim_pixel, 4.5f, IM_COL32(255, 200, 60, 255));
 
         // Bore direction line from muzzle using sight-height + zero-range convergence.
-        const ImVec2 bore_end_pixel(map_x(target_x_m), map_y(target_x_m * bore_visual_tan));
+        // Extend the bore line to the far right of the plot (end of the grid).
+        const ImVec2 bore_end_pixel(map_x(side_range_scale_m), map_y(side_range_scale_m * bore_visual_tan));
         side_draw_list->AddLine(muzzle_pixel, bore_end_pixel, IM_COL32(205, 170, 95, 150), 1.2f);
 
         // Draw full sightline from sight marker to POA at target distance.
@@ -4531,8 +4532,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                                 IM_COL32(255, 120, 120, 220), "Target");
         side_draw_list->AddText(ImVec2(aim_pixel.x + 6.0f, aim_pixel.y - 10.0f),
                                 IM_COL32(255, 200, 140, 220), "Aim pt");
-        side_draw_list->AddText(ImVec2(bore_end_pixel.x - 40.0f, bore_end_pixel.y + 6.0f),
-                                IM_COL32(205, 170, 95, 200), "Bore");
+        // Label the bore line: move label slightly upward and match the line color.
+        side_draw_list->AddText(ImVec2(bore_end_pixel.x - 40.0f, bore_end_pixel.y - 12.0f),
+                    IM_COL32(205, 170, 95, 150), "Bore Line");
 
         // Debug diagnostics for deterministic side-view geometry.
         static bool side_view_debug = false;
