@@ -4000,13 +4000,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float display_range_m = (sol.range_m > 0.0f) ? sol.range_m : g_state.lrf_range;
         const float display_range_yd = display_range_m * M_TO_YD;
         const float inches_per_moa_val = 1.047f * (display_range_yd / 100.0f);
-        const float inches_per_ring = moa_per_ring * inches_per_moa_val;
         const float elev_offset_in = hold_elevation_moa * inches_per_moa_val;
         const float wind_offset_in = hold_windage_moa * inches_per_moa_val;
-        const float wind_only_in = sol.wind_only_windage_moa * inches_per_moa_val;
-        const float earth_spin_in = sol.earth_spin_windage_moa * inches_per_moa_val;
-        const float offsets_in = sol.offsets_windage_moa * inches_per_moa_val;
-        const float cant_added_in = sol.cant_windage_moa * inches_per_moa_val;
+        // inch-conversion values removed — wind breakdown moved to textual output
 
         auto direction_label = [](float moa) -> const char* {
             if (moa > 0.01f)
@@ -4023,36 +4019,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
         };
 
-        ImGui::Text("Bullseye rings: %.0f MOA (%.2f in) @ %.1f yd", moa_per_ring, inches_per_ring,
-                    display_range_yd);
+        // (Removed single-line bullseye header — information is shown on-canvas)
         ImGui::Text("Offset: Elev %.2f MOA (%.2f in), Wind %.2f MOA (%.2f in)", hold_elevation_moa,
                     elev_offset_in, hold_windage_moa, wind_offset_in);
         ImGui::SameLine();
         ImGui::TextColored(direction_color(hold_windage_moa), "[%s]",
                            direction_label(hold_windage_moa));
-        ImGui::Text("Wind breakdown:");
-        ImGui::Text("  Wind:       %.2f MOA (%.2f in)", sol.wind_only_windage_moa, wind_only_in);
-        ImGui::SameLine();
-        ImGui::TextColored(direction_color(sol.wind_only_windage_moa), "[%s]",
-                           direction_label(sol.wind_only_windage_moa));
-        ImGui::Text("  Earth spin: %.2f MOA (%.2f in)", sol.earth_spin_windage_moa, earth_spin_in);
-        ImGui::SameLine();
-        ImGui::TextColored(direction_color(sol.earth_spin_windage_moa), "[%s]",
-                           direction_label(sol.earth_spin_windage_moa));
-        ImGui::Text("  Offsets:    %.2f MOA (%.2f in)", sol.offsets_windage_moa, offsets_in);
-        ImGui::SameLine();
-        ImGui::TextColored(direction_color(sol.offsets_windage_moa), "[%s]",
-                           direction_label(sol.offsets_windage_moa));
-        ImGui::Text("  Cant:       %.2f MOA (%.2f in)", sol.cant_windage_moa, cant_added_in);
-        ImGui::SameLine();
-        ImGui::TextColored(direction_color(sol.cant_windage_moa), "[%s]",
-                           direction_label(sol.cant_windage_moa));
+        // Wind breakdown moved to textual DOPE Output (see RefreshOutput()).
 
         if (sol.uncertainty_valid &&
             (sol.sigma_elevation_moa > 0.001f || sol.sigma_windage_moa > 0.001f)) {
-            ImGui::Text("Confidence: 1σ ellipse major %.2f MOA minor %.2f MOA (yellow, ~68%%); 2σ "
-                        "ellipse major %.2f MOA minor %.2f MOA (purple, ~95%%)",
-                        axis1_moa, axis2_moa, axis1_moa * 2.0f, axis2_moa * 2.0f);
+            ImGui::Text("Confidence - Horizontal: 1SD %.2f MOA  2SD %.2f MOA",
+                        sol.sigma_windage_moa, sol.sigma_windage_moa * 2.0f);
+            ImGui::Text("           Vertical:   1SD %.2f MOA  2SD %.2f MOA",
+                        sol.sigma_elevation_moa, sol.sigma_elevation_moa * 2.0f);
         }
         ImGui::Separator();
 
@@ -4080,6 +4060,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         ImVec2 canvas_end(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y);
         draw_list->AddRectFilled(canvas_pos, canvas_end, IM_COL32(24, 24, 28, 255));
         draw_list->AddRect(canvas_pos, canvas_end, IM_COL32(80, 80, 90, 255));
+
+        // Draw the target range label in the canvas top-right corner.
+        {
+            char range_label[64];
+            std::snprintf(range_label, sizeof(range_label), "Range: %.0f yd", display_range_yd);
+            const ImVec2 range_sz = ImGui::CalcTextSize(range_label);
+            const ImVec2 range_pos(canvas_end.x - range_sz.x - 6.0f, canvas_pos.y + 6.0f);
+            draw_list->AddText(range_pos, IM_COL32(200, 200, 210, 255), range_label);
+        }
 
         const ImVec2 center(canvas_pos.x + canvas_size.x * 0.5f,
                             canvas_pos.y + canvas_size.y * 0.5f);
@@ -4307,9 +4296,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float drop_at_target_m = std::fabs(side_sol.hold_elevation_moa) * moa_linear_m;
         const float drop_display = drop_at_target_m * offset_m_to_display;
         const char* drop_units = is_imperial ? "in" : "cm";
-        ImGui::Text("Range: %.1f %s", side_range_display, range_units);
-        ImGui::Text("Elevation hold at target: %.2f %s", drop_display, drop_units);
-        ImGui::Text("Required elevation angle: %.4f deg", elevation_angle_deg);
+        constexpr float kMToFt = 3.280839895f;
+        float elevation_delta_display = is_imperial ? (g_state.target_elevation_m * kMToFt)
+                               : g_state.target_elevation_m;
+        float zero_range_display = is_imperial ? (g_state.zero.zero_range_m * M_TO_YD)
+                               : g_state.zero.zero_range_m;
+        ImGui::Text("Range: %.1f %s    Elev Delta: %.2f %s    Zero: %.1f %s", side_range_display,
+                range_units, elevation_delta_display, is_imperial ? "ft" : "m",
+                zero_range_display, range_units);
+        ImGui::Text("Drop at target: %.2f %s    Required elev: %.4f deg", drop_display,
+                drop_units, elevation_angle_deg);
         ImGui::Separator();
         ImVec2 side_avail = ImGui::GetContentRegionAvail();
         float side_canvas_w = side_avail.x;
