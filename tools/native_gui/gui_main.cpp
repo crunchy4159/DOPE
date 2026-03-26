@@ -25,6 +25,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <ctime>
 
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -447,6 +448,126 @@ static void CaptureBulletTolerances(const json& root) {
         captured["__comments"] = root["bullet_tolerance_comments"];
     captured["bullet_type_tolerances"] = *tol_it;
     g_bullet_tolerances = captured;
+}
+
+// Synthesize a minimal AmmoDatasetV2 from a CartridgePreset for runtime use.
+static AmmoDatasetV2 MakeV2FromCartridgePreset(const CartridgePreset& cp) {
+    AmmoDatasetV2 d = {};
+    d.source_confidence = 0.5f;
+    d.baseline_temperature_c = g_state.baro_temp;
+    d.baseline_pressure_pa = g_state.baro_pressure;
+    d.baseline_humidity = g_state.baro_humidity;
+    d.baseline_altitude_m = 0.0f;
+    d.baseline_barrel_length_in = cp.reference_barrel_inches;
+    d.baseline_wind_speed_ms = g_state.wind_speed_ms;
+
+    // velocity_profile -> velocity_by_range (distance_inches -> meters)
+    d.num_velocity_points = 0;
+    for (const auto& vp : cp.velocity_profile) {
+        if (d.num_velocity_points >= DOPE_MAX_TABLE_POINTS)
+            break;
+        d.velocity_by_range[d.num_velocity_points].range_m = vp.first * INCHES_TO_M;
+        d.velocity_by_range[d.num_velocity_points].value = vp.second;
+        d.num_velocity_points++;
+    }
+    if (d.num_velocity_points == 0) {
+        // fallback single-point from muzzle_velocity
+        d.velocity_by_range[0].range_m = 0.0f;
+        d.velocity_by_range[0].value = cp.muzzle_velocity_ms;
+        d.num_velocity_points = 1;
+    }
+
+    // Trajectory profile (simple single-family conversion when present)
+    d.num_trajectories = 0;
+    if (!cp.trajectory_profile.empty()) {
+        // create one trajectory family from provided points
+        d.num_trajectories = 1;
+        DOPE_TrajectoryFamily& fam = d.trajectories[0];
+        fam.zero_range_m = 0.0f;
+        fam.num_points = 0;
+        for (const auto& tp : cp.trajectory_profile) {
+            if (fam.num_points >= DOPE_MAX_TABLE_POINTS)
+                break;
+            fam.points[fam.num_points].range_m = tp.first * INCHES_TO_M;
+            fam.points[fam.num_points].drop_m = tp.second * INCHES_TO_M; // inches -> meters
+            fam.num_points++;
+        }
+    }
+
+    // Sparse fallback params
+    d.bc = cp.bc;
+    int dm_idx = cp.drag_model_index;
+    if (dm_idx < 0)
+        dm_idx = 0;
+    if (dm_idx > 7)
+        dm_idx = 7;
+    d.drag_model = static_cast<DragModel>(dm_idx + 1); // DragModel enum is 1..8
+    d.muzzle_velocity_ms = (d.num_velocity_points > 0) ? d.velocity_by_range[0].value : cp.muzzle_velocity_ms;
+    d.mass_grains = cp.mass_grains;
+    d.length_mm = cp.length_mm;
+    d.caliber_inches = cp.caliber_inches;
+    d.twist_rate_inches = g_state.bullet.twist_rate_inches;
+    d.mv_adjustment_fps_per_in = cp.mv_adjustment_fps_per_in;
+    return d;
+}
+
+static std::string SanitizeFileName(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_')
+            out.push_back(c);
+        else if (std::isspace(static_cast<unsigned char>(c)))
+            out.push_back('_');
+    }
+    if (out.empty())
+        out = "preset";
+    return out;
+}
+
+static json SerializeAmmoDatasetV2(const AmmoDatasetV2& d) {
+    json j;
+    j["source_confidence"] = d.source_confidence;
+    j["baseline_temperature_c"] = d.baseline_temperature_c;
+    j["baseline_pressure_pa"] = d.baseline_pressure_pa;
+    j["baseline_humidity"] = d.baseline_humidity;
+    j["baseline_altitude_m"] = d.baseline_altitude_m;
+    j["baseline_barrel_length_in"] = d.baseline_barrel_length_in;
+    j["baseline_wind_speed_ms"] = d.baseline_wind_speed_ms;
+
+    j["velocity_by_range"] = json::array();
+    for (int i = 0; i < d.num_velocity_points; ++i) {
+        json p;
+        p["range_m"] = d.velocity_by_range[i].range_m;
+        p["velocity_ms"] = d.velocity_by_range[i].value;
+        j["velocity_by_range"].push_back(p);
+    }
+
+    j["trajectories"] = json::array();
+    for (int t = 0; t < d.num_trajectories; ++t) {
+        const DOPE_TrajectoryFamily& fam = d.trajectories[t];
+        json famj;
+        famj["zero_range_m"] = fam.zero_range_m;
+        famj["points"] = json::array();
+        for (int p = 0; p < fam.num_points; ++p) {
+            json pt;
+            pt["range_m"] = fam.points[p].range_m;
+            pt["drop_m"] = fam.points[p].drop_m;
+            famj["points"].push_back(pt);
+        }
+        j["trajectories"].push_back(famj);
+    }
+
+    // sparse fallback params
+    j["bc"] = d.bc;
+    j["drag_model_index"] = static_cast<int>(d.drag_model);
+    j["muzzle_velocity_ms"] = d.muzzle_velocity_ms;
+    j["mass_grains"] = d.mass_grains;
+    j["length_mm"] = d.length_mm;
+    j["caliber_inches"] = d.caliber_inches;
+    j["twist_rate_inches"] = d.twist_rate_inches;
+    j["mv_adjustment_fps_per_in"] = d.mv_adjustment_fps_per_in;
+    return j;
 }
 
 static bool CartridgesHaveSigmaValues(const std::vector<CartridgePreset>& presets) {
@@ -1116,13 +1237,18 @@ void EnsureProfileDefaults() {
     // and the current working directory so the GUI works when launched either
     // from the repo root or from the tools/native_gui folder.
     const std::string rel_dir = "tools/native_gui/";
+    const std::string cartridge_file_repo_v2 = rel_dir + "dope_gui_cartridges_v2.json";
     const std::string cartridge_file_repo = rel_dir + "dope_gui_cartridges.json";
+    const std::string gun_file_repo_v2 = rel_dir + "dope_gui_guns_v2.json";
     const std::string gun_file_repo = rel_dir + "dope_gui_guns.json";
     const std::string hw_file_repo = rel_dir + "dope_gui_hardware.json";
-    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo) ||
+    // Prefer *_v2.json files when present so the new V2 presets are selected by default.
+    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo_v2) ||
+                             LoadCartridgePresetsFromFile(cartridge_file_repo) ||
                              LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
-    bool loaded_guns =
-        LoadGunPresetsFromFile(gun_file_repo) || LoadGunPresetsFromFile("dope_gui_guns.json");
+    bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo_v2) ||
+                       LoadGunPresetsFromFile(gun_file_repo) ||
+                       LoadGunPresetsFromFile("dope_gui_guns.json");
     (void)LoadHardwarePresetsFromFile(hw_file_repo);
     (void)LoadHardwarePresetsFromFile("dope_gui_hardware.json");
 
@@ -2975,13 +3101,51 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Apply Selected Cartridge") &&
+            if (ImGui::Button("Apply Selected Cartridge (V2)") &&
+                g_state.selected_cartridge_preset >= 0 &&
+                g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+                const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
+                AmmoDatasetV2 ds = MakeV2FromCartridgePreset(cp);
+                g_state.last_action = "Applied Cartridge as V2 Dataset";
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    DOPE_SetAmmoDatasetV2(&ds);
+                    std::printf("[DEBUG] Applied V2 ammo: name= %s, muzzle_vel=%.2f m/s, bc=%.3f, drag_model=%d, vel_points=%d\n",
+                                cp.name.c_str(), ds.muzzle_velocity_ms, ds.bc, static_cast<int>(ds.drag_model), ds.num_velocity_points);
+                    std::printf("[DEBUG] Applied V2 ammo: name= %s, muzzle_vel=%.2f m/s, bc=%.3f, drag_model=%d, vel_points=%d\n",
+                                cp.name.c_str(), ds.muzzle_velocity_ms, ds.bc, static_cast<int>(ds.drag_model), ds.num_velocity_points);
+                    // Push other runtime state without overwriting ammo profile
+                    DOPE_SetZeroConfig(&g_state.zero);
+                    DOPE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
+                    DOPE_SetLatitude(g_state.latitude);
+                    SyncDerivedInputUncertaintySigmas();
+                    DOPE_SetUncertaintyConfig(&g_state.uc_config);
+                    DOPE_SetDeferUncertainty(true);
+                    RefreshOutput();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Apply Selected Cartridge (Legacy)") &&
                 g_state.selected_cartridge_preset >= 0 &&
                 g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
                 ApplyCartridgePreset(g_cartridge_presets[g_state.selected_cartridge_preset]);
-                g_state.last_action = "Cartridge Preset Applied";
+                g_state.last_action = "Cartridge Preset Applied (legacy)";
                 {
                     std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    ApplyConfig();
+                    RefreshOutput();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Apply Selected Cartridge as V2") &&
+                g_state.selected_cartridge_preset >= 0 &&
+                g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+                const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
+                AmmoDatasetV2 ds = MakeV2FromCartridgePreset(cp);
+                g_state.last_action = "Applied Cartridge as V2 Dataset";
+                {
+                    std::lock_guard<std::mutex> lk(g_engine_mutex);
+                    DOPE_SetAmmoDatasetV2(&ds);
                     ApplyConfig();
                     RefreshOutput();
                 }
@@ -3005,28 +3169,52 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
 
             ImGui::SameLine();
-            if (ImGui::Button("Save Presets to File")) {
-                const std::string repo_path = "tools/native_gui/dope_gui_cartridges.json";
-                const bool ok = SaveCartridgePresetsToFile(repo_path) ||
-                                SaveCartridgePresetsToFile("dope_gui_cartridges.json");
-                g_state.last_action =
-                    ok ? "Saved Cartridge Presets" : "Save Cartridge Presets (failed)";
-                if (!ok)
-                    g_state.output_text = "Failed to save cartridge presets.";
-            }
+            ImGui::TextDisabled("Save/Load disabled (use JSON files directly)");
+
             ImGui::SameLine();
-            if (ImGui::Button("Load Presets from File")) {
-                const std::string repo_path = "tools/native_gui/dope_gui_cartridges.json";
-                const bool ok = LoadCartridgePresetsFromFile(repo_path) ||
-                                LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
-                g_state.last_action =
-                    ok ? "Loaded Cartridge Presets" : "Load Cartridge Presets (failed)";
-                if (ok) {
-                    EnsureProfileDefaults();
-                    g_state.selected_cartridge_preset = (g_cartridge_presets.empty() ? -1 : 0);
-                    SelectDefaultGunPresetForSelectedCartridge();
+            if (ImGui::Button("Save Selected Cartridge as V2 File") &&
+                g_state.selected_cartridge_preset >= 0 &&
+                g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+                const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
+                AmmoDatasetV2 ds = MakeV2FromCartridgePreset(cp);
+                json j = SerializeAmmoDatasetV2(ds);
+                const std::string fname = "tools/native_gui/" + SanitizeFileName(cp.name) + "_v2.json";
+
+                // If file exists, back it up and merge new keys to avoid losing data.
+                json out_json = json::object();
+                std::ifstream ifs(fname, std::ios::binary);
+                if (ifs) {
+                    try {
+                        ifs >> out_json;
+                    } catch (...) {
+                        out_json = json::object();
+                    }
+                    ifs.close();
+                    // create a timestamped backup
+                    const std::time_t t = std::time(nullptr);
+                    const std::string bak = fname + std::string(".") + std::to_string(static_cast<long long>(t)) + ".bak";
+                    std::ifstream orig(fname, std::ios::binary);
+                    if (orig) {
+                        std::ofstream b(bak, std::ios::binary | std::ios::trunc);
+                        if (b) b << orig.rdbuf();
+                    }
+                }
+
+                // merge: overwrite or add keys from j into out_json
+                if (!out_json.is_object()) out_json = json::object();
+                if (j.is_object()) {
+                    for (auto it = j.begin(); it != j.end(); ++it) {
+                        out_json[it.key()] = it.value();
+                    }
+                }
+
+                std::ofstream out(fname, std::ios::binary | std::ios::trunc);
+                if (!out) {
+                    g_state.last_action = "Save V2 (failed)";
+                    g_state.output_text = std::string("Failed to open file for write: ") + fname;
                 } else {
-                    g_state.output_text = "Failed to load cartridge presets.";
+                    out << out_json.dump(2);
+                    g_state.last_action = "Saved Selected Cartridge as V2 (merged)";
                 }
             }
 
@@ -3224,27 +3412,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
 
             ImGui::SameLine();
-            if (ImGui::Button("Save Presets to File")) {
-                const std::string repo_path = "tools/native_gui/dope_gui_guns.json";
-                const bool ok =
-                    SaveGunPresetsToFile(repo_path) || SaveGunPresetsToFile("dope_gui_guns.json");
-                g_state.last_action = ok ? "Saved Gun Presets" : "Save Gun Presets (failed)";
-                if (!ok)
-                    g_state.output_text = "Failed to save gun presets.";
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Load Presets from File")) {
-                const std::string repo_path = "tools/native_gui/dope_gui_guns.json";
-                const bool ok = LoadGunPresetsFromFile(repo_path) ||
-                                LoadGunPresetsFromFile("dope_gui_guns.json");
-                g_state.last_action = ok ? "Loaded Gun Presets" : "Load Gun Presets (failed)";
-                if (ok) {
-                    EnsureProfileDefaults();
-                    EnsureSelectedGunPresetMatchesCurrentCaliber();
-                } else {
-                    g_state.output_text = "Failed to load gun presets.";
-                }
-            }
+            ImGui::TextDisabled("Save/Load disabled (use JSON files directly)");
 
             if (ImGui::BeginListBox("##gun_presets", ImVec2(-FLT_MIN, 110.0f))) {
                 for (int i = 0; i < static_cast<int>(g_gun_presets.size()); ++i) {

@@ -22,7 +22,10 @@
 // ---------------------------------------------------------------------------
 // Maximum trajectory range (meters) — SRS §6
 // ---------------------------------------------------------------------------
-#define DOPE_MAX_RANGE_M 2500
+// Reduced to 2100 m to minimize static memory footprint while covering
+// typical operational engagement envelopes. Host applications may impose
+// a lower runtime operational limit if desired.
+#define DOPE_MAX_RANGE_M 2100
 
 // Trajectory table size: 1-meter resolution from 0 to DOPE_MAX_RANGE_M
 #define DOPE_TRAJ_TABLE_SIZE (DOPE_MAX_RANGE_M + 1)

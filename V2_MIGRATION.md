@@ -16,6 +16,11 @@
 3. Rifle+ammo calibration profile corrections.
 4. Solver fallback only for missing channels (if enabled by capabilities).
 
+## Dataset import and precompute recommendations
+- Datasets SHOULD declare their baseline convention via `baseline_convention` (e.g., `METRO` or `ICAO`) and populate explicit baseline fields (`baseline_pressure_pa`, `baseline_temperature_c`, `baseline_humidity`).
+- Importers SHOULD precompute a dense cached trajectory (preferred 1 m step) and populate `cached_full_table_present` and `cached_full_trajectory` when possible. DOPE will use cached tables on the fast path to avoid runtime integration.
+- If the importer cannot generate a dense cache, the dataset must be marked sparse and the engine may fall back to the solver for missing channels if `enable_solver_fallback` is enabled.
+
 If a table channel is missing and solver fallback is disabled, output degrades deterministically and the channel is not synthesized.
 
 ## CEP/Uncertainty

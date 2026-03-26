@@ -312,6 +312,50 @@ void DOPE_Engine::setModuleCapabilities(const ModuleCapabilities* caps) {
     defer_uncertainty_ = module_caps_.enable_uncertainty_refine;
 }
 
+// Centralized selection of the active ammo source. For full migration we
+// prefer `AmmoDatasetV2` and treat legacy `BulletProfile` as a deprecated
+// fallback (ignored unless migration policy changes). This function returns
+// a compact view of the authoritative base parameters used by solver paths.
+DOPE_Engine::ActiveAmmo DOPE_Engine::selectActiveAmmo() const {
+    ActiveAmmo a;
+    if (has_dataset_v2_) {
+        a.valid = true;
+        a.is_v2 = true;
+        a.bc = dataset_v2_.bc;
+        a.muzzle_velocity_ms = dataset_v2_.muzzle_velocity_ms;
+        a.mass_grains = dataset_v2_.mass_grains;
+        a.length_mm = dataset_v2_.length_mm;
+        a.caliber_inches = dataset_v2_.caliber_inches;
+        a.twist_rate_inches = dataset_v2_.twist_rate_inches;
+        a.mv_adjustment_fps_per_in = std::fabs(dataset_v2_.mv_adjustment_fps_per_in);
+        a.baseline_barrel_length_in = (dataset_v2_.baseline_barrel_length_in > 0.0f)
+                                           ? dataset_v2_.baseline_barrel_length_in
+                                           : a.baseline_barrel_length_in;
+        a.drag_model = dataset_v2_.drag_model;
+        return a;
+    }
+
+    // Legacy bullet profile is considered deprecated under full migration.
+    if (has_bullet_) {
+        a.valid = true;
+        a.is_v2 = false;
+        a.bc = bullet_.bc;
+        a.muzzle_velocity_ms = bullet_.muzzle_velocity_ms;
+        a.mass_grains = bullet_.mass_grains;
+        a.length_mm = bullet_.length_mm;
+        a.caliber_inches = bullet_.caliber_inches;
+        a.twist_rate_inches = bullet_.twist_rate_inches;
+        a.mv_adjustment_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
+        a.baseline_barrel_length_in = (bullet_.reference_barrel_length_in > 0.0f)
+                                           ? bullet_.reference_barrel_length_in
+                                           : a.baseline_barrel_length_in;
+        a.drag_model = bullet_.drag_model;
+        return a;
+    }
+
+    return a;
+}
+
 void DOPE_Engine::recordShotObservation(const ShotObservation* obs) {
     if (!obs || !obs->valid || !module_caps_.enable_shot_learning) {
         return;
@@ -335,16 +379,23 @@ void DOPE_Engine::recordRadarObservation(const RadarObservation* obs) {
     if (!obs || !module_caps_.enable_radar_assist) {
         return;
     }
+    // Enforce migration policy: radar-derived MV is only applied when a
+    // V2 dataset is present. Legacy `BulletProfile` is deprecated and
+    // ignored for automatic MV adjustments — users without V2 data must
+    // perform manual calibration.
+    const ActiveAmmo a = selectActiveAmmo();
+    if (!a.valid || !a.is_v2) {
+        diag_flags_ |= DOPE_Diag::LEGACY_IGNORED;
+        return;
+    }
+
     if (!obs->velocity_valid || !std::isfinite(obs->measured_muzzle_velocity_ms) ||
         obs->measured_muzzle_velocity_ms <= kMinMvMs) {
         return;
     }
-    const float base_mv =
-        (has_dataset_v2_ && dataset_v2_.muzzle_velocity_ms > kMinMvMs)
-            ? dataset_v2_.muzzle_velocity_ms
-            : ((has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs) ? bullet_.muzzle_velocity_ms
-                                                                       : obs->measured_muzzle_velocity_ms);
-    radar_mv_scale_ = clampf(obs->measured_muzzle_velocity_ms / std::fmax(base_mv, kMinMvMs), 0.75f, 1.35f);
+
+    const float base_mv = std::fmax(a.muzzle_velocity_ms, kMinMvMs);
+    radar_mv_scale_ = clampf(obs->measured_muzzle_velocity_ms / base_mv, 0.75f, 1.35f);
     if (std::isfinite(obs->measured_velocity_sd_ms) && obs->measured_velocity_sd_ms >= 0.0f) {
         radar_mv_sd_ms_ = obs->measured_velocity_sd_ms;
         if (radar_mv_sd_ms_ > uncertainty_config_.sigma_muzzle_velocity_ms) {
@@ -905,31 +956,20 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
     float ref_barrel_in = 24.0f;
     float barrel_in = 24.0f;
 
-    if (has_dataset_v2_) {
-        base_bc = dataset_v2_.bc;
-        base_mv_ms = dataset_v2_.muzzle_velocity_ms;
-        base_mass_gr = dataset_v2_.mass_grains;
-        base_len_mm = dataset_v2_.length_mm;
-        base_cal_in = dataset_v2_.caliber_inches;
-        base_twist_in = dataset_v2_.twist_rate_inches;
-        mv_adjust_fps_per_in = std::fabs(dataset_v2_.mv_adjustment_fps_per_in);
-        if (dataset_v2_.baseline_barrel_length_in > 0.0f) {
-            ref_barrel_in = dataset_v2_.baseline_barrel_length_in;
-            barrel_in = dataset_v2_.baseline_barrel_length_in;
-        }
-        p.drag_model = dataset_v2_.drag_model;
-    }
-    if (has_bullet_) {
-        if (!(base_bc > 0.001f)) base_bc = bullet_.bc;
-        if (!(base_mv_ms > kMinMvMs)) base_mv_ms = bullet_.muzzle_velocity_ms;
-        if (!(base_mass_gr > 0.0f)) base_mass_gr = bullet_.mass_grains;
-        if (!(base_len_mm > 0.0f)) base_len_mm = bullet_.length_mm;
-        if (!(base_cal_in > 0.0f)) base_cal_in = bullet_.caliber_inches;
-        if (!(std::fabs(base_twist_in) > 0.1f)) base_twist_in = bullet_.twist_rate_inches;
-        if (!(mv_adjust_fps_per_in > 0.0f)) mv_adjust_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
-        if (bullet_.reference_barrel_length_in > 0.0f) ref_barrel_in = bullet_.reference_barrel_length_in;
-        if (bullet_.barrel_length_in > 0.0f) barrel_in = bullet_.barrel_length_in;
-        if (p.drag_model == static_cast<DragModel>(0)) p.drag_model = bullet_.drag_model;
+    // Use centralized active-ammo selection to choose authoritative base
+    // parameters. Under full migration this will prefer AmmoDatasetV2.
+    const ActiveAmmo a = selectActiveAmmo();
+    if (a.valid) {
+        base_bc = a.bc;
+        base_mv_ms = a.muzzle_velocity_ms;
+        base_mass_gr = a.mass_grains;
+        base_len_mm = a.length_mm;
+        base_cal_in = a.caliber_inches;
+        base_twist_in = a.twist_rate_inches;
+        mv_adjust_fps_per_in = a.mv_adjustment_fps_per_in;
+        ref_barrel_in = (a.baseline_barrel_length_in > 0.0f) ? a.baseline_barrel_length_in : ref_barrel_in;
+        barrel_in = a.baseline_barrel_length_in > 0.0f ? a.baseline_barrel_length_in : barrel_in;
+        if (a.drag_model != static_cast<DragModel>(0)) p.drag_model = a.drag_model;
     }
 
     p.bc = atmo_.correctBC(base_bc);
@@ -1001,10 +1041,14 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
 }
 
 bool DOPE_Engine::hasUsableSolverInputs() const {
+    // Prefer V2 datasets. Allow legacy BulletProfile only when the
+    // module capability `enable_solver_fallback` is set to preserve
+    // backward compatibility during migration.
     if (has_dataset_v2_ && dataset_v2_.muzzle_velocity_ms > kMinMvMs && dataset_v2_.bc > 0.001f) {
         return true;
     }
-    if (has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs && bullet_.bc > 0.001f) {
+    if (module_caps_.enable_solver_fallback && has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs &&
+        bullet_.bc > 0.001f) {
         return true;
     }
     return false;

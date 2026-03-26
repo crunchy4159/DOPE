@@ -45,6 +45,7 @@ namespace DOPE_Diag {
     constexpr uint32_t DEFAULT_WIND       = (1u << 5);
     constexpr uint32_t MAG_SUPPRESSED     = (1u << 6);
     constexpr uint32_t LRF_STALE          = (1u << 7);
+    constexpr uint32_t LEGACY_IGNORED      = (1u << 8);
 } // namespace DOPE_Diag
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,14 @@ enum class DragModel : uint8_t {
     G6 = 6,
     G7 = 7,
     G8 = 8
+};
+
+// Baseline convention for manufacturer/environment data
+enum class BaselineConvention : uint8_t {
+    UNKNOWN = 0,
+    METRO,   // sea-level, 15°C, 78% RH (common "metro" convention)
+    ICAO,    // 0% RH, 15°C, 101325 Pa (ICAO standard)
+    CUSTOM   // explicit baseline fields used
 };
 
 // ---------------------------------------------------------------------------
@@ -208,6 +217,7 @@ struct AmmoDatasetV2 {
     float baseline_pressure_pa;
     float baseline_humidity;
     float baseline_altitude_m;
+    BaselineConvention baseline_convention;
     float baseline_barrel_length_in;
     float baseline_wind_speed_ms;
 
@@ -222,6 +232,27 @@ struct AmmoDatasetV2 {
     int num_energy_points;
     DOPE_ProfilePoint cep50_by_range[DOPE_MAX_TABLE_POINTS];
     int num_cep50_points;
+
+    // Optional detailed 2D uncertainty per-range (sigma_x, sigma_y, rho)
+    struct UncertaintySigmaPoint {
+        float range_m;
+        float sigma_elev_moa; // 1-sigma elevation (MOA)
+        float sigma_wind_moa; // 1-sigma windage (MOA)
+        float rho;            // correlation coef ([-1,1]) elevation↔windage
+    };
+    UncertaintySigmaPoint uncertainty_sigma_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_uncertainty_points;
+
+    // Optional cached trajectory summary generated at import time. This
+    // supports precomputing dense arcs once and using cheap lookups at
+    // runtime. Implementations MAY store a separate full-resolution cache
+    // externally; this field is a light-weight in-memory fallback for GUI
+    // and verification use.
+    bool cached_full_table_present;
+    float cached_full_table_step_m; // meter step between cached points (e.g., 1.0f)
+    int cached_full_table_num_points;
+    DOPE_TrajectoryPoint cached_full_trajectory[DOPE_MAX_TABLE_POINTS];
+    uint64_t cached_source_checksum; // optional checksum of source used to generate cache
 
     // Sparse fallback params for solver paths.
     float bc;

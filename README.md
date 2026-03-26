@@ -2,7 +2,7 @@
 
 **Digital Open-Source Precise Extrapolator**
 
-DOPE 2.0 engine: a C++17 ballistic trajectory computation library targeting ESP32-P4 @ 400MHz and native desktop harnesses.
+DOPE 2.0 engine: a C++17 ballistic trajectory computation library targeting ESP32-P4 @ 400MHz and native desktop GUI for debugging and testing.
 
 DOPE 2.0 runs a table-first hybrid path (`AmmoDatasetV2`) with deterministic solver fallback, runtime context scaling, and persistent rifle+ammo calibration. See `V2_MIGRATION.md`.
 
@@ -75,7 +75,7 @@ It does not render graphics, process camera/LiDAR data, or select targets.
 │   └── test_uncertainty.cpp
 ├── tools/native_gui/             # Windows ImGui desktop harness
 │   └── gui_main.cpp              # Full GUI implementation
-└── DOPE-ASS SRS.md               # Software Requirements Specification
+└── DOPE SRS.md                   # Software Requirements Specification
 ```
 
 ## Engine Boundary (What Is "Real DOPE" vs Test/Tooling)

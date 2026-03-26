@@ -172,6 +172,23 @@ private:
     bool defer_uncertainty_ = false;
     bool uncertainty_pending_ = false;
 
+    // Active ammo selector — centralize legacy vs v2 choice for migration
+    struct ActiveAmmo {
+        bool valid = false;           // true when any source is available
+        bool is_v2 = false;           // true when source is AmmoDatasetV2
+        float bc = 0.0f;
+        float muzzle_velocity_ms = 0.0f;
+        float mass_grains = 0.0f;
+        float length_mm = 0.0f;
+        float caliber_inches = 0.0f;
+        float twist_rate_inches = 0.0f;
+        float mv_adjustment_fps_per_in = 0.0f;
+        float baseline_barrel_length_in = 24.0f;
+        DragModel drag_model = static_cast<DragModel>(0);
+    };
+
+    ActiveAmmo selectActiveAmmo() const;
+
     // --- Internal methods ---
     void evaluateState(uint64_t now_us);
     void computeSolution();
