@@ -18,7 +18,7 @@
  * Solver input parameters — everything needed for one trajectory solution.
  */
 struct SolverParams {
-    ProfileTrajectoryPoint trajectory_profile[DOPE_MAX_TRAJECTORY_POINTS];
+    DOPE_TrajectoryPoint trajectory_profile[DOPE_TRAJ_TABLE_SIZE];
     int num_trajectory_points;
     float bc;                    // Ballistic Coefficient
     DragModel drag_model;        // G1..G8
@@ -112,7 +112,7 @@ public:
      * cache->idx tracks the active segment to avoid repeated binary searches
      * for temporally-local range queries.
      */
-    static float interpolateSeries(const ProfileTrajectoryPoint* points, int count, float range_m,
+    static float interpolateSeries(const DOPE_TrajectoryPoint* points, int count, float range_m,
                                    SolverSeriesCache* cache);
 
 private:

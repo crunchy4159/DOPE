@@ -22,7 +22,11 @@ void DOPE_Update(const SensorFrame* frame) {
     s_engine.update(frame);
 }
 
-void DOPE_SetBulletProfile(const BulletProfile* profile) {
+void DOPE_SetGunProfile(const GunProfile* profile) {
+    s_engine.setBulletProfile(profile);
+}
+
+void DOPE_SetBulletProfile(const GunProfile* profile) {
     s_engine.setBulletProfile(profile);
 }
 
@@ -44,10 +48,6 @@ void DOPE_SetModuleCapabilities(const ModuleCapabilities* caps) {
 
 void DOPE_RecordShotObservation(const ShotObservation* obs) {
     s_engine.recordShotObservation(obs);
-}
-
-void DOPE_RecordRadarObservation(const RadarObservation* obs) {
-    s_engine.recordRadarObservation(obs);
 }
 
 void DOPE_SetZeroConfig(const ZeroConfig* config) {

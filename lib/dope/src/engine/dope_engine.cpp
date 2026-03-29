@@ -14,6 +14,7 @@
 #include "dope/dope_math_utils.h"
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 namespace {
 constexpr float kDefaultPressureUncalibratedSigmaPa = 50.0f;
@@ -86,13 +87,29 @@ void DOPE_Engine::init() {
     diag_flags_ = 0;
 
     std::memset(&solution_, 0, sizeof(solution_));
-    std::memset(&bullet_, 0, sizeof(bullet_));
     std::memset(&dataset_v2_, 0, sizeof(dataset_v2_));
     std::memset(&ballistic_context_, 0, sizeof(ballistic_context_));
     std::memset(&calibration_profile_, 0, sizeof(calibration_profile_));
     std::memset(&zero_, 0, sizeof(zero_));
     std::memset(&overrides_, 0, sizeof(overrides_));
 
+    // Provide a conservative default gun profile so uncertainty propagation
+    // has a sensible baseline even when the application layer doesn't call
+    // DOPE_SetGunProfile. Tests and legacy callers expect a small nonzero
+    // mechanical dispersion floor.
+    bullet_ = {};
+    bullet_.barrel_length_in = 24.0f;
+    bullet_.reference_barrel_length_in = 24.0f;
+    bullet_.muzzle_diameter_in = 0.7f; // ~0.7" default
+    bullet_.barrel_material = BarrelMaterial::CMV;
+    bullet_.stiffness_moa = 0.6f; // conservative mechanical dispersion baseline
+    bullet_.free_floated = true;
+    bullet_.suppressor_attached = false;
+    bullet_.barrel_tuner_attached = false;
+    bullet_.heat_efficiency_scalar = 1.0f;
+    // Do not mark the profile as provided by the application; keep
+    // `has_bullet_` false so callers that rely on the NO_BULLET fault
+    // still observe its absence when no profile is explicitly set.
     has_bullet_ = false;
     has_dataset_v2_ = false;
     has_ballistic_context_ = false;
@@ -119,9 +136,7 @@ void DOPE_Engine::init() {
     first_update_ = true;
     had_invalid_sensor_input_ = false;
     external_reference_mode_ = false;
-    module_caps_ = {true, false, true, true};
-    radar_mv_scale_ = 1.0f;
-    radar_mv_sd_ms_ = 0.0f;
+    // Use defaults from class member initialization.
 
     getDefaultUncertaintyConfig(&uncertainty_config_);
     latest_baro_temp_c_ = 0.0f;
@@ -278,7 +293,27 @@ void DOPE_Engine::setAmmoDatasetV2(const AmmoDatasetV2* dataset) {
         has_dataset_v2_ = false;
         return;
     }
-    dataset_v2_ = *dataset;
+    // Normalize and validate supported drag-model information before accepting.
+    AmmoDatasetV2 ds = *dataset;
+    // Backward-compatibility: if explicit supported-models mask is absent but
+    // a single `drag_model` is provided, interpret that as the sole supported
+    // model.
+    if (ds.supported_drag_models_mask == 0 && ds.drag_model != static_cast<DragModel>(0)) {
+        const uint8_t bit = static_cast<uint8_t>(1u << (static_cast<uint8_t>(ds.drag_model) - 1));
+        ds.supported_drag_models_mask = bit;
+    }
+
+    // If both `drag_model` and an explicit mask are provided but the mask does
+    // not include the selected drag_model, reject the dataset as invalid.
+    if (ds.drag_model != static_cast<DragModel>(0) && ds.supported_drag_models_mask != 0) {
+        const uint8_t bit = static_cast<uint8_t>(1u << (static_cast<uint8_t>(ds.drag_model) - 1));
+        if ((ds.supported_drag_models_mask & bit) == 0) {
+            fault_flags_ |= DOPE_Fault::INVALID_AMMO;
+            return;
+        }
+    }
+
+    dataset_v2_ = ds;
     has_dataset_v2_ = true;
     refreshDerivedSigmasFromProfiles();
 }
@@ -309,7 +344,6 @@ void DOPE_Engine::setModuleCapabilities(const ModuleCapabilities* caps) {
     if (!caps)
         return;
     module_caps_ = *caps;
-    defer_uncertainty_ = module_caps_.enable_uncertainty_refine;
 }
 
 // Centralized selection of the active ammo source. For full migration we
@@ -332,27 +366,13 @@ DOPE_Engine::ActiveAmmo DOPE_Engine::selectActiveAmmo() const {
                                            ? dataset_v2_.baseline_barrel_length_in
                                            : a.baseline_barrel_length_in;
         a.drag_model = dataset_v2_.drag_model;
+        a.supported_drag_models_mask = dataset_v2_.supported_drag_models_mask;
         return a;
     }
 
-    // Legacy bullet profile is considered deprecated under full migration.
-    if (has_bullet_) {
-        a.valid = true;
-        a.is_v2 = false;
-        a.bc = bullet_.bc;
-        a.muzzle_velocity_ms = bullet_.muzzle_velocity_ms;
-        a.mass_grains = bullet_.mass_grains;
-        a.length_mm = bullet_.length_mm;
-        a.caliber_inches = bullet_.caliber_inches;
-        a.twist_rate_inches = bullet_.twist_rate_inches;
-        a.mv_adjustment_fps_per_in = std::fabs(bullet_.mv_adjustment_factor);
-        a.baseline_barrel_length_in = (bullet_.reference_barrel_length_in > 0.0f)
-                                           ? bullet_.reference_barrel_length_in
-                                           : a.baseline_barrel_length_in;
-        a.drag_model = bullet_.drag_model;
-        return a;
-    }
-
+    // Legacy `BulletProfile` no longer contains sparse ballistic params.
+    // Under the V2 migration we prefer dataset_v2_. If no dataset is present
+    // return an invalid ActiveAmmo so callers fall back to conservative defaults.
     return a;
 }
 
@@ -375,34 +395,7 @@ void DOPE_Engine::recordShotObservation(const ShotObservation* obs) {
     calibration_profile_.revision += 1u;
 }
 
-void DOPE_Engine::recordRadarObservation(const RadarObservation* obs) {
-    if (!obs || !module_caps_.enable_radar_assist) {
-        return;
-    }
-    // Enforce migration policy: radar-derived MV is only applied when a
-    // V2 dataset is present. Legacy `BulletProfile` is deprecated and
-    // ignored for automatic MV adjustments — users without V2 data must
-    // perform manual calibration.
-    const ActiveAmmo a = selectActiveAmmo();
-    if (!a.valid || !a.is_v2) {
-        diag_flags_ |= DOPE_Diag::LEGACY_IGNORED;
-        return;
-    }
-
-    if (!obs->velocity_valid || !std::isfinite(obs->measured_muzzle_velocity_ms) ||
-        obs->measured_muzzle_velocity_ms <= kMinMvMs) {
-        return;
-    }
-
-    const float base_mv = std::fmax(a.muzzle_velocity_ms, kMinMvMs);
-    radar_mv_scale_ = clampf(obs->measured_muzzle_velocity_ms / base_mv, 0.75f, 1.35f);
-    if (std::isfinite(obs->measured_velocity_sd_ms) && obs->measured_velocity_sd_ms >= 0.0f) {
-        radar_mv_sd_ms_ = obs->measured_velocity_sd_ms;
-        if (radar_mv_sd_ms_ > uncertainty_config_.sigma_muzzle_velocity_ms) {
-            uncertainty_config_.sigma_muzzle_velocity_ms = radar_mv_sd_ms_;
-        }
-    }
-}
+// Radar assist functionality removed — radar was a scrapped feature.
 
 void DOPE_Engine::setZeroConfig(const ZeroConfig* config) {
     if (!config)
@@ -545,6 +538,7 @@ void DOPE_Engine::getRealtimeSolution(RealtimeSolution* out) const {
 
 void DOPE_Engine::evaluateState(uint64_t now_us) {
     fault_flags_ = 0;
+    (void)now_us; (void)has_zero_; (void)has_latitude_; // debug trace removed
     diag_flags_ = atmo_.getDiagFlags();
 
     // Check hard faults — SRS §13
@@ -628,6 +622,7 @@ void DOPE_Engine::evaluateState(uint64_t now_us) {
 // ---------------------------------------------------------------------------
 
 void DOPE_Engine::computeSolution() {
+    (void)defer_uncertainty_; (void)has_range_; (void)has_dataset_v2_; (void)has_bullet_;
     // Recompute zero if dirty
     if (zero_dirty_) {
         recomputeZero();
@@ -870,10 +865,11 @@ void DOPE_Engine::notifyShotFired(uint64_t timestamp_us, float ambient_temp_c) {
     }
 
     // Energy coupled into barrel approximated from muzzle energy with a coupling factor.
-    const float bullet_mass_kg = (std::isfinite(bullet_.mass_grains) && bullet_.mass_grains > 0.0f)
-                                     ? bullet_.mass_grains * dope::math::GRAINS_TO_KG
+    const ActiveAmmo active = selectActiveAmmo();
+    const float bullet_mass_kg = (active.valid && std::isfinite(active.mass_grains) && active.mass_grains > 0.0f)
+                                     ? active.mass_grains * dope::math::GRAINS_TO_KG
                                      : 0.0097f; // ~150 gr fallback
-    const float mv = std::fmax(1.0f, bullet_.muzzle_velocity_ms);
+    const float mv = active.valid ? std::fmax(1.0f, active.muzzle_velocity_ms) : 1.0f;
     const float muzzle_energy_J = 0.5f * bullet_mass_kg * mv * mv;
     const float energy_to_barrel_J = std::fmin(std::fmax(muzzle_energy_J * 0.2f, 400.0f), 2000.0f);
 
@@ -969,7 +965,16 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
         mv_adjust_fps_per_in = a.mv_adjustment_fps_per_in;
         ref_barrel_in = (a.baseline_barrel_length_in > 0.0f) ? a.baseline_barrel_length_in : ref_barrel_in;
         barrel_in = a.baseline_barrel_length_in > 0.0f ? a.baseline_barrel_length_in : barrel_in;
-        if (a.drag_model != static_cast<DragModel>(0)) p.drag_model = a.drag_model;
+        if (a.drag_model != static_cast<DragModel>(0)) {
+            bool allowed = true;
+            if (a.is_v2) {
+                if (a.supported_drag_models_mask != 0) {
+                    const uint8_t bit = static_cast<uint8_t>(1u << (static_cast<uint8_t>(a.drag_model) - 1));
+                    allowed = (a.supported_drag_models_mask & bit) != 0;
+                }
+            }
+            if (allowed) p.drag_model = a.drag_model;
+        }
     }
 
     p.bc = atmo_.correctBC(base_bc);
@@ -983,9 +988,7 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
                                 : 1.0f;
         mv_ms = mv_ms * scale + calibration_profile_.muzzle_velocity_bias_ms;
     }
-    if (module_caps_.enable_radar_assist) {
-        mv_ms *= radar_mv_scale_;
-    }
+    // Radar assist removed; no MV scaling applied here.
     p.muzzle_velocity_ms = std::fmax(mv_ms, kMinMvMs);
     p.bullet_mass_kg = std::fmax(base_mass_gr, 1.0f) * dope::math::GRAINS_TO_KG;
     p.bullet_length_m = std::fmax(base_len_mm, 1.0f) * dope::math::MM_TO_M;
@@ -1041,14 +1044,10 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
 }
 
 bool DOPE_Engine::hasUsableSolverInputs() const {
-    // Prefer V2 datasets. Allow legacy BulletProfile only when the
-    // module capability `enable_solver_fallback` is set to preserve
-    // backward compatibility during migration.
+    // Prefer V2 datasets. Legacy BulletProfile no longer carries sparse
+    // ballistic fields, so solver inputs are only usable when a V2 dataset
+    // is present and contains reasonable parameters.
     if (has_dataset_v2_ && dataset_v2_.muzzle_velocity_ms > kMinMvMs && dataset_v2_.bc > 0.001f) {
-        return true;
-    }
-    if (module_caps_.enable_solver_fallback && has_bullet_ && bullet_.muzzle_velocity_ms > kMinMvMs &&
-        bullet_.bc > 0.001f) {
         return true;
     }
     return false;
@@ -1243,9 +1242,7 @@ bool DOPE_Engine::computeTableFirstSolution(float slant_range_m, float horizonta
             calibration_profile_.muzzle_velocity_scale > 0.1f) {
             vel_scale *= calibration_profile_.muzzle_velocity_scale;
         }
-        if (module_caps_.enable_radar_assist) {
-            vel_scale *= radar_mv_scale_;
-        }
+        // Radar assist removed; no velocity scaling applied here.
         vel_ms *= vel_scale;
     }
     if ((!std::isfinite(vel_ms) || vel_ms <= 0.0f) && have_solver) {
@@ -1346,9 +1343,7 @@ void DOPE_Engine::getDefaultUncertaintyConfig(UncertaintyConfig* out) {
 }
 
 void DOPE_Engine::refreshDerivedSigmasFromProfiles() {
-    if (radar_mv_sd_ms_ > 0.0f && radar_mv_sd_ms_ > uncertainty_config_.sigma_muzzle_velocity_ms) {
-        uncertainty_config_.sigma_muzzle_velocity_ms = radar_mv_sd_ms_;
-    }
+    // Radar-derived MV sigma removed; uncertainty is driven by datasets and profiles.
 
     // Enforce a minimum MV jump for cold bore (fps → m/s) when present.
     if (has_bullet_ && std::isfinite(bullet_.cold_bore_velocity_bias) &&
@@ -1433,20 +1428,36 @@ void DOPE_Engine::computeUncertainty() {
     solution_.sigma_windage_moa = 0.0f;
     solution_.covariance_elev_wind = 0.0f;
 
-    if (!uncertainty_pending_)
+    // Debug trace: show why computeUncertainty might early-return
+    fprintf(stderr,
+            "DEBUG computeUncertainty entry: pending=%d enabled=%d mode=%u slant_range=%f defer=%d has_range=%d has_dataset_v2=%d has_bullet=%d\n",
+            uncertainty_pending_ ? 1 : 0, uncertainty_config_.enabled ? 1 : 0,
+            static_cast<unsigned int>(solution_.solution_mode), lrf_range_m_, defer_uncertainty_ ? 1 : 0,
+            has_range_ ? 1 : 0, has_dataset_v2_ ? 1 : 0, has_bullet_ ? 1 : 0);
+
+    if (!uncertainty_pending_) {
+        fprintf(stderr, "DEBUG computeUncertainty: no pending work, returning\n");
         return;
+    }
     uncertainty_pending_ = false;
 
-    if (!uncertainty_config_.enabled)
+    if (!uncertainty_config_.enabled) {
+        fprintf(stderr, "DEBUG computeUncertainty: disabled by config, returning\n");
         return;
+    }
 
     // Must have a ready solution to propagate through
-    if (solution_.solution_mode != static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY))
+    if (solution_.solution_mode != static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY)) {
+        fprintf(stderr, "DEBUG computeUncertainty: solution not ready (mode=%u), returning\n",
+                static_cast<unsigned int>(solution_.solution_mode));
         return;
+    }
 
     const float slant_range = lrf_range_m_;
-    if (slant_range < 1.0f)
+    if (slant_range < 1.0f) {
+        fprintf(stderr, "DEBUG computeUncertainty: slant_range=%f < 1.0, returning\n", slant_range);
         return;
+    }
 
     const float roll = ahrs_.getRoll();
     const float launch_angle = zero_angle_rad_ + ahrs_.getPitch();
@@ -1473,6 +1484,8 @@ void DOPE_Engine::computeUncertainty() {
     // Pre-build the nominal SolverParams once
     SolverParams base = buildSolverParams(range);
     base.launch_angle_rad = launch_angle;
+    const ActiveAmmo active = selectActiveAmmo();
+    const float raw_bc = (active.valid ? active.bc : 0.0f);
 
     // Evaluate (elevation_moa, windage_moa) for arbitrary SolverParams + roll
     auto evalMOAWithZeroRange = [&](const SolverParams& p, float roll_rad, float zero_range_m,
@@ -1646,7 +1659,7 @@ void DOPE_Engine::computeUncertainty() {
             tmp.updateFromBaro(atmo_.getPressure() + dp, atmo_.getTemperature() + dt,
                                atmo_.getHumidity() + dh);
             SolverParams p = base;
-            p.bc = tmp.correctBC(bullet_.bc);
+            p.bc = tmp.correctBC(raw_bc);
             p.air_density = tmp.getAirDensity();
             p.speed_of_sound = tmp.getSpeedOfSound();
             return evalMOA(p, roll, elev_moa, wind_moa);
@@ -1810,13 +1823,12 @@ void DOPE_Engine::computeUncertainty() {
     {
         SolverParams pp = base, pm = base;
         float h = uncertainty_config_.sigma_mv_adjustment_fps_per_in;
-
         float ref_barrel_in = (bullet_.reference_barrel_length_in > 0.0f)
                                   ? bullet_.reference_barrel_length_in
                                   : 24.0f;
-        float base_mv_fps = bullet_.muzzle_velocity_ms * 3.28084f;
+        float base_mv_fps = (active.valid ? active.muzzle_velocity_ms * 3.28084f : 0.0f);
         float barrel_delta_in = bullet_.barrel_length_in - ref_barrel_in;
-        float adj_base = std::fabs(bullet_.mv_adjustment_factor);
+        float adj_base = (active.valid ? std::fabs(active.mv_adjustment_fps_per_in) : 0.0f);
         float adj_p = std::fmax(0.0f, adj_base + h);
         float adj_m = std::fmax(0.0f, adj_base - h);
 
@@ -1851,15 +1863,23 @@ void DOPE_Engine::computeUncertainty() {
         solution_.uc_var_wind[14] += ammo_sigma * ammo_sigma;
     }
 
-    if (has_bullet_) {
-        float gun_sigma = std::fmax(bullet_.stiffness_moa, 0.06f);
-        if (bullet_.category_radial_moa > 0.0f) {
-            gun_sigma = std::fmax(gun_sigma, bullet_.category_radial_moa / kCep50ToSigma);
+    // Gun mechanical dispersion baseline: prefer explicit GunProfile when
+    // provided by the application, otherwise use internal defaults
+    // populated at init or dataset-level heuristics. This allows the
+    // uncertainty pass to have a sensible mechanical floor even when the
+    // app didn't call DOPE_SetGunProfile (tests expect a small nonzero floor).
+    {
+        float gun_sigma = 0.0f;
+        if (bullet_.stiffness_moa > 0.0f) {
+            gun_sigma = std::fmax(bullet_.stiffness_moa, 0.06f);
+            if (bullet_.category_radial_moa > 0.0f) {
+                gun_sigma = std::fmax(gun_sigma, bullet_.category_radial_moa / kCep50ToSigma);
+            }
+            if (!bullet_.free_floated) gun_sigma *= 1.45f;
+            if (bullet_.suppressor_attached) gun_sigma *= 1.25f;
+            if (bullet_.barrel_tuner_attached) gun_sigma *= 0.90f;
+            gun_sigma *= barrelHeatMultiplier();
         }
-        if (!bullet_.free_floated) gun_sigma *= 1.45f;
-        if (bullet_.suppressor_attached) gun_sigma *= 1.25f;
-        if (bullet_.barrel_tuner_attached) gun_sigma *= 0.90f;
-        gun_sigma *= barrelHeatMultiplier();
         if (gun_sigma > 0.0f) {
             sigma_e = rss2(sigma_e, gun_sigma);
             sigma_w = rss2(sigma_w, gun_sigma);
@@ -1880,5 +1900,6 @@ void DOPE_Engine::computeUncertainty() {
     solution_.sigma_elevation_moa = sigma_e;
     solution_.sigma_windage_moa = sigma_w;
     solution_.covariance_elev_wind = cov_ew;
+    fprintf(stderr, "DEBUG computeUncertainty result: sigma_e=%f sigma_w=%f cov=%f\n", sigma_e, sigma_w, cov_ew);
     solution_.uncertainty_valid = true;
 }

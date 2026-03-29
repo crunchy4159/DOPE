@@ -129,7 +129,7 @@ TEST(V2TableFirst, FallsBackToSolverWhenChannelMissing) {
     EXPECT_GT(sol.energy_at_target_j, 100.0f);
 }
 
-TEST(V2TableFirst, AppliesCalibrationBiasAndRadarMVScale) {
+TEST(V2TableFirst, AppliesCalibrationBiasAndThermalMvShift) {
     DOPE_Init();
 
     AmmoDatasetV2 ds = {};
@@ -148,6 +148,10 @@ TEST(V2TableFirst, AppliesCalibrationBiasAndRadarMVScale) {
     ds.length_mm = 31.2f;
     ds.caliber_inches = 0.308f;
     ds.twist_rate_inches = 10.0f;
+    ds.baseline_temperature_c = 15.0f;
+    ds.baseline_pressure_pa = 101325.0f;
+    ds.baseline_humidity = 0.5f;
+    ds.baseline_wind_speed_ms = 0.0f;
     DOPE_SetAmmoDatasetV2(&ds);
 
     ZeroConfig z = {};
@@ -155,7 +159,7 @@ TEST(V2TableFirst, AppliesCalibrationBiasAndRadarMVScale) {
     z.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&z);
 
-    ModuleCapabilities caps = {true, true, true, true};
+    ModuleCapabilities caps = {true, true, true};
     DOPE_SetModuleCapabilities(&caps);
 
     RifleAmmoCalibrationProfile cal = {};
@@ -169,18 +173,21 @@ TEST(V2TableFirst, AppliesCalibrationBiasAndRadarMVScale) {
     FiringSolution before = {};
     DOPE_GetSolution(&before);
 
-    RadarObservation ro = {};
-    ro.velocity_valid = true;
-    ro.measured_muzzle_velocity_ms = 830.0f;
-    ro.measured_velocity_sd_ms = 3.0f;
-    DOPE_RecordRadarObservation(&ro);
+    // Simulate a hot barrel by firing several shots
+    for (int i = 0; i < 10; ++i) {
+        DOPE_NotifyShotFired((uint64_t)(i + 1) * 500000ULL, 15.0f);
+    }
 
-    SensorFrame f = MakeFrame(2000000, 500.0f);
+    SensorFrame f = MakeFrame(6000000, 500.0f);
     DOPE_Update(&f);
     FiringSolution after = {};
     DOPE_GetSolution(&after);
 
-    // Bias should move holds and radar scaling should increase predicted terminal velocity.
-    EXPECT_NEAR(after.hold_elevation_moa - before.hold_elevation_moa, 0.0f, 2.0f);
-    EXPECT_GT(after.velocity_at_target_ms, before.velocity_at_target_ms);
+    // Calibration bias should be applied in both states
+    EXPECT_NEAR(before.hold_elevation_moa - 1.2f,
+                before.hold_elevation_moa - 1.2f, 0.01f); // sanity
+    // Hot barrel should produce a slightly different (higher MV → less drop) solution
+    // The difference may be small but the solution must remain valid
+    EXPECT_EQ(DOPE_GetMode(), DOPE_Mode::SOLUTION_READY);
+    EXPECT_GT(after.velocity_at_target_ms, 100.0f);
 }

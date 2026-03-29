@@ -34,7 +34,6 @@ public:
     void setRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile);
     void setModuleCapabilities(const ModuleCapabilities* caps);
     void recordShotObservation(const ShotObservation* obs);
-    void recordRadarObservation(const RadarObservation* obs);
     void setZeroConfig(const ZeroConfig* config);
     void setWindManual(float speed_ms, float heading_deg);
     void setLatitude(float latitude_deg);
@@ -105,7 +104,7 @@ private:
     bool has_ballistic_context_ = false;
     RifleAmmoCalibrationProfile calibration_profile_;
     bool has_calibration_profile_ = false;
-    ModuleCapabilities module_caps_ = {true, false, true, true};
+    ModuleCapabilities module_caps_ = {true, true, true};
 
     // Zero config
     ZeroConfig zero_;
@@ -185,6 +184,8 @@ private:
         float mv_adjustment_fps_per_in = 0.0f;
         float baseline_barrel_length_in = 24.0f;
         DragModel drag_model = static_cast<DragModel>(0);
+        // Bitmask of supported drag models from the dataset (Bit0 => G1 ... Bit7 => G8)
+        uint8_t supported_drag_models_mask = 0;
     };
 
     ActiveAmmo selectActiveAmmo() const;
@@ -203,9 +204,7 @@ private:
     bool hasUsableSolverInputs() const;
     void integrateBarrelCooling(uint64_t now_us);
     float estimateBarrelMassKg() const;
-    float barrelHeatMultiplier() const;
-
-    // Adaptive v2 observation state
-    float radar_mv_scale_ = 1.0f;
-    float radar_mv_sd_ms_ = 0.0f;
+    float barrelHeatMultiplier() const;   // sigma growth factor for uncertainty scaling
+    float thermalMvDeltaFps() const;      // MV shift in fps from barrel heat
+    void  thermalPoiDrift(float& drift_x_moa, float& drift_y_moa) const; // POI walk from thermal expansion
 };

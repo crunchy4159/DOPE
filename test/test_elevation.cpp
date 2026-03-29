@@ -6,29 +6,26 @@
 #include <gtest/gtest.h>
 #include "dope/dope_api.h"
 #include "dope/dope_math_utils.h"
+#include "test_helpers_v2.h"
 #include <cmath>
 #include <cstring>
 
 TEST(ElevationTest, ElevationShiftsHold) {
     DOPE_Init();
+    EnableSolverFallback();
 
-    // Minimal bullet profile
-    BulletProfile bullet = {};
-    bullet.bc = 0.5f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 800.0f;
-    bullet.mass_grains = 150.0f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    DOPE_SetBulletProfile(&bullet);
+    AmmoDatasetV2 ds = Make308V2();
+    ds.bc = 0.5f;
+    ds.muzzle_velocity_ms = 800.0f;
+    ds.mass_grains = 150.0f;
+    DOPE_SetAmmoDatasetV2(&ds);
 
-    // Zero at 100 m
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
 
-    // Feed baseline frames (range = 500 m)
+    // Feed baseline frames (range = 500 m, no elevation)
     for (int i = 0; i < 120; ++i) {
         SensorFrame f;
         std::memset(&f, 0, sizeof(f));
@@ -41,9 +38,10 @@ TEST(ElevationTest, ElevationShiftsHold) {
 
     FiringSolution sol0; DOPE_GetSolution(&sol0);
 
-    // Now apply a 1.0 m positive target elevation and re-run
+    // Re-init and apply 1.0 m positive target elevation
     DOPE_Init();
-    DOPE_SetBulletProfile(&bullet);
+    EnableSolverFallback();
+    DOPE_SetAmmoDatasetV2(&ds);
     DOPE_SetZeroConfig(&zero);
 
     for (int i = 0; i < 120; ++i) {
@@ -63,5 +61,5 @@ TEST(ElevationTest, ElevationShiftsHold) {
     const float expected_delta_moa = (1.0f / 500.0f) * dope::math::RAD_TO_MOA;
     const float actual_delta_moa = sol1.hold_elevation_moa - sol0.hold_elevation_moa;
 
-    EXPECT_NEAR(actual_delta_moa, expected_delta_moa, 0.5f); // allow loose tolerance
+    EXPECT_NEAR(actual_delta_moa, expected_delta_moa, 0.5f);
 }
