@@ -831,32 +831,14 @@ If these guarantees cannot be met, the RK4 fallback must remain available for co
 
 This checklist helps track progress toward implementing and verifying the requirements in this SRS. Use the task boxes to indicate status (unchecked = pending, checked = complete). The application or project lead should update this file as work progresses.
 
-- [ ] Section 1 — Introduction: purpose, scope, boundaries
-- [ ] Section 2 — System Architecture: high-level components & interfaces
-- [ ] Section 3 — Operating Modes: IDLE/SOLUTION_READY/FAULT definitions
-- [ ] Section 4 — Units Policy: SI/internal unit rules
-- [ ] Section 5 — Default Model: ISA defaults & override mechanism
-- [ ] Section 6 — Maximum Trajectory Range: compile-time limits
-- [ ] Section 7 — Sensor Ingestion: IMU, Mag, Baro, LRF, GNSS, Encoder
-- [ ] Section 8 — Manual Inputs: parameters and persistence
-- [ ] Section 9 — Zeroing Logic: automatic zero recompute triggers
-- [ ] Section 10 — Calibration APIs: IMU/Mag/Boresight/baro/gyro APIs
-- [ ] Section 11 — Ballistic Solver: model, atm/wind/Coriolis/cant/spin
-- [ ] Section 12 — FiringSolution Output: fields and semantics
-- [ ] Section 13 — Fault Philosophy: hard faults vs defaults
-- [ ] Section 14 — Performance Requirements: ESP32-P4 targets
-- [ ] Section 15 — Hardware Reference: prototype hardware list
-- [ ] Section 16 — Out of Scope: explicit exclusions
-- [ ] Section 17 — Summary: determinism, layering, scope
-- [ ] Section 18 — Latitude Source Architecture: priority & rationale
-- [ ] Section 19 — Runtime Solver Policy: table-first behavior
-- [ ] Section 20 — AmmoDatasetV2: schema & precompute rules
-- [ ] Section 21 — Calibration Procedure & Residuals: sample format
-- [ ] Section 22 — Uncertainty Policy: covariance & empirical overrides
-- [ ] Section 23 — Loader & Runtime Scalars: runtime adjustments
-- [ ] Section 24 — Removing RK4 from Real-Time Path: guarantees
-- [ ] Integration tests: test/ coverage for each major subsystem
-- [ ] Tooling & docs: add any required import/precompute scripts
+- [ ] **DOPE-ASS Boundary Enforcement:** Implement `SensorFrame` builder in DOPE-ASS.
+- [ ] **DOPE-ASS Boundary Enforcement:** Move fusion algorithms (AHRS Mahony/Madgwick) to DOPE-ASS code.
+- [ ] **DOPE-ASS Boundary Enforcement:** Move raw sensor calibration flows (e.g., Mag hard/soft iron) into DOPE-ASS code.
+- [ ] **DOPE-ASS Boundary Enforcement:** Replace direct driver references in `lib/dope/` with setter APIs and `DOPE_Update` calls.
+- [ ] **GUI Refactor:** Review UI controls that expose hardware/protocol settings (LRF UART controls, GNSS options, magnetometer calibration flows).
+- [ ] **GUI Refactor:** Remove driver/protocol controls from the GUI and replace them with "Sanitized Input" configuration panels that accept preprocessed values.
+- [ ] **GUI Refactor:** Update hardware preset dialogs to reflect that presets are DOPE-ASS UI conveniences and not engine APIs.
+- [ ] **Integration Testing:** Add tests to verify the GUI produces correct `SensorFrame` shapes expected by DOPE (`DOPE_Update`).
 
 Notes:
 - Mark items as complete here after code, tests, and documentation satisfy the requirement.

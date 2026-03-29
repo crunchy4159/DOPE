@@ -37,6 +37,28 @@
 
 The DOPE (Digital Optical Performance Engine) is a single-instance, zero-heap-allocation C++ engine. It is called once per sensor frame via `DOPE_Update()` and outputs a `FiringSolution` containing MOA hold values, ballistic data, and uncertainty estimates.
 
+### Data In, Data Out, and What Happens Inside
+
+The following diagram illustrates the high-level data flow across the DOPE engine boundary:
+
+```text
+┌─────────────────────────┐         ┌─────────────────────────┐         ┌─────────────────────────┐
+│    Host (DOPE-ASS)      │         │   DOPE Core Engine      │         │     Application UI      │
+│                         │         │                         │         │                         │
+│  [Raw Sensors]          │         │  [Atmospheric Trans.]   │    /--->│  [FiringSolution]       │
+│        │                │    /--->│          │              │    |    │   - Hold (MOA)          │
+│        ▼                |    |    │          ▼              │    |    │   - Uncertainty         │
+│  [Sensor Fusion]        │    |    │  [Mathematical Zero]    │    |    │   - Velocity/Energy     │
+│  [& Calibration]        │    |    │          │              │    |    │                         │
+│        │                │    |    │          ▼              │    |    │                         │
+│        ▼                │    |    │  [Ballistic Solver]     │    |    │                         │
+│  [SensorFrame payload]  │    |    │   (Table-first/RK4)     │----/    │                         │
+│   (Quat, Range, etc.)   │----/    │                         │         │                         │
+└─────────────────────────┘         └─────────────────────────┘         └─────────────────────────┘
+```
+
+### Internal Call Graph (V2 Boundary)
+
 ```
 DOPE_Update(SensorFrame*)
     │
@@ -44,11 +66,6 @@ DOPE_Update(SensorFrame*)
     │         ├─ air density ρ
     │         ├─ speed of sound c
     │         └─ corrected BC
-    │
-    ├─ §6,7  AHRSManager ─── accel, gyro, mag
-    │         └─ quaternion → pitch, roll, yaw
-    │
-    ├─ §14.3 LRF filter ──── slant range
     │
     ├─ §8    Zero solver ─── binary search for bore elevation at zero range
     │
@@ -63,7 +80,7 @@ DOPE_Update(SensorFrame*)
               └─ §16  uncertainty propagation
 ```
 
-**Sync note:** This diagram mirrors the `DOPE_Engine::update()` and `DOPE_Engine::computeSolution()` call graph in [lib/dope/src/engine/dope_engine.cpp](lib/dope/src/engine/dope_engine.cpp).
+> **Note on V2 Architecture:** In DOPE v2.0, sensor processing (AHRS fusion, Magnetometer Calibration, LRF filtering) has been moved to the DOPE-ASS application boundary. DOPE now receives pre-calculated quaternions and ranges.
 
 ---
 
@@ -259,7 +276,9 @@ The result $a_{drag}$ has units of m/s².
 
 ## 6. AHRS — Attitude & Heading Reference
 
-**Source:** [lib/dope/src/ahrs/madgwick.cpp](lib/dope/src/ahrs/madgwick.cpp), [lib/dope/src/ahrs/mahony.cpp](lib/dope/src/ahrs/mahony.cpp).
+> **V2 Boundary Note:** As part of the DOPE v2.0 migration, all raw sensor fusion (Mahony/Madgwick) and magnetometer calibration algorithms are being relocated to the DOPE-ASS application layer. This section describes the mathematical theory for these filters, which the host application uses to produce the orientation quaternion fed into the `SensorFrame`.
+
+**Source (pending migration check):** [lib/dope/src/ahrs/madgwick.cpp](lib/dope/src/ahrs/madgwick.cpp), [lib/dope/src/ahrs/mahony.cpp](lib/dope/src/ahrs/mahony.cpp).
 
 Both filters maintain an orientation **quaternion** $\mathbf{q} = [q_0, q_1, q_2, q_3]$ (scalar-first, i.e., $[w, x, y, z]$). The quaternion is always kept unit-normalized: $|\mathbf{q}| = 1$.
 
