@@ -4,10 +4,6 @@
   "ammo_v2": [
     {
       "name": ".22 LR 40gr CCI Mini-Mag CPRN",
-      "tags": [
-        "commercial",
-        "rimfire"
-      ],
       "cartridge_keys": [
         "22_lr"
       ],
@@ -60,10 +56,6 @@
     },
     {
       "name": "Remington .22lr Subsonic 40gr CPHP",
-      "tags": [
-        "commercial",
-        "rimfire"
-      ],
       "cartridge_keys": [
         "22_lr"
       ],
@@ -115,10 +107,6 @@
     },
     {
       "name": "Federal Premium 9mm HST JHP 124gr",
-      "tags": [
-        "commercial",
-        "jhp"
-      ],
       "cartridge_keys": [
         "9x19"
       ],
@@ -178,10 +166,6 @@
     },
     {
       "name": "CCI Blazer Brass 9mm FMJ 115gr",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "9x19"
       ],
@@ -233,10 +217,6 @@
     },
     {
       "name": "Winchester White Box 9mm 115gr FMJ",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "9x19"
       ],
@@ -280,10 +260,6 @@
     },
     {
       "name": ".45 ACP 230gr FMJ American Eagle",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "45_acp"
       ],
@@ -344,10 +320,6 @@
     },
     {
       "name": ".300 BLK 208gr Subsonic Hornady Black A-MAX",
-      "tags": [
-        "commercial",
-        "subsonic"
-      ],
       "cartridge_keys": [
         "300_blk"
       ],
@@ -462,11 +434,210 @@
       "source_preset_index": 6
     },
     {
-      "name": "5.56 NATO 62gr M855 FMJ",
-      "tags": [
-        "military",
-        "fmj"
+      "name": ".300 BLK 120gr JHP Supersonic AAC Barnes",
+      "cartridge_keys": [
+        "300_blk"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.297,
+      "sigma_bc": 0.025,
+      "mass_kg": 0.008099864,
+      "caliber_m": 0.007823,
+      "length_m": 0.0267,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 640.1
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 619.7
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 600.2
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 580.9
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 562.1
+        },
+        {
+          "distance_m": 114.3,
+          "velocity_ms": 543.8
+        },
+        {
+          "distance_m": 137.16,
+          "velocity_ms": 525.8
+        },
+        {
+          "distance_m": 160.02,
+          "velocity_ms": 508.1
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 491.3
+        },
+        {
+          "distance_m": 205.74,
+          "velocity_ms": 474.9
+        },
+        {
+          "distance_m": 228.6,
+          "velocity_ms": 458.7
+        },
+        {
+          "distance_m": 251.46,
+          "velocity_ms": 443.5
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 428.5
+        },
+        {
+          "distance_m": 297.18,
+          "velocity_ms": 414.2
+        },
+        {
+          "distance_m": 320.04,
+          "velocity_ms": 400.8
+        },
+        {
+          "distance_m": 342.9,
+          "velocity_ms": 388.0
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 376.1
+        },
+        {
+          "distance_m": 388.62,
+          "velocity_ms": 365.2
+        },
+        {
+          "distance_m": 411.48,
+          "velocity_ms": 354.8
+        },
+        {
+          "distance_m": 434.34,
+          "velocity_ms": 345.3
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 337.1
+        }
+      ],
+      "trajectory_profile": [
+        {
+          "distance_m": 0.0,
+          "trajectory_m": -0.0381
+        },
+        {
+          "distance_m": 22.86,
+          "trajectory_m": -0.0076
+        },
+        {
+          "distance_m": 45.72,
+          "trajectory_m": 0.0102
+        },
+        {
+          "distance_m": 68.58,
+          "trajectory_m": 0.0127
+        },
+        {
+          "distance_m": 91.44,
+          "trajectory_m": 0.0
+        },
+        {
+          "distance_m": 114.3,
+          "trajectory_m": -0.0279
+        },
+        {
+          "distance_m": 137.16,
+          "trajectory_m": -0.0737
+        },
+        {
+          "distance_m": 160.02,
+          "trajectory_m": -0.1397
+        },
+        {
+          "distance_m": 182.88,
+          "trajectory_m": -0.2235
+        },
+        {
+          "distance_m": 205.74,
+          "trajectory_m": -0.3277
+        },
+        {
+          "distance_m": 228.6,
+          "trajectory_m": -0.4572
+        },
+        {
+          "distance_m": 251.46,
+          "trajectory_m": -0.6096
+        },
+        {
+          "distance_m": 274.32,
+          "trajectory_m": -0.7874
+        },
+        {
+          "distance_m": 297.18,
+          "trajectory_m": -0.9957
+        },
+        {
+          "distance_m": 320.04,
+          "trajectory_m": -1.2319
+        },
+        {
+          "distance_m": 342.9,
+          "trajectory_m": -1.4986
+        },
+        {
+          "distance_m": 365.76,
+          "trajectory_m": -1.8009
+        },
+        {
+          "distance_m": 388.62,
+          "trajectory_m": -2.1387
+        },
+        {
+          "distance_m": 411.48,
+          "trajectory_m": -2.5171
+        },
+        {
+          "distance_m": 434.34,
+          "trajectory_m": -2.9337
+        },
+        {
+          "distance_m": 457.2,
+          "trajectory_m": -3.3934
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 4.572,
+      "reference_barrel_inches": 16.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.5
+        },
+        {
+          "range_m": 200.0,
+          "cep50_moa": 2.0
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 3.0
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 13
+    },
+    {
+      "name": "5.56 NATO 62gr M855 FMJ",
       "cartridge_keys": [
         "5.56_nato"
       ],
@@ -506,10 +677,6 @@
     },
     {
       "name": ".223 Rem 55gr FMJ Winchester White Box",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "223_rem"
       ],
@@ -589,10 +756,6 @@
     },
     {
       "name": "Hornady .223 Rem 75gr BTHP Match",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "223_rem"
       ],
@@ -676,11 +839,6 @@
     },
     {
       "name": "5.56 NATO 77gr OTM (Mk262 Mod1)",
-      "tags": [
-        "match",
-        "hpbt",
-        "military"
-      ],
       "cartridge_keys": [
         "5.56_nato"
       ],
@@ -765,10 +923,6 @@
     },
     {
       "name": "7.62x39mm FMJ 123gr Soviet",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "7.62x39"
       ],
@@ -848,10 +1002,6 @@
     },
     {
       "name": "6.5 Grendel 123gr Lapua Scenar HPBT",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "6.5_grendel"
       ],
@@ -1055,219 +1205,7 @@
       "source_preset_index": 12
     },
     {
-      "name": ".300 BLK 120gr JHP Supersonic AAC Barnes",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
-      "cartridge_keys": [
-        "300_blk"
-      ],
-      "drag_model": "G1",
-      "ballistic_coefficient": 0.297,
-      "sigma_bc": 0.025,
-      "mass_kg": 0.008099864,
-      "caliber_m": 0.007823,
-      "length_m": 0.0267,
-      "velocity_profile": [
-        {
-          "distance_m": 0.0,
-          "velocity_ms": 640.1
-        },
-        {
-          "distance_m": 22.86,
-          "velocity_ms": 619.7
-        },
-        {
-          "distance_m": 45.72,
-          "velocity_ms": 600.2
-        },
-        {
-          "distance_m": 68.58,
-          "velocity_ms": 580.9
-        },
-        {
-          "distance_m": 91.44,
-          "velocity_ms": 562.1
-        },
-        {
-          "distance_m": 114.3,
-          "velocity_ms": 543.8
-        },
-        {
-          "distance_m": 137.16,
-          "velocity_ms": 525.8
-        },
-        {
-          "distance_m": 160.02,
-          "velocity_ms": 508.1
-        },
-        {
-          "distance_m": 182.88,
-          "velocity_ms": 491.3
-        },
-        {
-          "distance_m": 205.74,
-          "velocity_ms": 474.9
-        },
-        {
-          "distance_m": 228.6,
-          "velocity_ms": 458.7
-        },
-        {
-          "distance_m": 251.46,
-          "velocity_ms": 443.5
-        },
-        {
-          "distance_m": 274.32,
-          "velocity_ms": 428.5
-        },
-        {
-          "distance_m": 297.18,
-          "velocity_ms": 414.2
-        },
-        {
-          "distance_m": 320.04,
-          "velocity_ms": 400.8
-        },
-        {
-          "distance_m": 342.9,
-          "velocity_ms": 388.0
-        },
-        {
-          "distance_m": 365.76,
-          "velocity_ms": 376.1
-        },
-        {
-          "distance_m": 388.62,
-          "velocity_ms": 365.2
-        },
-        {
-          "distance_m": 411.48,
-          "velocity_ms": 354.8
-        },
-        {
-          "distance_m": 434.34,
-          "velocity_ms": 345.3
-        },
-        {
-          "distance_m": 457.2,
-          "velocity_ms": 337.1
-        }
-      ],
-      "trajectory_profile": [
-        {
-          "distance_m": 0.0,
-          "trajectory_m": -0.0381
-        },
-        {
-          "distance_m": 22.86,
-          "trajectory_m": -0.0076
-        },
-        {
-          "distance_m": 45.72,
-          "trajectory_m": 0.0102
-        },
-        {
-          "distance_m": 68.58,
-          "trajectory_m": 0.0127
-        },
-        {
-          "distance_m": 91.44,
-          "trajectory_m": 0.0
-        },
-        {
-          "distance_m": 114.3,
-          "trajectory_m": -0.0279
-        },
-        {
-          "distance_m": 137.16,
-          "trajectory_m": -0.0737
-        },
-        {
-          "distance_m": 160.02,
-          "trajectory_m": -0.1397
-        },
-        {
-          "distance_m": 182.88,
-          "trajectory_m": -0.2235
-        },
-        {
-          "distance_m": 205.74,
-          "trajectory_m": -0.3277
-        },
-        {
-          "distance_m": 228.6,
-          "trajectory_m": -0.4572
-        },
-        {
-          "distance_m": 251.46,
-          "trajectory_m": -0.6096
-        },
-        {
-          "distance_m": 274.32,
-          "trajectory_m": -0.7874
-        },
-        {
-          "distance_m": 297.18,
-          "trajectory_m": -0.9957
-        },
-        {
-          "distance_m": 320.04,
-          "trajectory_m": -1.2319
-        },
-        {
-          "distance_m": 342.9,
-          "trajectory_m": -1.4986
-        },
-        {
-          "distance_m": 365.76,
-          "trajectory_m": -1.8009
-        },
-        {
-          "distance_m": 388.62,
-          "trajectory_m": -2.1387
-        },
-        {
-          "distance_m": 411.48,
-          "trajectory_m": -2.5171
-        },
-        {
-          "distance_m": 434.34,
-          "trajectory_m": -2.9337
-        },
-        {
-          "distance_m": 457.2,
-          "trajectory_m": -3.3934
-        }
-      ],
-      "sigma_muzzle_velocity_ms": 4.572,
-      "reference_barrel_inches": 16.0,
-      "mv_adjustment_fps_per_in": 35.0,
-      "cep_table_moa": [
-        {
-          "range_m": 100.0,
-          "cep50_moa": 1.5
-        },
-        {
-          "range_m": 200.0,
-          "cep50_moa": 2.0
-        },
-        {
-          "range_m": 300.0,
-          "cep50_moa": 3.0
-        }
-      ],
-      "cep_scale_floor": 1.0,
-      "source_preset_index": 13
-    },
-    {
       "name": "6mm Creedmoor 109gr Berger LRHT",
-      "tags": [
-        "match",
-        "hpbt",
-        "prs"
-      ],
       "cartridge_keys": [
         "6mm_creedmoor"
       ],
@@ -1356,10 +1294,6 @@
     },
     {
       "name": "Hornady 6.5 Creedmoor 140gr ELD-M",
-      "tags": [
-        "match",
-        "polymer_tip"
-      ],
       "cartridge_keys": [
         "6.5_creedmoor"
       ],
@@ -1444,10 +1378,6 @@
     },
     {
       "name": ".308 Win 168gr BTHP MatchKing Federal",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "308_win"
       ],
@@ -1532,10 +1462,6 @@
     },
     {
       "name": ".308 Win 175gr Federal Gold Medal SMK BTHP",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "308_win"
       ],
@@ -1619,10 +1545,6 @@
     },
     {
       "name": ".30-06 Springfield 168gr BTHP MatchKing",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "30_06_sprg"
       ],
@@ -1707,10 +1629,6 @@
     },
     {
       "name": ".30-06 Springfield 150gr FMJ",
-      "tags": [
-        "commercial",
-        "fmj"
-      ],
       "cartridge_keys": [
         "30_06_sprg"
       ],
@@ -1795,10 +1713,6 @@
     },
     {
       "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "300_win_mag"
       ],
@@ -1837,10 +1751,6 @@
     },
     {
       "name": ".338 Lapua Magnum 250gr Lapua Scenar HPBT",
-      "tags": [
-        "match",
-        "hpbt"
-      ],
       "cartridge_keys": [
         "338_lapua_mag"
       ],
@@ -1880,10 +1790,6 @@
     },
     {
       "name": ".50 BMG 750gr Hornady A-Max Match",
-      "tags": [
-        "match",
-        "polymer_tip"
-      ],
       "cartridge_keys": [
         "50_bmg"
       ],

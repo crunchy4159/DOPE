@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = 'tools/native_gui/dope_gui_cartridges.json';
+const path = 'tools/native_gui/dope_gui_cartridges_v2.json';
 try {
   const s = fs.readFileSync(path,'utf8');
   JSON.parse(s);

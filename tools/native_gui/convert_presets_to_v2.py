@@ -2,8 +2,8 @@
 import json, re, os
 
 ROOT = os.path.dirname(__file__)
-IN_PATH = os.path.join(ROOT, 'dope_gui_cartridges.json')
-GUNS_PATH = os.path.join(ROOT, 'dope_gui_guns.json')
+IN_PATH = os.path.join(ROOT, 'dope_gui_cartridges.json')  # Only used for conversion, not runtime
+GUNS_PATH = os.path.join(ROOT, 'dope_gui_guns.json')      # Only used for conversion, not runtime
 OUT_CARTRIDGES_V2 = os.path.join(ROOT, 'dope_gui_cartridges_v2.json')
 OUT_GUNS_SANITIZED = os.path.join(ROOT, 'dope_gui_guns_sanitized.json')
 OUT_GUNS_V2 = os.path.join(ROOT, 'dope_gui_guns_v2.json')
@@ -30,7 +30,7 @@ INCH_TO_M = 0.0254
 def convert_cartridge_to_v2(preset, idx):
     v2 = {}
     v2['name'] = preset.get('name')
-    v2['tags'] = preset.get('tags', [])
+    # tags removed
     v2['cartridge_keys'] = preset.get('cartridge_keys', [])
     # drag model: map index -> string (G1..G8) if available
     d_idx = preset.get('drag_model_index')
@@ -73,7 +73,7 @@ def convert_cartridge_to_v2(preset, idx):
         v2['sigma_muzzle_velocity_ms'] = round(preset['sd_mv_fps'] * FPS_TO_MPS, 3)
 
     # preserve other numeric metadata if present
-    for k in ['reference_barrel_inches', 'mv_adjustment_fps_per_in', 'cep_table_moa', 'cep_scale_floor', '_source', 'tags']:
+    for k in ['reference_barrel_inches', 'mv_adjustment_fps_per_in', 'cep_table_moa', 'cep_scale_floor', '_source']:
         if k in preset:
             v2[k] = preset[k]
 

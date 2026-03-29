@@ -89,7 +89,7 @@ struct CartridgeProfile {
     float caliber_inches;
     float length_mm;
 };
-// Cartridge demo profiles removed; use external JSON `dope_gui_cartridges.json`.
+// Cartridge demo profiles removed; use external JSON `dope_gui_cartridges_v2.json`.
 
 struct CartridgePreset {
     std::string name;
@@ -107,7 +107,7 @@ struct CartridgePreset {
     std::vector<std::pair<float, float>> barrel_mv_profile;
     std::vector<std::pair<float, float>> velocity_profile;
     std::vector<std::pair<float, float>> trajectory_profile;
-    std::vector<std::string> tags;
+    // tags removed
     float muzzle_diameter_in = 0.7f;
     float cold_bore_velocity_bias = 8.5f;
     float angular_sigma_moa = 0.4f;
@@ -545,6 +545,7 @@ static void SelectDefaultGunPresetForSelectedCartridge();
 static void ApplyGunPreset(const GunPreset& preset);
 static float ComputeStiffnessMoa(float muzzle_diameter_in, float bore_diameter_in,
                                  BarrelMaterial material);
+static CartridgePreset CaptureCurrentCartridgePreset(const std::string& name);
 static void ComputeAdjustedMv(); // glue-layer barrel-length → MV interpolation
 
 // Dynamic hardware preset labels / optional sigma tables loaded from JSON.
@@ -832,6 +833,8 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                 preset_array = &j["cartridges"];
             } else if (j.contains("presets") && j["presets"].is_array()) {
                 preset_array = &j["presets"];
+            } else if (j.contains("ammo_v2") && j["ammo_v2"].is_array()) {
+                preset_array = &j["ammo_v2"];
             }
         } else if (j.is_array()) {
             preset_array = &j;
@@ -851,9 +854,24 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
             } else {
                 p.muzzle_velocity_ms = e.value("muzzle_velocity_ms", 0.0f);
             }
-            p.mass_grains = e.value("mass_grains", 0.0f);
-            p.caliber_inches = e.value("caliber_inches", 0.0f);
-            p.length_mm = e.value("length_mm", 0.0f);
+            // Support V2 keys with SI units: mass_kg, caliber_m, length_m
+            if (e.contains("mass_kg") && e["mass_kg"].is_number()) {
+                const float mass_kg = e["mass_kg"].get<float>();
+                // 1 kg = 15432.358352941 grains
+                p.mass_grains = mass_kg * 15432.358352941f;
+            } else {
+                p.mass_grains = e.value("mass_grains", 0.0f);
+            }
+            if (e.contains("caliber_m") && e["caliber_m"].is_number()) {
+                p.caliber_inches = e["caliber_m"].get<float>() * 39.37007874f;
+            } else {
+                p.caliber_inches = e.value("caliber_inches", 0.0f);
+            }
+            if (e.contains("length_m") && e["length_m"].is_number()) {
+                p.length_mm = e["length_m"].get<float>() * 1000.0f;
+            } else {
+                p.length_mm = e.value("length_mm", 0.0f);
+            }
             p.cartridge_keys.clear();
             const auto ck_it = e.find("cartridge_keys");
             if (ck_it != e.end() && ck_it->is_array()) {
@@ -876,30 +894,27 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
             } else {
                 p.sd_mv_fps = e.value("sd_mv_fps", 0.0f);
             }
-            // tags (optional): ["tier","construction"]
-            p.tags.clear();
-            const auto tags_it = e.find("tags");
-            if (tags_it != e.end() && tags_it->is_array()) {
-                for (const auto& t : *tags_it) {
-                    if (t.is_string())
-                        p.tags.push_back(t.get<std::string>());
-                }
-            }
+            // tags removed
             // velocity_profile (optional)
             p.velocity_profile.clear();
             const auto vp_it = e.find("velocity_profile");
             if (vp_it != e.end() && vp_it->is_array()) {
                 for (const auto& vp : *vp_it) {
-                    const float dist = vp.value("distance_inches", 0.0f);
+                    float dist_inches = 0.0f;
+                    if (vp.contains("distance_inches") && vp["distance_inches"].is_number()) {
+                        dist_inches = vp["distance_inches"].get<float>();
+                    } else if (vp.contains("distance_m") && vp["distance_m"].is_number()) {
+                        dist_inches = vp["distance_m"].get<float>() * 39.37007874f;
+                    }
                     float vel = 0.0f;
                     if (vp.contains("velocity_ms") && vp["velocity_ms"].is_number()) {
                         vel = vp["velocity_ms"].get<float>();
                     } else if (vp.contains("velocity_fps") && vp["velocity_fps"].is_number()) {
                         vel = vp["velocity_fps"].get<float>() * FPS_TO_MPS;
-                    } else {
-                        vel = vp.value("velocity_mps", 0.0f);
+                    } else if (vp.contains("velocity_mps") && vp["velocity_mps"].is_number()) {
+                        vel = vp["velocity_mps"].get<float>();
                     }
-                    p.velocity_profile.emplace_back(dist, vel);
+                    p.velocity_profile.emplace_back(dist_inches, vel);
                 }
             } else if (p.muzzle_velocity_ms > 0.0f) {
                 p.velocity_profile.emplace_back(0.0f, p.muzzle_velocity_ms);
@@ -909,10 +924,21 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
             const auto tp_it = e.find("trajectory_profile");
             if (tp_it != e.end() && tp_it->is_array()) {
                 for (const auto& tp : *tp_it) {
-                    const float dist = tp.value("distance_inches", 0.0f);
-                    const float traj =
-                        tp.value("trajectory_inches", tp.value("trajectory_in", 0.0f));
-                    p.trajectory_profile.emplace_back(dist, traj);
+                    float dist_inches = 0.0f;
+                    if (tp.contains("distance_inches") && tp["distance_inches"].is_number()) {
+                        dist_inches = tp["distance_inches"].get<float>();
+                    } else if (tp.contains("distance_m") && tp["distance_m"].is_number()) {
+                        dist_inches = tp["distance_m"].get<float>() * 39.37007874f;
+                    }
+                    float traj_inches = 0.0f;
+                    if (tp.contains("trajectory_inches") && tp["trajectory_inches"].is_number()) {
+                        traj_inches = tp["trajectory_inches"].get<float>();
+                    } else if (tp.contains("trajectory_in") && tp["trajectory_in"].is_number()) {
+                        traj_inches = tp["trajectory_in"].get<float>();
+                    } else if (tp.contains("trajectory_m") && tp["trajectory_m"].is_number()) {
+                        traj_inches = tp["trajectory_m"].get<float>() * 39.37007874f;
+                    }
+                    p.trajectory_profile.emplace_back(dist_inches, traj_inches);
                 }
             }
             // cartridge CEP (optional)
@@ -927,6 +953,20 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                     const float mv_fps = bm.value("mv_fps", 0.0f);
                     if (barrel_in > 0.0f && mv_fps > 0.0f)
                         p.barrel_mv_profile.emplace_back(barrel_in, mv_fps);
+                }
+            }
+            // Support V2 naming: ballistic_coefficient, drag_model (string), mass_kg, caliber_m handled above
+            if (p.bc <= 0.0f) {
+                p.bc = e.value("ballistic_coefficient", p.bc);
+            }
+            if (e.contains("drag_model") && e["drag_model"].is_string()) {
+                const std::string dm = e["drag_model"].get<std::string>();
+                const char* dm_labels[8] = {"G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"};
+                for (int i = 0; i < 8; ++i) {
+                    if (dm == dm_labels[i]) {
+                        p.drag_model_index = i;
+                        break;
+                    }
                 }
             }
             SanitizeCartridgePreset(p);
@@ -955,6 +995,7 @@ bool LoadGunPresetsFromFile(const std::string& path) {
             return false;
         std::vector<GunPreset> tmp;
         for (const auto& e : j) {
+            if (e.contains("_comments")) continue; // skip metadata entries
             GunPreset p;
             p.name = e.value("name", std::string(""));
             p.caliber_inches = e.value("caliber_inches", 0.308f);
@@ -1180,19 +1221,12 @@ void EnsureProfileDefaults() {
     // from the repo root or from the tools/native_gui folder.
     const std::string rel_dir = "tools/native_gui/";
     const std::string cartridge_file_repo_v2 = rel_dir + "dope_gui_cartridges_v2.json";
-    const std::string cartridge_file_repo = rel_dir + "dope_gui_cartridges.json";
     const std::string gun_file_repo_v2 = rel_dir + "dope_gui_guns_v2.json";
-    const std::string gun_file_repo = rel_dir + "dope_gui_guns.json";
     const std::string hw_file_repo = rel_dir + "dope_gui_hardware.json";
-    // Prefer *_v2.json files when present so the new V2 presets are selected by default.
-    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo_v2) ||
-                             LoadCartridgePresetsFromFile(cartridge_file_repo) ||
-                             LoadCartridgePresetsFromFile("dope_gui_cartridges.json");
-    bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo_v2) ||
-                       LoadGunPresetsFromFile(gun_file_repo) ||
-                       LoadGunPresetsFromFile("dope_gui_guns.json");
+    // Only use *_v2.json files for presets.
+    bool loaded_cartridges = LoadCartridgePresetsFromFile(cartridge_file_repo_v2);
+    bool loaded_guns = LoadGunPresetsFromFile(gun_file_repo_v2);
     (void)LoadHardwarePresetsFromFile(hw_file_repo);
-    (void)LoadHardwarePresetsFromFile("dope_gui_hardware.json");
 
     // If neither embedded tables nor per-cartridge sigma values exist, legacy file fallback remains
     // optional.
@@ -1560,11 +1594,7 @@ json SerializeCartridgePreset(const CartridgePreset& input) {
     item["mass_grains"] = preset.mass_grains;
     item["caliber_inches"] = preset.caliber_inches;
     item["length_mm"] = preset.length_mm;
-    if (!preset.tags.empty()) {
-        item["tags"] = json::array();
-        for (const auto& t : preset.tags)
-            item["tags"].push_back(t);
-    }
+    // tags removed
     if (!preset.cartridge_keys.empty()) {
         item["cartridge_keys"] = json::array();
         for (const auto& k : preset.cartridge_keys)
@@ -2227,6 +2257,11 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
         IsGunPresetCompatibleWithSelectedCaliber(g_gun_presets[g_state.selected_gun_preset])) {
         ApplyGunPreset(g_gun_presets[g_state.selected_gun_preset]);
     }
+    // Debug: report glue-layer values set by applying the cartridge preset.
+    std::printf("[DEBUG] ApplyCartridgePreset: name= %s, mass=%.2f gr, caliber=%.4f in, length=%.2f mm, mv_ms=%.2f, bc=%.4f, drag_idx=%d\n",
+                normalized.name.c_str(), normalized.mass_grains, normalized.caliber_inches,
+                normalized.length_mm, g_state.bullet.muzzle_velocity_ms, g_state.bullet.bc,
+                g_state.drag_model_index);
 }
 
 void ApplyGunPreset(const GunPreset& preset) {
@@ -2284,18 +2319,7 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
     // barrel-MV data from glue-layer globals
     preset.mv_adjustment_fps_per_in = g_active_mv_adj_fps_per_in;
     preset.barrel_mv_profile = g_active_barrel_mv_profile;
-    // attach tags from current UI selections where applicable
-    preset.tags.clear();
-    if (g_state.new_cartridge_tier_index >= 0 && g_state.new_cartridge_tier_index < kNumBulletTiers)
-        preset.tags.push_back(kBulletTierLabels[g_state.new_cartridge_tier_index]);
-    if (g_state.new_cartridge_construction_index >= 0 &&
-        g_state.new_cartridge_construction_index < kNumBulletConstructions)
-        preset.tags.push_back(
-            kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
-    if (g_state.new_cartridge_shape_index > 0 &&
-        g_state.new_cartridge_shape_index < kNumBulletShapes)
-        preset.tags.push_back(
-            kBulletShapeLabels[g_state.new_cartridge_shape_index]);
+    // tags removed
 
     if (g_state.selected_cartridge_preset >= 0 &&
         g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
@@ -2911,69 +2935,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
             ImGui::InputText("Cartridge Preset Name", g_state.new_cartridge_preset_name,
                              IM_ARRAYSIZE(g_state.new_cartridge_preset_name));
-            // Tag selection: Tier, Construction, optional Shape
-            ImGui::TextUnformatted("Preset Tags:");
-            bool tags_changed = false;
-            int tier_idx = g_state.new_cartridge_tier_index;
-            if (ImGui::Combo("Tier", &tier_idx, kBulletTierLabels, kNumBulletTiers)) {
-                g_state.new_cartridge_tier_index = tier_idx;
-                tags_changed = true;
-            }
-            int cons_idx = g_state.new_cartridge_construction_index;
-            if (ImGui::Combo("Construction", &cons_idx, kBulletConstructionLabels,
-                             kNumBulletConstructions)) {
-                g_state.new_cartridge_construction_index = cons_idx;
-                tags_changed = true;
-            }
-            int shape_idx = g_state.new_cartridge_shape_index;
-            if (ImGui::Combo("Shape", &shape_idx, kBulletShapeLabels, kNumBulletShapes)) {
-                g_state.new_cartridge_shape_index = shape_idx;
-                tags_changed = true;
-            }
-            if (tags_changed) {
-                CartridgePreset tmp;
-                tmp.tags.clear();
-                if (g_state.new_cartridge_tier_index >= 0 &&
-                    g_state.new_cartridge_tier_index < kNumBulletTiers)
-                    tmp.tags.push_back(kBulletTierLabels[g_state.new_cartridge_tier_index]);
-                if (g_state.new_cartridge_construction_index >= 0 &&
-                    g_state.new_cartridge_construction_index < kNumBulletConstructions)
-                    tmp.tags.push_back(
-                        kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
-                if (g_state.new_cartridge_shape_index > 0 &&
-                    g_state.new_cartridge_shape_index < kNumBulletShapes)
-                    tmp.tags.push_back(
-                        kBulletShapeLabels[g_state.new_cartridge_shape_index]);
-                const int existing = FindCartridgePresetByName(tmp.name);
-                if (existing >= 0) {
-                    g_cartridge_presets[existing] = tmp;
-                    g_state.selected_cartridge_preset = existing;
-                } else {
-                    g_cartridge_presets.push_back(tmp);
-                    g_state.selected_cartridge_preset =
-                        static_cast<int>(g_cartridge_presets.size()) - 1;
-                }
-                SelectDefaultGunPresetForSelectedCartridge();
-                g_state.last_action = "Cartridge Preset Saved";
-                // ticker will refresh output at next tick
-            }
+            // Preset tag UI removed
             if (ImGui::Button("Add/Update Cartridge Preset")) {
                 const std::string preset_name = g_state.new_cartridge_preset_name;
                 if (!preset_name.empty()) {
                     CartridgePreset preset = CaptureCurrentCartridgePreset(preset_name);
-                    // attach tags from UI selection
-                    preset.tags.clear();
-                    if (g_state.new_cartridge_tier_index >= 0 &&
-                        g_state.new_cartridge_tier_index < kNumBulletTiers)
-                        preset.tags.push_back(kBulletTierLabels[g_state.new_cartridge_tier_index]);
-                    if (g_state.new_cartridge_construction_index >= 0 &&
-                        g_state.new_cartridge_construction_index < kNumBulletConstructions)
-                        preset.tags.push_back(
-                            kBulletConstructionLabels[g_state.new_cartridge_construction_index]);
-                    if (g_state.new_cartridge_shape_index > 0 &&
-                        g_state.new_cartridge_shape_index < kNumBulletShapes)
-                        preset.tags.push_back(
-                            kBulletShapeLabels[g_state.new_cartridge_shape_index]);
+                    // tags removed from preset
                     const int existing = FindCartridgePresetByName(preset_name);
                     if (existing >= 0) {
                         g_cartridge_presets[existing] = preset;
@@ -2993,6 +2960,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 g_state.selected_cartridge_preset >= 0 &&
                 g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
                 const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
+                // Update GUI glue-layer fields from the cartridge preset so ApplyConfig
+                // pushes consistent bullet/gun state to the engine.
+                ApplyCartridgePreset(cp);
                 AmmoDatasetV2 ds = MakeV2FromCartridgePreset(cp);
                 g_state.last_action = "Applied Cartridge as V2 Dataset";
                 {
@@ -3000,15 +2970,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     DOPE_SetAmmoDatasetV2(&ds);
                     std::printf("[DEBUG] Applied V2 ammo: name= %s, muzzle_vel=%.2f m/s, bc=%.3f, drag_model=%d, vel_points=%d\n",
                                 cp.name.c_str(), ds.muzzle_velocity_ms, ds.bc, static_cast<int>(ds.drag_model), ds.num_velocity_points);
-                    std::printf("[DEBUG] Applied V2 ammo: name= %s, muzzle_vel=%.2f m/s, bc=%.3f, drag_model=%d, vel_points=%d\n",
-                                cp.name.c_str(), ds.muzzle_velocity_ms, ds.bc, static_cast<int>(ds.drag_model), ds.num_velocity_points);
-                    // Push other runtime state without overwriting ammo profile
-                    DOPE_SetZeroConfig(&g_state.zero);
-                    DOPE_SetWindManual(g_state.wind_speed_ms, g_state.wind_heading);
-                    DOPE_SetLatitude(g_state.latitude);
-                    SyncDerivedInputUncertaintySigmas();
-                    DOPE_SetUncertaintyConfig(&g_state.uc_config);
-                    DOPE_SetDeferUncertainty(true);
+                    ApplyConfig();
+                    std::printf("[DEBUG] After ApplyConfig (V2 apply): glue mass=%.2f gr, caliber=%.4f in, length=%.2f mm, gmv_ms=%.2f, gun_barrel_in=%.1f\n",
+                                g_state.bullet.mass_grains, g_state.bullet.caliber_inches, g_state.bullet.length_mm,
+                                g_state.bullet.muzzle_velocity_ms, g_state.gun.barrel_length_in);
                     RefreshOutput();
                 }
             }
@@ -3029,6 +2994,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 g_state.selected_cartridge_preset >= 0 &&
                 g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
                 const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
+                // Keep GUI glue-layer in sync with the selected cartridge preset.
+                ApplyCartridgePreset(cp);
                 AmmoDatasetV2 ds = MakeV2FromCartridgePreset(cp);
                 g_state.last_action = "Applied Cartridge as V2 Dataset";
                 {
@@ -3106,24 +3073,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         SelectDefaultGunPresetForSelectedCartridge();
                         // populate tag UI selections from selected preset
                         const CartridgePreset& cp = g_cartridge_presets[i];
-                        // reset to defaults
+                        // reset to defaults (tag UI removed)
                         g_state.new_cartridge_tier_index = 0;
                         g_state.new_cartridge_construction_index = 0;
                         g_state.new_cartridge_shape_index = 0;
-                        for (const auto& t : cp.tags) {
-                            for (int ti = 0; ti < kNumBulletTiers; ++ti) {
-                                if (t == kBulletTierLabels[ti])
-                                    g_state.new_cartridge_tier_index = ti;
-                            }
-                            for (int ci = 0; ci < kNumBulletConstructions; ++ci) {
-                                if (t == kBulletConstructionLabels[ci])
-                                    g_state.new_cartridge_construction_index = ci;
-                            }
-                            for (int si = 1; si < kNumBulletShapes; ++si) {
-                                if (t == kBulletShapeLabels[si])
-                                    g_state.new_cartridge_shape_index = si;
-                            }
-                        }
                         g_state.new_cartridge_sd_mv_fps = cp.sd_mv_fps;
                     }
                     if (is_selected) {
