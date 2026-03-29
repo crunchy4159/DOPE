@@ -1,3 +1,6 @@
+# VSCode and agent handoff (local/editor only)
+.vscode/
+.agent_handoff/
 # PlatformIO build artifacts
 .pio/
 
