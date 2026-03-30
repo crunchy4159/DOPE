@@ -203,6 +203,12 @@ struct DOPE_TrajectoryFamily {
     float zero_range_m;
     DOPE_TrajectoryPoint points[DOPE_MAX_TABLE_POINTS];
     int num_points;
+    // Optional per-family cached trajectory table (preferred over dataset-level)
+    bool cached_table_present;
+    float cached_table_step_m; // meter step between cached points (e.g., 1.0f)
+    int cached_table_num_points;
+    DOPE_TrajectoryPoint cached_table[DOPE_MAX_TABLE_POINTS];
+    uint64_t cached_checksum; // optional checksum of source used to generate cache
 };
 
 struct AmmoDatasetV2 {
@@ -230,6 +236,8 @@ struct AmmoDatasetV2 {
     int num_cep50_points;
     DOPE_ProfilePoint tof_by_range[DOPE_MAX_TABLE_POINTS]; // time-of-flight (seconds) per range
     int num_tof_points;
+    DOPE_ProfilePoint d_drop_dbc_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_d_drop_dbc_points;
 
     // Optional detailed 2D uncertainty per-range (sigma_x, sigma_y, rho)
     struct UncertaintySigmaPoint {
@@ -302,6 +310,14 @@ struct RifleAmmoCalibrationProfile {
     float uncertainty_scale;
     uint64_t updated_at_unix_s;
     uint32_t revision;
+
+    float bc_scale;
+    float calibration_confidence;
+    uint8_t calibration_data_mask;
+    float calibrated_barrel_length_in;
+    float calibrated_temperature_c;
+    float calibrated_pressure_pa;
+    float calibrated_humidity;
 };
 
 struct ShotObservation {

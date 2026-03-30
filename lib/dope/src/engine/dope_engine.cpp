@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file dope_engine.cpp
  * @brief DOPE engine implementation — the top-level orchestrator.
  *
@@ -978,6 +978,9 @@ SolverParams DOPE_Engine::buildSolverParams(float range_m) const {
     }
 
     p.bc = atmo_.correctBC(base_bc);
+    if (has_calibration_profile_ && calibration_profile_.bc_scale > 0.1f && calibration_profile_.bc_scale < 10.0f) {
+        p.bc *= calibration_profile_.bc_scale;
+    }
     float base_mv_fps = base_mv_ms * 3.28084f;
     float adjusted_mv_fps = base_mv_fps + ((barrel_in - ref_barrel_in) * mv_adjust_fps_per_in);
     float mv_ms = adjusted_mv_fps * 0.3048f;
@@ -1120,47 +1123,68 @@ bool DOPE_Engine::computeTableFirstSolution(float slant_range_m, float horizonta
         return false;
     }
 
-    const float active_zero = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : 100.0f;
-    int best_idx = 0;
-    float best_err = std::fabs(dataset_v2_.trajectories[0].zero_range_m - active_zero);
-    for (int i = 1; i < dataset_v2_.num_trajectories; ++i) {
-        const float err = std::fabs(dataset_v2_.trajectories[i].zero_range_m - active_zero);
-        if (err < best_err) {
-            best_err = err;
-            best_idx = i;
+    float drop_m = 0.0f;
+    if (dataset_v2_.cached_full_table_present && dataset_v2_.cached_full_table_num_points > 1) {
+        const float step = dataset_v2_.cached_full_table_step_m;
+        const int n = dataset_v2_.cached_full_table_num_points;
+        int idx = (int)(horizontal_range_m / step);
+        idx = (idx < 0) ? 0 : (idx >= n - 1) ? (n - 2) : idx;
+        const float t = (horizontal_range_m - idx * step) / step;
+        drop_m = dataset_v2_.cached_full_trajectory[idx].drop_m * (1.0f - t) +
+                 dataset_v2_.cached_full_trajectory[idx + 1].drop_m * t;
+    } else {
+        const float active_zero = (has_zero_ && zero_.zero_range_m > 0.0f) ? zero_.zero_range_m : 100.0f;
+        int best_idx = 0;
+        float best_err = std::fabs(dataset_v2_.trajectories[0].zero_range_m - active_zero);
+        for (int i = 1; i < dataset_v2_.num_trajectories; ++i) {
+            const float err = std::fabs(dataset_v2_.trajectories[i].zero_range_m - active_zero);
+            if (err < best_err) {
+                best_err = err;
+                best_idx = i;
+            }
+        }
+
+        const DOPE_TrajectoryFamily& fam = dataset_v2_.trajectories[best_idx];
+        if (fam.num_points <= 0) {
+            return false;
+        }
+
+        DOPE_ProfilePoint traj[DOPE_MAX_TABLE_POINTS];
+        const int traj_count = (fam.num_points > DOPE_MAX_TABLE_POINTS) ? DOPE_MAX_TABLE_POINTS : fam.num_points;
+        for (int i = 0; i < traj_count; ++i) {
+            traj[i].range_m = fam.points[i].range_m;
+            traj[i].value = fam.points[i].drop_m;
+        }
+        drop_m = interpolateProfileValue(traj, traj_count, horizontal_range_m);
+        if (!std::isfinite(drop_m)) {
+            return false;
         }
     }
 
-    const DOPE_TrajectoryFamily& fam = dataset_v2_.trajectories[best_idx];
-    if (fam.num_points <= 0) {
-        return false;
-    }
-
-    DOPE_ProfilePoint traj[DOPE_MAX_TABLE_POINTS];
-    const int traj_count = (fam.num_points > DOPE_MAX_TABLE_POINTS) ? DOPE_MAX_TABLE_POINTS : fam.num_points;
-    for (int i = 0; i < traj_count; ++i) {
-        traj[i].range_m = fam.points[i].range_m;
-        traj[i].value = fam.points[i].drop_m;
-    }
-    float drop_m = interpolateProfileValue(traj, traj_count, horizontal_range_m);
-    if (!std::isfinite(drop_m)) {
-        return false;
-    }
-
-    // Baseline-to-runtime scaling using a simple density + MV factor.
-    float density_scale = 1.0f;
-    if (std::isfinite(dataset_v2_.baseline_pressure_pa) && dataset_v2_.baseline_pressure_pa > 1000.0f &&
-        std::isfinite(dataset_v2_.baseline_temperature_c)) {
-        Atmosphere baseline;
-        baseline.init();
-        const float h = std::isfinite(dataset_v2_.baseline_humidity) ? dataset_v2_.baseline_humidity : 0.5f;
-        baseline.updateFromBaro(dataset_v2_.baseline_pressure_pa, dataset_v2_.baseline_temperature_c, h);
-        const float rho0 = baseline.getAirDensity();
-        if (rho0 > 0.1f) {
-            density_scale = atmo_.getAirDensity() / rho0;
+    if (dataset_v2_.num_d_drop_dbc_points > 0) {
+        const float bc_baseline = dataset_v2_.bc;
+        const float bc_corrected = bc_baseline * atmo_.correctBC(1.0f);
+        const float d_dbc = interpolateProfileValue(
+            dataset_v2_.d_drop_dbc_by_range,
+            dataset_v2_.num_d_drop_dbc_points,
+            horizontal_range_m);
+        drop_m += (bc_corrected - bc_baseline) * d_dbc;
+    } else {
+        // Baseline-to-runtime scaling using a simple density + MV factor.
+        float density_scale = 1.0f;
+        if (std::isfinite(dataset_v2_.baseline_pressure_pa) && dataset_v2_.baseline_pressure_pa > 1000.0f &&
+            std::isfinite(dataset_v2_.baseline_temperature_c)) {
+            Atmosphere baseline;
+            baseline.init();
+            const float h = std::isfinite(dataset_v2_.baseline_humidity) ? dataset_v2_.baseline_humidity : 0.5f;
+            baseline.updateFromBaro(dataset_v2_.baseline_pressure_pa, dataset_v2_.baseline_temperature_c, h);
+            const float rho0 = baseline.getAirDensity();
+            if (rho0 > 0.1f) {
+                density_scale = atmo_.getAirDensity() / rho0;
+            }
         }
+        drop_m *= clampf(density_scale, 0.5f, 1.7f);
     }
-    drop_m *= clampf(density_scale, 0.5f, 1.7f);
 
     const float heading = mag_.computeHeading(ahrs_.getYaw());
     float headwind = 0.0f, crosswind = 0.0f;
@@ -1429,33 +1453,43 @@ void DOPE_Engine::computeUncertainty() {
     solution_.covariance_elev_wind = 0.0f;
 
     // Debug trace: show why computeUncertainty might early-return
+#ifdef DOPE_DEBUG_UNCERTAINTY
     fprintf(stderr,
             "DEBUG computeUncertainty entry: pending=%d enabled=%d mode=%u slant_range=%f defer=%d has_range=%d has_dataset_v2=%d has_bullet=%d\n",
             uncertainty_pending_ ? 1 : 0, uncertainty_config_.enabled ? 1 : 0,
             static_cast<unsigned int>(solution_.solution_mode), lrf_range_m_, defer_uncertainty_ ? 1 : 0,
             has_range_ ? 1 : 0, has_dataset_v2_ ? 1 : 0, has_bullet_ ? 1 : 0);
+#endif
 
     if (!uncertainty_pending_) {
+#ifdef DOPE_DEBUG_UNCERTAINTY
         fprintf(stderr, "DEBUG computeUncertainty: no pending work, returning\n");
+#endif
         return;
     }
     uncertainty_pending_ = false;
 
     if (!uncertainty_config_.enabled) {
+#ifdef DOPE_DEBUG_UNCERTAINTY
         fprintf(stderr, "DEBUG computeUncertainty: disabled by config, returning\n");
+#endif
         return;
     }
 
     // Must have a ready solution to propagate through
     if (solution_.solution_mode != static_cast<uint32_t>(DOPE_Mode::SOLUTION_READY)) {
+#ifdef DOPE_DEBUG_UNCERTAINTY
         fprintf(stderr, "DEBUG computeUncertainty: solution not ready (mode=%u), returning\n",
                 static_cast<unsigned int>(solution_.solution_mode));
+#endif
         return;
     }
 
     const float slant_range = lrf_range_m_;
     if (slant_range < 1.0f) {
+#ifdef DOPE_DEBUG_UNCERTAINTY
         fprintf(stderr, "DEBUG computeUncertainty: slant_range=%f < 1.0, returning\n", slant_range);
+#endif
         return;
     }
 

@@ -1,0 +1,23 @@
+﻿DEBUG: WinMain started
+.pio\build\native_gui\program.exe : DEBUG 
+computeUncertainty result: sigma_e=1.040764 
+sigma_w=1.143140 cov=0.000255
+At line:1 char:41
++ ... o run -e native_gui; 
+.pio\build\native_gui\program.exe > out.txt 
+2>&1
++                          ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+    (DEBUG computeUn...40 cov=0.000255:Str  
+  ing) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommand 
+   Error
+ 
+DEBUG computeUncertainty result: 
+sigma_e=1.040766 sigma_w=1.143648 
+cov=0.004085
+[DEBUG] ApplyCartridgePreset: name= Hornady 6.5 Creedmoor 140gr ELD-M, mass=140.00 gr, caliber=0.2640 in, length=1.39 in, mv_ms=826.00, bc=0.3260, drag_idx=6
+DEBUG: Converted dataset has 16 wind drift points. First point: 0.00m at 0.00m
+[DEBUG] Applied V2 ammo: name= Hornady 6.5 Creedmoor 140gr ELD-M, muzzle_vel=826.00 m/s, bc=0.326, drag_model=7, vel_points=6
+[DEBUG] After ApplyConfig (V2 apply): glue mass=140.00 gr, caliber=0.2640 in, length=35.41 mm, gmv_ms=826.00, gun_barrel_in=22.0

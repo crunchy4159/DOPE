@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file gui_main.cpp
  * @brief Native Windows + ImGui desktop harness for DOPE validation.
  *
@@ -25,6 +25,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <map>
 #include <ctime>
 
 #include "backends/imgui_impl_dx11.h"
@@ -80,6 +81,23 @@ enum class UnitSystem : int { IMPERIAL = 0, METRIC = 1 };
 
 const char* kUnitSystemLabels[2] = {"Imperial", "Metric"};
 
+const DragModel kDragModels[8] = {DragModel::G1, DragModel::G2, DragModel::G3, DragModel::G4,
+                                  DragModel::G5, DragModel::G6, DragModel::G7, DragModel::G8};
+
+const char* kDragModelLabels[8] = {"G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"};
+
+// Tag label lists for cartridge editor UI
+static const char* kBulletTierLabels[] = {"match", "mil_spec", "commercial", "budget"};
+static const int kNumBulletTiers = sizeof(kBulletTierLabels) / sizeof(kBulletTierLabels[0]);
+
+static const char* kBulletConstructionLabels[] = {
+    "hpbt", "polymer_tip", "solid", "monolithic", "fmj", "plated", "jhp", "soft_tip", "wc", "cast"};
+static const int kNumBulletConstructions =
+    sizeof(kBulletConstructionLabels) / sizeof(kBulletConstructionLabels[0]);
+
+static const char* kBulletShapeLabels[] = {"standard", "flat_point"};
+static const int kNumBulletShapes = sizeof(kBulletShapeLabels) / sizeof(kBulletShapeLabels[0]);
+
 struct CartridgeProfile {
     const char* name;
     float bc;
@@ -91,6 +109,14 @@ struct CartridgeProfile {
 };
 // Cartridge demo profiles removed; use external JSON `dope_gui_cartridges_v2.json`.
 
+struct EnvironmentalConditions {
+    float temperature_f = 59.0f;
+    float pressure_inhg = 29.921f;
+    float altitude_ft = 0.0f;
+    float humidity_pct = 0.0f;
+    std::string standard = "ICAO";
+};
+
 struct CartridgePreset {
     std::string name;
     float bc = 0.0f;
@@ -99,7 +125,10 @@ struct CartridgePreset {
     float muzzle_velocity_ms = 0.0f;
     float mass_grains = 0.0f;
     float caliber_inches = 0.0f;
-    float length_mm = 0.0f;
+    float length_inches = 0.0f;
+    EnvironmentalConditions env;
+    std::map<std::string, float> ballistic_coefficients;
+    std::string preferred_drag_model;
     std::vector<std::string> cartridge_keys;
     float reference_barrel_inches = 24.0f;
     float sd_mv_fps = 0.0f; // Standard deviation of muzzle velocity (fps)
@@ -107,6 +136,17 @@ struct CartridgePreset {
     std::vector<std::pair<float, float>> barrel_mv_profile;
     std::vector<std::pair<float, float>> velocity_profile;
     std::vector<std::pair<float, float>> trajectory_profile;
+    std::vector<std::pair<float, float>> wind_drift_profile;
+    float baseline_wind_speed_ms = 0.0f;
+    struct TrajectoryFamilyPreset {
+        float zero_range_m = 0.0f;
+        std::vector<std::pair<float, float>> trajectory_profile;
+    };
+    std::vector<TrajectoryFamilyPreset> trajectory_families;
+    std::vector<float> available_zero_ranges;
+    // Cartridge-level zero range (meters). If 0.0, unspecified and the gun's
+    // zero_range_m will be used for visualization unless overridden elsewhere.
+    float zero_range_m = 0.0f;
     // tags removed
     float muzzle_diameter_in = 0.7f;
     float cold_bore_velocity_bias = 8.5f;
@@ -479,20 +519,57 @@ static AmmoDatasetV2 MakeV2FromCartridgePreset(const CartridgePreset& cp) {
         d.num_velocity_points = 1;
     }
 
-    // Trajectory profile (simple single-family conversion when present)
+    // Trajectory profile (support per-family trajectory_tables when present)
     d.num_trajectories = 0;
-    if (!cp.trajectory_profile.empty()) {
-        // create one trajectory family from provided points
-        d.num_trajectories = 1;
-        DOPE_TrajectoryFamily& fam = d.trajectories[0];
-        fam.zero_range_m = 0.0f;
-        fam.num_points = 0;
-        for (const auto& tp : cp.trajectory_profile) {
-            if (fam.num_points >= DOPE_MAX_TABLE_POINTS)
-                break;
-            fam.points[fam.num_points].range_m = tp.first * INCHES_TO_M;
-            fam.points[fam.num_points].drop_m = tp.second * INCHES_TO_M; // inches -> meters
-            fam.num_points++;
+    if (!cp.trajectory_families.empty()) {
+        d.num_trajectories = static_cast<int>(std::min<size_t>(cp.trajectory_families.size(), DOPE_MAX_TRAJECTORY_FAMILIES));
+        for (int fi = 0; fi < d.num_trajectories; ++fi) {
+            const auto &fpre = cp.trajectory_families[fi];
+            DOPE_TrajectoryFamily& fam = d.trajectories[fi];
+            fam.zero_range_m = fpre.zero_range_m;
+            fam.num_points = 0;
+            for (const auto& tp : fpre.trajectory_profile) {
+                if (fam.num_points >= DOPE_MAX_TABLE_POINTS)
+                    break;
+                fam.points[fam.num_points].range_m = tp.first * INCHES_TO_M;
+                fam.points[fam.num_points].drop_m = tp.second * INCHES_TO_M; // inches -> meters
+                fam.num_points++;
+            }
+            fam.cached_table_present = false;
+            fam.cached_table_num_points = 0;
+        }
+    } else if (!cp.trajectory_profile.empty()) {
+        // Backwards-compatible single-family behavior: use cartridge-level data.
+        if (!cp.available_zero_ranges.empty()) {
+            d.num_trajectories = static_cast<int>(std::min<size_t>(cp.available_zero_ranges.size(), DOPE_MAX_TRAJECTORY_FAMILIES));
+            for (int fi = 0; fi < d.num_trajectories; ++fi) {
+                DOPE_TrajectoryFamily& fam = d.trajectories[fi];
+                fam.zero_range_m = cp.available_zero_ranges[fi];
+                fam.num_points = 0;
+                for (const auto& tp : cp.trajectory_profile) {
+                    if (fam.num_points >= DOPE_MAX_TABLE_POINTS)
+                        break;
+                    fam.points[fam.num_points].range_m = tp.first * INCHES_TO_M;
+                    fam.points[fam.num_points].drop_m = tp.second * INCHES_TO_M; // inches -> meters
+                    fam.num_points++;
+                }
+                fam.cached_table_present = false;
+                fam.cached_table_num_points = 0;
+            }
+        } else {
+            d.num_trajectories = 1;
+            DOPE_TrajectoryFamily& fam = d.trajectories[0];
+            fam.zero_range_m = (cp.zero_range_m > 0.0f) ? cp.zero_range_m : 0.0f;
+            fam.num_points = 0;
+            for (const auto& tp : cp.trajectory_profile) {
+                if (fam.num_points >= DOPE_MAX_TABLE_POINTS)
+                    break;
+                fam.points[fam.num_points].range_m = tp.first * INCHES_TO_M;
+                fam.points[fam.num_points].drop_m = tp.second * INCHES_TO_M; // inches -> meters
+                fam.num_points++;
+            }
+            fam.cached_table_present = false;
+            fam.cached_table_num_points = 0;
         }
     }
 
@@ -514,10 +591,33 @@ static AmmoDatasetV2 MakeV2FromCartridgePreset(const CartridgePreset& cp) {
     }
     d.muzzle_velocity_ms = (d.num_velocity_points > 0) ? d.velocity_by_range[0].value : cp.muzzle_velocity_ms;
     d.mass_grains = cp.mass_grains;
-    d.length_mm = cp.length_mm;
+    d.length_mm = cp.length_inches * IN_TO_MM;
     d.caliber_inches = cp.caliber_inches;
     d.twist_rate_inches = g_state.bullet.twist_rate_inches;
     d.mv_adjustment_fps_per_in = cp.mv_adjustment_fps_per_in;
+    d.baseline_wind_speed_ms = cp.baseline_wind_speed_ms;
+
+    // wind_drift_profile -> wind_drift_by_range
+    d.num_wind_drift_points = 0;
+    for (const auto& wd : cp.wind_drift_profile) {
+        if (d.num_wind_drift_points >= DOPE_MAX_TABLE_POINTS)
+            break;
+        d.wind_drift_by_range[d.num_wind_drift_points].range_m = wd.first * INCHES_TO_M;
+        d.wind_drift_by_range[d.num_wind_drift_points].value = wd.second * INCHES_TO_M;
+        d.num_wind_drift_points++;
+    }
+    
+    if (d.num_wind_drift_points > 0) {
+        std::printf("DEBUG: Converted dataset has %d wind drift points. First point: %.2fm at %.2fm\n", 
+            d.num_wind_drift_points, d.wind_drift_by_range[0].value, d.wind_drift_by_range[0].range_m);
+        // Write to a file for persistence in case stdout is suppressed
+        std::ofstream df("debug_conversion.txt", std::ios::app);
+        df << "Ammo: " << cp.name << " Points: " << d.num_wind_drift_points 
+           << " First: " << d.wind_drift_by_range[0].value << "@" << d.wind_drift_by_range[0].range_m 
+           << " Last: " << d.wind_drift_by_range[d.num_wind_drift_points-1].value << "@" << d.wind_drift_by_range[d.num_wind_drift_points-1].range_m 
+           << "\n";
+    }
+
     return d;
 }
 
@@ -868,9 +968,54 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                 p.caliber_inches = e.value("caliber_inches", 0.0f);
             }
             if (e.contains("length_m") && e["length_m"].is_number()) {
-                p.length_mm = e["length_m"].get<float>() * 1000.0f;
+                p.length_inches = e["length_m"].get<float>() * 39.37007874f;
             } else {
-                p.length_mm = e.value("length_mm", 0.0f);
+                p.length_inches = e.value("length_inches", 0.0f);
+            }
+            
+            // New V2 fields: environmental_conditions
+            if (e.contains("environmental_conditions") && e["environmental_conditions"].is_object()) {
+                const auto& env_j = e["environmental_conditions"];
+                p.env.temperature_f = env_j.value("temperature_f", 59.0f);
+                p.env.pressure_inhg = env_j.value("pressure_inhg", 29.921f);
+                p.env.altitude_ft = env_j.value("altitude_ft", 0.0f);
+                p.env.humidity_pct = env_j.value("humidity_pct", 0.0f);
+                p.env.standard = env_j.value("standard", "ICAO");
+            }
+
+            // New V2 fields: multi-BC
+            if (e.contains("ballistic_coefficients") && e["ballistic_coefficients"].is_object()) {
+                for (auto it = e["ballistic_coefficients"].begin(); it != e["ballistic_coefficients"].end(); ++it) {
+                    if (it.value().is_number()) {
+                        p.ballistic_coefficients[it.key()] = it.value().get<float>();
+                    }
+                }
+            }
+            p.preferred_drag_model = e.value("preferred_drag_model", "G1");
+            if (p.bc <= 0.0f && p.ballistic_coefficients.count(p.preferred_drag_model)) {
+                p.bc = p.ballistic_coefficients[p.preferred_drag_model];
+            }
+            if (p.bc <= 0.0f) {
+                p.bc = e.value("ballistic_coefficient", e.value("bc", 0.505f));
+            }
+
+            if (e.contains("drag_model_index")) {
+                p.drag_model_index = e["drag_model_index"].get<int>();
+            } else if (e.contains("drag_model") && e["drag_model"].is_string()) {
+                const std::string dm = e["drag_model"].get<std::string>();
+                for (int i = 0; i < 8; ++i) {
+                    if (dm == kDragModelLabels[i]) {
+                        p.drag_model_index = i;
+                        break;
+                    }
+                }
+            } else {
+                for (int i = 0; i < 8; ++i) {
+                    if (p.preferred_drag_model == kDragModelLabels[i]) {
+                        p.drag_model_index = i;
+                        break;
+                    }
+                }
             }
             p.cartridge_keys.clear();
             const auto ck_it = e.find("cartridge_keys");
@@ -940,7 +1085,69 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                     }
                     p.trajectory_profile.emplace_back(dist_inches, traj_inches);
                 }
+                // trajectory_families (optional) - explicit per-zero trajectory tables
+                p.trajectory_families.clear();
+                const auto tf_it = e.find("trajectory_families");
+                if (tf_it != e.end() && tf_it->is_array()) {
+                    for (const auto &tf : *tf_it) {
+                        CartridgePreset::TrajectoryFamilyPreset fam;
+                        fam.zero_range_m = tf.value("zero_range_m", 0.0f);
+                        const auto f_tp_it = tf.find("trajectory_profile");
+                        if (f_tp_it != tf.end() && f_tp_it->is_array()) {
+                            for (const auto &ftp : *f_tp_it) {
+                                float dist_inches = 0.0f;
+                                if (ftp.contains("distance_inches") && ftp["distance_inches"].is_number()) {
+                                    dist_inches = ftp["distance_inches"].get<float>();
+                                } else if (ftp.contains("distance_m") && ftp["distance_m"].is_number()) {
+                                    dist_inches = ftp["distance_m"].get<float>() * 39.37007874f;
+                                }
+                                float traj_inches = 0.0f;
+                                if (ftp.contains("trajectory_inches") && ftp["trajectory_inches"].is_number()) {
+                                    traj_inches = ftp["trajectory_inches"].get<float>();
+                                } else if (ftp.contains("trajectory_in") && ftp["trajectory_in"].is_number()) {
+                                    traj_inches = ftp["trajectory_in"].get<float>();
+                                } else if (ftp.contains("trajectory_m") && ftp["trajectory_m"].is_number()) {
+                                    traj_inches = ftp["trajectory_m"].get<float>() * 39.37007874f;
+                                }
+                                fam.trajectory_profile.emplace_back(dist_inches, traj_inches);
+                            }
+                        }
+                        p.trajectory_families.push_back(std::move(fam));
+                    }
+                }
             }
+            // cartridge-level zero range (meters), optional
+            p.zero_range_m = e.value("zero_range_m", 0.0f);
+            // optional multiple zero ranges
+            if (e.contains("available_zero_ranges") && e["available_zero_ranges"].is_array()) {
+                for (const auto &zr : e["available_zero_ranges"]) {
+                    if (zr.is_number())
+                        p.available_zero_ranges.push_back(static_cast<float>(zr.get<double>()));
+                }
+            }
+            // wind_drift_profile (optional)
+            p.wind_drift_profile.clear();
+            const auto wd_it = e.find("wind_drift_profile");
+            if (wd_it != e.end() && wd_it->is_array()) {
+                for (const auto& wd : *wd_it) {
+                    float dist_inches = 0.0f;
+                    if (wd.contains("distance_inches") && wd["distance_inches"].is_number()) {
+                        dist_inches = wd["distance_inches"].get<float>();
+                    } else if (wd.contains("distance_m") && wd["distance_m"].is_number()) {
+                        dist_inches = wd["distance_m"].get<float>() * 39.37007874f;
+                    }
+                    float drift_inches = 0.0f;
+                    if (wd.contains("wind_drift_inches") && wd["wind_drift_inches"].is_number()) {
+                        drift_inches = wd["wind_drift_inches"].get<float>();
+                    } else if (wd.contains("wind_drift_in") && wd["wind_drift_in"].is_number()) {
+                        drift_inches = wd["wind_drift_in"].get<float>();
+                    } else if (wd.contains("wind_drift_m") && wd["wind_drift_m"].is_number()) {
+                        drift_inches = wd["wind_drift_m"].get<float>() * 39.37007874f;
+                    }
+                    p.wind_drift_profile.emplace_back(dist_inches, drift_inches);
+                }
+            }
+            p.baseline_wind_speed_ms = e.value("baseline_wind_speed_ms", 4.4704f); // default 10 mph
             // cartridge CEP (optional)
             // Removed obsolete CEP fields
             // barrel-MV fields (optional)
@@ -955,19 +1162,9 @@ bool LoadCartridgePresetsFromFile(const std::string& path) {
                         p.barrel_mv_profile.emplace_back(barrel_in, mv_fps);
                 }
             }
-            // Support V2 naming: ballistic_coefficient, drag_model (string), mass_kg, caliber_m handled above
-            if (p.bc <= 0.0f) {
-                p.bc = e.value("ballistic_coefficient", p.bc);
-            }
-            if (e.contains("drag_model") && e["drag_model"].is_string()) {
-                const std::string dm = e["drag_model"].get<std::string>();
-                const char* dm_labels[8] = {"G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"};
-                for (int i = 0; i < 8; ++i) {
-                    if (dm == dm_labels[i]) {
-                        p.drag_model_index = i;
-                        break;
-                    }
-                }
+            // Sanitize
+            if (p.drag_model_index < 0 || p.drag_model_index >= 8) {
+                p.drag_model_index = 0;
             }
             SanitizeCartridgePreset(p);
             tmp.push_back(p);
@@ -1034,22 +1231,7 @@ bool LoadGunPresetsFromFile(const std::string& path) {
     return false;
 }
 
-const DragModel kDragModels[8] = {DragModel::G1, DragModel::G2, DragModel::G3, DragModel::G4,
-                                  DragModel::G5, DragModel::G6, DragModel::G7, DragModel::G8};
 
-const char* kDragModelLabels[8] = {"G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"};
-
-// Tag label lists for cartridge editor UI
-static const char* kBulletTierLabels[] = {"match", "mil_spec", "commercial", "budget"};
-static const int kNumBulletTiers = sizeof(kBulletTierLabels) / sizeof(kBulletTierLabels[0]);
-
-static const char* kBulletConstructionLabels[] = {
-    "hpbt", "polymer_tip", "solid", "monolithic", "fmj", "plated", "jhp", "soft_tip", "wc", "cast"};
-static const int kNumBulletConstructions =
-    sizeof(kBulletConstructionLabels) / sizeof(kBulletConstructionLabels[0]);
-
-static const char* kBulletShapeLabels[] = {"standard", "flat_point"};
-static const int kNumBulletShapes = sizeof(kBulletShapeLabels) / sizeof(kBulletShapeLabels[0]);
 
 // Load bullet tolerances JSON file (returns true if loaded)
 bool LoadBulletTolerancesFromFile(const std::string& path) {
@@ -1244,7 +1426,7 @@ void EnsureProfileDefaults() {
         fallback.muzzle_velocity_ms = 0.0f;
         fallback.mass_grains = 0.0f;
         fallback.caliber_inches = 0.0f;
-        fallback.length_mm = 0.0f;
+        fallback.length_inches = 0.0f;
         SanitizeCartridgePreset(fallback);
         g_cartridge_presets.push_back(fallback);
     }
@@ -1473,6 +1655,26 @@ void SanitizeCartridgePreset(CartridgePreset& preset) {
         if (!std::isfinite(p.second))
             p.second = 0.0f;
     }
+    // sanitize cartridge zero range: allow 0.0 meaning unspecified, otherwise clamp.
+    if (!std::isfinite(preset.zero_range_m) || preset.zero_range_m < 0.0f)
+        preset.zero_range_m = 0.0f;
+    preset.zero_range_m = ClampValue(preset.zero_range_m, 0.0f, static_cast<float>(DOPE_MAX_RANGE_M));
+    // sanitize available zero ranges
+    for (auto &zr : preset.available_zero_ranges) {
+        if (!std::isfinite(zr) || zr < 0.0f)
+            zr = 0.0f;
+        zr = ClampValue(zr, 0.0f, static_cast<float>(DOPE_MAX_RANGE_M));
+    }
+    // sanitize explicit trajectory families
+    for (auto &tf : preset.trajectory_families) {
+        if (!std::isfinite(tf.zero_range_m) || tf.zero_range_m < 0.0f)
+            tf.zero_range_m = 0.0f;
+        tf.zero_range_m = ClampValue(tf.zero_range_m, 0.0f, static_cast<float>(DOPE_MAX_RANGE_M));
+        for (auto &pt : tf.trajectory_profile) {
+            if (!std::isfinite(pt.first)) pt.first = 0.0f;
+            if (!std::isfinite(pt.second)) pt.second = 0.0f;
+        }
+    }
     // Removed obsolete CEP fields and logic
     if (!std::isfinite(preset.muzzle_diameter_in) || preset.muzzle_diameter_in <= 0.0f)
         preset.muzzle_diameter_in = 0.7f;
@@ -1514,7 +1716,7 @@ void SanitizeCartridgePreset(CartridgePreset& preset) {
     }
     preset.mass_grains = ClampValue(preset.mass_grains, 20.0f, 1200.0f);
     preset.caliber_inches = ClampValue(std::fabs(preset.caliber_inches), 0.10f, 1.00f);
-    preset.length_mm = ClampValue(preset.length_mm, 5.0f, 100.0f);
+    preset.length_inches = ClampValue(preset.length_inches, 5.0f / 25.4f, 100.0f / 25.4f);
 }
 
 void SanitizeGunPreset(GunPreset& preset) {
@@ -1553,6 +1755,25 @@ json SerializeCartridgePreset(const CartridgePreset& input) {
     item["muzzle_velocity_ms"] = preset.muzzle_velocity_ms;
     item["reference_barrel_inches"] = preset.reference_barrel_inches;
     item["muzzle_diameter_in"] = preset.muzzle_diameter_in;
+    item["zero_range_m"] = preset.zero_range_m;
+    if (!preset.available_zero_ranges.empty()) {
+        item["available_zero_ranges"] = preset.available_zero_ranges;
+    }
+    if (!preset.trajectory_families.empty()) {
+        item["trajectory_families"] = json::array();
+        for (const auto &tf : preset.trajectory_families) {
+            json tfj;
+            tfj["zero_range_m"] = tf.zero_range_m;
+            tfj["trajectory_profile"] = json::array();
+            for (const auto &pt : tf.trajectory_profile) {
+                json ptj;
+                ptj["distance_in"] = pt.first;
+                ptj["trajectory_in"] = pt.second;
+                tfj["trajectory_profile"].push_back(ptj);
+            }
+            item["trajectory_families"].push_back(tfj);
+        }
+    }
     // Removed barrel_finish_sigma_mv_fps (obsolete)
     if (preset.measured_cep50_moa > 0.0f)
         item["measured_cep50_moa"] = preset.measured_cep50_moa;
@@ -1593,7 +1814,7 @@ json SerializeCartridgePreset(const CartridgePreset& input) {
         item["sd_mv_fps"] = preset.sd_mv_fps;
     item["mass_grains"] = preset.mass_grains;
     item["caliber_inches"] = preset.caliber_inches;
-    item["length_mm"] = preset.length_mm;
+    item["length_in"] = preset.length_inches;
     // tags removed
     if (!preset.cartridge_keys.empty()) {
         item["cartridge_keys"] = json::array();
@@ -2022,6 +2243,11 @@ void RefreshOutput() {
         return "CENTER";
     };
 
+    ss << "---[ ENGINE DEBUG ]---\n";
+    ss << "Active Unit Sys: " << (g_state.unit_system == UnitSystem::IMPERIAL ? "IMPERIAL" : "METRIC") << "\n";
+    ss << "Raw Wind Input: " << std::fixed << std::setprecision(2) << g_state.wind_speed_ms << " m/s\n";
+    ss << "----------------------\n";
+
     if (g_state.unit_system == UnitSystem::IMPERIAL) {
         ss << "Drag Coefficient (G-model): " << g_state.bullet.bc;
         ss << (g_state.override_drag_coefficient ? " [manual]" : " [auto]") << "\n";
@@ -2227,7 +2453,7 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
 
     g_state.bullet.mass_grains = normalized.mass_grains;
     g_state.bullet.caliber_inches = normalized.caliber_inches;
-    g_state.bullet.length_mm = normalized.length_mm;
+    g_state.bullet.length_mm = normalized.length_inches * IN_TO_MM;
     g_state.gun.muzzle_diameter_in = normalized.muzzle_diameter_in;
     // Removed barrel_finish_sigma_mv_fps logic (no longer used)
     g_state.gun.measured_cep50_moa = normalized.measured_cep50_moa;
@@ -2237,6 +2463,19 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
     g_state.gun.stiffness_moa =
         ComputeStiffnessMoa(normalized.muzzle_diameter_in, std::fabs(normalized.caliber_inches),
                             g_state.gun.barrel_material);
+
+    // Sync atmospheric baseline from cartridge preset
+    if (normalized.env.temperature_f > -100.0f) {
+        g_state.baro_temp = (normalized.env.temperature_f - 32.0f) * 5.0f / 9.0f;
+    }
+    if (normalized.env.pressure_inhg > 0.0f) {
+        g_state.baro_pressure = normalized.env.pressure_inhg * 3386.39f;
+    }
+    if (normalized.env.humidity_pct >= 0.0f) {
+        g_state.baro_humidity = normalized.env.humidity_pct / 100.0f;
+    }
+    g_state.baro_has_calibration_temp = false; // reset calibration state to new baseline
+    g_state.baro_is_calibrated = false;
 
     // Start with the reference barrel as both actual and reference length.
     if (normalized.reference_barrel_inches > 0.0f) {
@@ -2258,9 +2497,9 @@ void ApplyCartridgePreset(const CartridgePreset& preset) {
         ApplyGunPreset(g_gun_presets[g_state.selected_gun_preset]);
     }
     // Debug: report glue-layer values set by applying the cartridge preset.
-    std::printf("[DEBUG] ApplyCartridgePreset: name= %s, mass=%.2f gr, caliber=%.4f in, length=%.2f mm, mv_ms=%.2f, bc=%.4f, drag_idx=%d\n",
+    std::printf("[DEBUG] ApplyCartridgePreset: name= %s, mass=%.2f gr, caliber=%.4f in, length=%.2f in, mv_ms=%.2f, bc=%.4f, drag_idx=%d\n",
                 normalized.name.c_str(), normalized.mass_grains, normalized.caliber_inches,
-                normalized.length_mm, g_state.bullet.muzzle_velocity_ms, g_state.bullet.bc,
+                normalized.length_inches, g_state.bullet.muzzle_velocity_ms, g_state.bullet.bc,
                 g_state.drag_model_index);
 }
 
@@ -2308,7 +2547,7 @@ CartridgePreset CaptureCurrentCartridgePreset(const std::string& name) {
     preset.trajectory_profile.clear();
     preset.mass_grains = g_state.bullet.mass_grains;
     preset.caliber_inches = g_state.bullet.caliber_inches;
-    preset.length_mm = g_state.bullet.length_mm;
+    preset.length_inches = g_state.bullet.length_mm * MM_TO_IN;
     preset.muzzle_diameter_in = g_state.gun.muzzle_diameter_in;
     // Removed barrel_finish_sigma_mv_fps (no longer used)
     preset.measured_cep50_moa = g_state.gun.measured_cep50_moa;
@@ -2380,8 +2619,42 @@ void LoadProfileLibrary() {
                 }
                 CartridgePreset preset;
                 preset.name = item["name"].get<std::string>();
-                preset.bc = item.value("bc", 0.505f);
+                preset.bc = item.value("bc", 0.0f);
                 preset.drag_model_index = item.value("drag_model_index", 0);
+                if (item.contains("ballistic_coefficients") && item["ballistic_coefficients"].is_object()) {
+                    for (auto it = item["ballistic_coefficients"].begin(); it != item["ballistic_coefficients"].end(); ++it) {
+                        if (it.value().is_number()) {
+                            preset.ballistic_coefficients[it.key()] = it.value().get<float>();
+                        }
+                    }
+                }
+                preset.preferred_drag_model = item.value("preferred_drag_model", "G1");
+                if (preset.bc <= 0.0f && preset.ballistic_coefficients.count(preset.preferred_drag_model)) {
+                    preset.bc = preset.ballistic_coefficients[preset.preferred_drag_model];
+                }
+                if (preset.bc <= 0.0f) {
+                    preset.bc = item.value("ballistic_coefficient", 0.505f);
+                }
+
+                if (item.contains("drag_model_index")) {
+                    preset.drag_model_index = item["drag_model_index"].get<int>();
+                } else if (item.contains("drag_model") && item["drag_model"].is_string()) {
+                    std::string dm = item["drag_model"].get<std::string>();
+                    for (int i = 0; i < 8; ++i) {
+                        if (dm == kDragModelLabels[i]) {
+                            preset.drag_model_index = i;
+                            break;
+                        }
+                    }
+                } else {
+                    for (int i = 0; i < 8; ++i) {
+                        if (preset.preferred_drag_model == kDragModelLabels[i]) {
+                            preset.drag_model_index = i;
+                            break;
+                        }
+                    }
+                }
+
                 if (preset.drag_model_index < 0 || preset.drag_model_index >= 8) {
                     preset.drag_model_index = 0;
                 }
@@ -2417,7 +2690,11 @@ void LoadProfileLibrary() {
                 }
                 preset.mass_grains = item.value("mass_grains", 175.0f);
                 preset.caliber_inches = item.value("caliber_inches", 0.308f);
-                preset.length_mm = item.value("length_mm", 31.2f);
+                if (item.contains("length_in") && item["length_in"].is_number()) {
+                    preset.length_inches = item["length_in"].get<float>();
+                } else {
+                    preset.length_inches = item.value("length_mm", 31.2f) * MM_TO_IN;
+                }
                 preset.reference_barrel_inches = item.value("reference_barrel_inches", 24.0f);
                 preset.velocity_profile.clear();
                 if (item.contains("velocity_profile") && item["velocity_profile"].is_array()) {
@@ -2644,7 +2921,11 @@ void LoadPreset() {
         }
 
         g_state.bullet.mass_grains = j.value("mass_grains", 0.0f);
-        g_state.bullet.length_mm = j.value("length_mm", 0.0f);
+        if (j.contains("length_in") && j["length_in"].is_number()) {
+            g_state.bullet.length_mm = j["length_in"].get<float>() * IN_TO_MM;
+        } else {
+            g_state.bullet.length_mm = j.value("length_mm", 0.0f);
+        }
         g_state.bullet.caliber_inches = j.value("caliber_inches", 0.0f);
         g_state.bullet.twist_rate_inches = j.value("twist_rate_inches", 0.0f);
         g_state.gun.barrel_length_in = j.value("barrel_length_in", 24.0f);
@@ -2853,6 +3134,8 @@ void EngineTickerThread() {
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    std::printf("DEBUG: WinMain started\n");
+    std::fflush(stdout);
     // Desktop harness startup sequence: defaults -> window/device -> ImGui -> DOPE init.
     ResetStateDefaults();
 
@@ -2975,6 +3258,66 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                                 g_state.bullet.mass_grains, g_state.bullet.caliber_inches, g_state.bullet.length_mm,
                                 g_state.bullet.muzzle_velocity_ms, g_state.gun.barrel_length_in);
                     RefreshOutput();
+                    // If the provided V2 trajectory is sparse or doesn't cover the
+                    // visual range we care about, synthesize a cached full-table
+                    // from the solver's 1-metre trajectory table and attach it to
+                    // the dataset. This keeps GUI visuals and engine holds
+                    // consistent without reverting to legacy behavior.
+                    if (ds.num_trajectories > 0) {
+                        // Desired visual coverage: use current LRF/target range or
+                        // a default 600 yd (~548.64 m) cap, whichever is larger.
+                        const float k_default_visual_max_m = 548.64f; // 600 yd
+                        const float desired_visual_max_m = std::max(g_state.lrf_range, k_default_visual_max_m);
+                        const int sparse_threshold_points = 12; // heuristic threshold
+                        const int max_cache_pts = DOPE_MAX_TABLE_POINTS;
+                        // For each trajectory family, generate a per-family cached table
+                        // by setting the zero config to the family's zero and sampling
+                        // the engine's solver table via DOPE_GetTrajectoryPoint().
+                        for (int fi = 0; fi < ds.num_trajectories; ++fi) {
+                            DOPE_TrajectoryFamily& fam = ds.trajectories[fi];
+                            const float fam_max_range = (fam.num_points > 0) ? fam.points[fam.num_points - 1].range_m : 0.0f;
+                            const bool need_expand = (fam.num_points < sparse_threshold_points) || (fam_max_range < desired_visual_max_m);
+                            if (!need_expand)
+                                continue;
+                            float step_m = std::ceil(desired_visual_max_m / static_cast<float>(max_cache_pts));
+                            if (step_m < 1.0f)
+                                step_m = 1.0f;
+                            int num_cache_pts = static_cast<int>(std::floor(desired_visual_max_m / step_m)) + 1;
+                            if (num_cache_pts > max_cache_pts)
+                                num_cache_pts = max_cache_pts;
+
+                            // Apply dataset so engine has latest data
+                            DOPE_SetAmmoDatasetV2(&ds);
+                            // Set zero config for this family so DOPE_GetTrajectoryPoint
+                            // reflects the requested zero-range variant.
+                            ZeroConfig zc = {};
+                            zc.zero_range_m = fam.zero_range_m;
+                            zc.sight_height_mm = g_state.zero.sight_height_mm;
+                            DOPE_SetZeroConfig(&zc);
+
+                            fam.cached_table_present = true;
+                            fam.cached_table_step_m = step_m;
+                            fam.cached_table_num_points = num_cache_pts;
+                            for (int i = 0; i < num_cache_pts; ++i) {
+                                int r = static_cast<int>(std::round(i * step_m));
+                                if (r < 0)
+                                    r = 0;
+                                if (r > DOPE_MAX_RANGE_M)
+                                    r = DOPE_MAX_RANGE_M;
+                                TrajectoryPoint tp = {};
+                                const bool ok = DOPE_GetTrajectoryPoint(r, &tp);
+                                fam.cached_table[i].range_m = static_cast<float>(r);
+                                fam.cached_table[i].drop_m = ok ? tp.drop_m : 0.0f;
+                            }
+                            fam.cached_checksum = 0u;
+                            std::printf("[DEBUG] Expanded V2 family %d cached_table: points=%d step=%.2f m zero=%.2f m\n",
+                                        fi, fam.cached_table_num_points, fam.cached_table_step_m, fam.zero_range_m);
+                        }
+                        // Re-apply dataset once more to ensure engine sees any cached metadata
+                        DOPE_SetAmmoDatasetV2(&ds);
+                        ApplyConfig();
+                        RefreshOutput();
+                    }
                 }
             }
             ImGui::SameLine();
@@ -3126,12 +3469,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     // Removed obsolete mass sigma UI
                 }
             }
-            float length_display =
-                is_imperial ? (g_state.bullet.length_mm * MM_TO_IN) : g_state.bullet.length_mm;
+            float length_display = is_imperial ? (g_state.bullet.length_mm * MM_TO_IN) : g_state.bullet.length_mm;
             if (g_state.selected_cartridge_preset >= 0 &&
                 g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
                 const CartridgePreset& cp = g_cartridge_presets[g_state.selected_cartridge_preset];
-                length_display = is_imperial ? (cp.length_mm * MM_TO_IN) : cp.length_mm;
+                length_display = is_imperial ? cp.length_inches : (cp.length_inches * IN_TO_MM);
             }
             {
                 const float avail_len = ImGui::GetContentRegionAvail().x;
@@ -4127,6 +4469,41 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         // Shared drop interpolation at horizontal distance.
         auto interpolate_drop_at_horizontal = [&](float dist_horiz, float& out_drop_m) -> bool {
+            // Prefer GUI-side V2 trajectory profile (from selected cartridge preset)
+            // when present so visuals match the engine's V2-path hold computation.
+            if (g_state.selected_cartridge_preset >= 0 &&
+                g_state.selected_cartridge_preset < static_cast<int>(g_cartridge_presets.size())) {
+                const CartridgePreset& cpres = g_cartridge_presets[g_state.selected_cartridge_preset];
+                if (!cpres.trajectory_profile.empty()) {
+                    // Build a small profile array similar to DOPE_ProfilePoint used by engine
+                    std::vector<std::pair<float,float>> pts;
+                    pts.reserve(cpres.trajectory_profile.size());
+                    for (const auto &pp : cpres.trajectory_profile) {
+                        pts.emplace_back(pp.first * INCHES_TO_M, pp.second * INCHES_TO_M);
+                    }
+                    // Interpolate piecewise-linearly (clamp to ends)
+                    if (pts.size() == 1) {
+                        out_drop_m = pts[0].second;
+                        return true;
+                    }
+                    if (dist_horiz <= pts.front().first) {
+                        out_drop_m = pts.front().second;
+                        return true;
+                    }
+                    if (dist_horiz >= pts.back().first) {
+                        out_drop_m = pts.back().second;
+                        return true;
+                    }
+                    for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                        if (dist_horiz <= pts[i+1].first) {
+                            const float dx = pts[i+1].first - pts[i].first;
+                            const float t = (dx > 0.0f) ? ((dist_horiz - pts[i].first) / dx) : 0.0f;
+                            out_drop_m = pts[i].second + t * (pts[i+1].second - pts[i].second);
+                            return true;
+                        }
+                    }
+                }
+            }
             const int idx = static_cast<int>(std::floor(dist_horiz));
             const float frac = dist_horiz - static_cast<float>(idx);
             TrajectoryPoint tp0{}, tp1{};
@@ -4176,10 +4553,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         const float bore_proj_y_m = target_dist_horiz_m * bore_tan_theta;
         float table_slope_at_0 = 0.0f;
         {
-            TrajectoryPoint tp1{};
-            if (DOPE_GetTrajectoryPoint(1, &tp1)) {
-                table_slope_at_0 = tp1.drop_m;
+            // Compute a numeric near-muzzle slope (dy/dx) using the 0m->1m points
+            // when available. Use a safe clamp so low-velocity / short-barrel
+            // pistol profiles don't produce extreme quadratic shearing.
+            // Compute a numeric near-muzzle slope (dy/dx).
+            // Prefer a 0->5m slope when available for stability on short/low-velocity
+            // trajectories (pistols), else fall back to 0->1m.
+            TrajectoryPoint tp0{};
+            TrajectoryPoint tpN{};
+            bool h0 = DOPE_GetTrajectoryPoint(0, &tp0);
+            const int prefer_n = 5;
+            bool hN = DOPE_GetTrajectoryPoint(prefer_n, &tpN);
+            if (h0 && hN) {
+                table_slope_at_0 = (tpN.drop_m - tp0.drop_m) / static_cast<float>(prefer_n);
+            } else {
+                TrajectoryPoint tp1{};
+                bool h1 = DOPE_GetTrajectoryPoint(1, &tp1);
+                if (h0 && h1) {
+                    table_slope_at_0 = (tp1.drop_m - tp0.drop_m);
+                } else if (h1) {
+                    table_slope_at_0 = tp1.drop_m;
+                } else {
+                    table_slope_at_0 = 0.0f;
+                }
             }
+            // Clamp the slope to a physically-reasonable range to avoid
+            // creating large q_a that bend the arc unrealistically near muzzle.
+            // Tighter clamp to avoid excessive quadratic shearing on short/slow
+            // trajectories (pistols). ~0.005 m/m ≈ 0.29°
+            const float kMaxNearMuzzleSlope = 0.005f; // m vertical per m horizontal
+            if (table_slope_at_0 > kMaxNearMuzzleSlope) table_slope_at_0 = kMaxNearMuzzleSlope;
+            if (table_slope_at_0 < -kMaxNearMuzzleSlope) table_slope_at_0 = -kMaxNearMuzzleSlope;
         }
         const float q_a = bore_tan_theta - table_slope_at_0;
         const float q_b = (target_dist_horiz_m > 0.01f)
@@ -4472,7 +4876,62 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         zero_range_m, sight_height_m);
             ImGui::Text("DBG: impact_y_at_target_m=%.3f m, drop_at_target_m=%.3f m",
                         impact_y_at_target_m, drop_at_target_m);
+
+            // Print the near-muzzle table slope used for shaping
+            ImGui::Text("DBG: table_slope_at_0=%.6f m/m", table_slope_at_0);
+
+            // Show the raw trajectory table samples used to compute drop interpolation
+            int sample_idx = static_cast<int>(std::floor(target_dist_horiz_m));
+            TrajectoryPoint stp0{}; TrajectoryPoint stp1{};
+            bool sh0 = DOPE_GetTrajectoryPoint(sample_idx, &stp0);
+            bool sh1 = DOPE_GetTrajectoryPoint(sample_idx + 1, &stp1);
+            const float sfrac = target_dist_horiz_m - static_cast<float>(sample_idx);
+            float interp_check = 0.0f;
+            if (sh0 && sh1) interp_check = stp0.drop_m * (1.0f - sfrac) + stp1.drop_m * sfrac;
+            else if (sh0) interp_check = stp0.drop_m;
+            else if (sh1) interp_check = stp1.drop_m;
+            ImGui::Text("DBG: traj_idx=%d frac=%.3f h0=%d h1=%d", sample_idx, sfrac, sh0 ? 1 : 0, sh1 ? 1 : 0);
+            ImGui::Text("DBG: tp0.drop_m=%.6f m, tp1.drop_m=%.6f m, interp_calc=%.6f m",
+                        stp0.drop_m, stp1.drop_m, interp_check);
+
+            // Dump the full solver trajectory table for deeper inspection.
+            ImGui::Text("DBG: Full trajectory table (index range drop):");
+            for (int ti = 0; ti < DOPE_MAX_TABLE_POINTS; ++ti) {
+                TrajectoryPoint ttp{};
+                if (!DOPE_GetTrajectoryPoint(ti, &ttp))
+                    break;
+                ImGui::Text("DBG: table[%d] drop=%.6f m", ti, ttp.drop_m);
+            }
             ImGui::Unindent();
+
+            // Add a button to print the diagnostics once to stdout (avoids flooding the console).
+            if (ImGui::Button("Print Side View Debug to Console")) {
+                std::printf("SVDBG: target_x_m=%.3f m, target_y_m=%.3f m, poa_y_m=%.3f m\n",
+                            target_x_m, target_y_m, poa_y_m);
+                std::printf("SVDBG: launch_angle_rad=%.6f, hold_moa=%.3f\n",
+                            launch_rad, side_sol.hold_elevation_moa);
+                std::printf("SVDBG: bore_tan=%.6f, q_a=%.6f, q_b=%.9f\n",
+                            bore_tan_theta, q_a, q_b);
+                std::printf("SVDBG: sightline_tan=%.6f, bore_visual_tan=%.6f\n",
+                            sightline_tan, bore_visual_tan);
+                std::printf("SVDBG: zero_range_m=%.3f m, sight_height_m=%.3f m\n",
+                            zero_range_m, sight_height_m);
+                std::printf("SVDBG: impact_y_at_target_m=%.3f m, drop_at_target_m=%.3f m\n",
+                            impact_y_at_target_m, drop_at_target_m);
+                std::printf("SVDBG: table_slope_at_0=%.6f m/m\n", table_slope_at_0);
+                std::printf("SVDBG: traj_idx=%d frac=%.3f h0=%d h1=%d\n",
+                            sample_idx, sfrac, sh0 ? 1 : 0, sh1 ? 1 : 0);
+                std::printf("SVDBG: tp0.drop_m=%.6f m, tp1.drop_m=%.6f m, interp_calc=%.6f m\n",
+                            stp0.drop_m, stp1.drop_m, interp_check);
+                std::printf("SVDBG: Full trajectory table (index drop):\n");
+                for (int ti = 0; ti < DOPE_MAX_TABLE_POINTS; ++ti) {
+                    TrajectoryPoint ttp{};
+                    if (!DOPE_GetTrajectoryPoint(ti, &ttp))
+                        break;
+                    std::printf("SVDBG: table[%d] drop=%.6f m\n", ti, ttp.drop_m);
+                }
+                std::fflush(stdout);
+            }
         }
         ImGui::End();
 
