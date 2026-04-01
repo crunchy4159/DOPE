@@ -104,7 +104,7 @@ private:
     bool has_ballistic_context_ = false;
     RifleAmmoCalibrationProfile calibration_profile_;
     bool has_calibration_profile_ = false;
-    ModuleCapabilities module_caps_ = {true, true, true};
+    ModuleCapabilities module_caps_ = {false, true, true};
 
     // Zero config
     ZeroConfig zero_;
@@ -160,6 +160,9 @@ private:
     float barrel_temp_K_ = 293.15f;        // current barrel temp (K)
     float barrel_ambient_K_ = 293.15f;     // last known ambient (K)
     uint64_t last_barrel_update_us_ = 0;   // last cooling integration timestamp
+    // Chamber / throat thermal state (models chamber soak and cold-bore behavior)
+    float chamber_temp_K_ = 293.15f;      // current chamber/throat temp (K)
+    uint64_t last_chamber_update_us_ = 0;  // last chamber cooling integration timestamp
     uint64_t last_shot_time_us_ = 0;       // last shot event timestamp
     int shots_in_string_ = 0;              // rolling shot count for stringing heuristics
 
@@ -183,6 +186,8 @@ private:
         float twist_rate_inches = 0.0f;
         float mv_adjustment_fps_per_in = 0.0f;
         float baseline_barrel_length_in = 24.0f;
+        int num_barrel_mv_points = 0;
+        DOPE_BarrelMVPoint barrel_mv_by_length_in[DOPE_MAX_BARREL_MV_POINTS] = {};
         DragModel drag_model = static_cast<DragModel>(0);
         // Bitmask of supported drag models from the dataset (Bit0 => G1 ... Bit7 => G8)
         uint8_t supported_drag_models_mask = 0;

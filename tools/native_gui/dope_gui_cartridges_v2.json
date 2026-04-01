@@ -7,6 +7,11 @@
       "cartridge_keys": [
         "22_lr"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.13,
+      "mass_kg": 0.002591956,
+      "caliber_m": 0.005664,
+      "length_m": 0.0156,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -32,8 +37,7 @@
       "source_preset_index": 0,
       "zero_range_m": 91.44,
       "available_zero_ranges": [
-        91.44,
-        182.88
+        91.44
       ],
       "trajectory_families": [
         {
@@ -56,49 +60,28 @@
               "trajectory_m": 0.0
             }
           ]
-        },
-        {
-          "zero_range_m": 182.88,
-          "trajectory_profile": [
-            {
-              "distance_m": 22.86,
-              "trajectory_m": 0.0381
-            },
-            {
-              "distance_m": 45.72,
-              "trajectory_m": 0.0737
-            },
-            {
-              "distance_m": 68.58,
-              "trajectory_m": 0.061
-            },
-            {
-              "distance_m": 91.44,
-              "trajectory_m": 0.0
-            }
-          ]
         }
       ],
-      "mass_grains": 40.0,
-      "caliber_inches": 0.223,
-      "length_inches": 0.614,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.13
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": "Remington .22lr Subsonic 40gr CPHP",
       "cartridge_keys": [
         "22_lr"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.079,
+      "mass_kg": 0.002591956,
+      "caliber_m": 0.005664,
+      "length_m": 0.0156,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -170,26 +153,26 @@
           ]
         }
       ],
-      "mass_grains": 40.0,
-      "caliber_inches": 0.223,
-      "length_inches": 0.614,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.079
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": "Federal American Eagle 9mm FMJ 124gr",
       "cartridge_keys": [
         "9x19"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.15,
+      "mass_kg": 0.008035065,
+      "caliber_m": 0.009017,
+      "length_m": 0.01458,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -217,26 +200,27 @@
       "mv_adjustment_fps_per_in": 35.0,
       "source_preset_index": 2,
       "zero_range_m": 22.86,
-      "mass_grains": 124.0,
-      "caliber_inches": 0.355,
-      "length_inches": 0.574,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.15
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": "CCI Blazer Brass 9mm FMJ 115gr",
       "cartridge_keys": [
         "9x19"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.155,
+      "mass_kg": 0.007451875,
+      "caliber_m": 0.009017,
+      "length_m": 0.01461,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -256,26 +240,27 @@
       "mv_adjustment_fps_per_in": 35.0,
       "source_preset_index": 3,
       "zero_range_m": 22.86,
-      "mass_grains": 115.0,
-      "caliber_inches": 0.355,
-      "length_inches": 0.575,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.155
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": "Winchester White Box 9mm 115gr FMJ",
       "cartridge_keys": [
         "9x19"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.139,
+      "mass_kg": 0.007451875,
+      "caliber_m": 0.009017,
+      "length_m": 0.01397,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -287,26 +272,27 @@
       "mv_adjustment_fps_per_in": 35.0,
       "source_preset_index": 4,
       "zero_range_m": 22.86,
-      "mass_grains": 115.0,
-      "caliber_inches": 0.355,
-      "length_inches": 0.55,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.139
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": ".45 ACP 230gr FMJ American Eagle",
       "cartridge_keys": [
         "45_acp"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.192,
+      "mass_kg": 0.014903749,
+      "caliber_m": 0.011455,
+      "length_m": 0.0173,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -335,26 +321,27 @@
       "_source": "M1911A1 mil-spec / Federal AE",
       "source_preset_index": 5,
       "zero_range_m": 22.86,
-      "mass_grains": 230.0,
-      "caliber_inches": 0.451,
-      "length_inches": 0.681,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.192
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 99992.0,
         "altitude_ft": 0.0,
-        "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": ".300 BLK 208gr Subsonic Hornady Black A-MAX",
       "cartridge_keys": [
         "300_blk"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.648,
+      "mass_kg": 0.013478173,
+      "caliber_m": 0.007823,
+      "length_m": 0.0348,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -486,27 +473,27 @@
           ]
         }
       ],
-      "mass_grains": 208.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.37,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.648
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
     },
     {
       "name": ".300 BLK 120gr JHP Supersonic AAC Barnes",
       "cartridge_keys": [
         "300_blk"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.297,
       "sigma_bc": 0.025,
+      "mass_kg": 0.008099864,
+      "caliber_m": 0.007823,
+      "length_m": 0.0267,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -797,51 +784,30 @@
           ]
         }
       ],
-      "mass_grains": 125.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.051,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.297
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
-        "standard": "METRO"
-      }
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
     },
     {
-      "name": "Aguila 5.56x45mm 62gr M855 FMJBT",
+      "name": "5.56 NATO 62gr M855 FMJ",
       "cartridge_keys": [
         "5.56_nato"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.307,
       "sigma_bc": 0.03,
+      "mass_kg": 0.004017532,
+      "caliber_m": 0.00569,
+      "length_m": 0.0235,
       "velocity_profile": [
         {
-          "distance_m": 0.00,
-          "velocity_ms": 993.6
-        },
-        {
-          "distance_m": 91.44,
-          "velocity_ms": 906.5
-        },
-        {
-          "distance_m": 182.88,
-          "velocity_ms": 824.8
-        },
-        {
-          "distance_m": 274.32,
-          "velocity_ms": 747.7
-        },
-        {
-          "distance_m": 365.76,
-          "velocity_ms": 674.8
-        },
-        {
-          "distance_m": 457.20,
-          "velocity_ms": 606.2
+          "distance_m": 0.0,
+          "velocity_ms": 889.0
         }
       ],
       "sigma_muzzle_velocity_ms": 6.096,
@@ -866,60 +832,65 @@
       "source_preset_index": 7,
       "zero_range_m": 91.44,
       "available_zero_ranges": [
+        91.44,
         182.88
       ],
       "trajectory_families": [
         {
+          "zero_range_m": 91.44,
+          "trajectory_profile": []
+        },
+        {
           "zero_range_m": 182.88,
-          "trajectory_profile": [
-            {
-              "distance_m": 0.0,
-              "trajectory_m": -0.03810
-            },
-            {
-              "distance_m": 91.44,
-              "trajectory_m": 0.03048
-            },
-            {
-              "distance_m": 182.88,
-              "trajectory_m": 0.0
-            },
-            {
-              "distance_m": 274.32,
-              "trajectory_m": -0.15240
-            },
-            {
-              "distance_m": 365.76,
-              "trajectory_m": -0.45212
-            },
-            {
-              "distance_m": 457.2,
-              "trajectory_m": -0.93218
-            }
-          ]
+          "trajectory_profile": []
         }
       ],
-      "mass_grains": 62.0,
-      "caliber_inches": 0.224,
-      "length_inches": 0.925,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.307
-      },
+      "wind_drift_profile": [
+        {
+          "distance_m": 0.0,
+          "wind_drift_m": 0.0
+        },
+        {
+          "distance_m": 91.44,
+          "wind_drift_m": 0.01524
+        },
+        {
+          "distance_m": 182.88,
+          "wind_drift_m": 0.06096
+        },
+        {
+          "distance_m": 274.32,
+          "wind_drift_m": 0.1397
+        },
+        {
+          "distance_m": 365.76,
+          "wind_drift_m": 0.25654
+        },
+        {
+          "distance_m": 457.2,
+          "wind_drift_m": 0.41656
+        }
+      ],
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": ".223 Rem 55gr FMJ Winchester White Box",
       "cartridge_keys": [
         "223_rem"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.245,
       "sigma_bc": 0.025,
+      "mass_kg": 0.00356394,
+      "caliber_m": 0.00569,
+      "length_m": 0.0191,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1022,27 +993,26 @@
           ]
         }
       ],
-      "mass_grains": 55.0,
-      "caliber_inches": 0.224,
-      "length_inches": 0.752,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.245
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "Hornady .223 Rem 75gr BTHP Match",
       "cartridge_keys": [
         "223_rem"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.395,
       "sigma_bc": 0.01,
+      "mass_kg": 0.004859918,
+      "caliber_m": 0.00569,
+      "length_m": 0.0261,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1153,27 +1123,26 @@
           ]
         }
       ],
-      "mass_grains": 75.0,
-      "caliber_inches": 0.224,
-      "length_inches": 1.028,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.395
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "5.56 NATO 77gr OTM (Mk262 Mod1)",
       "cartridge_keys": [
         "5.56_nato"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.362,
       "sigma_bc": 0.01,
+      "mass_kg": 0.004989516,
+      "caliber_m": 0.00569,
+      "length_m": 0.0289,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1285,27 +1254,26 @@
           ]
         }
       ],
-      "mass_grains": 77.0,
-      "caliber_inches": 0.224,
-      "length_inches": 1.138,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.362
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "7.62x39mm FMJ 123gr Soviet",
       "cartridge_keys": [
         "7.62x39"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.309,
       "sigma_bc": 0.025,
+      "mass_kg": 0.007970266,
+      "caliber_m": 0.007899,
+      "length_m": 0.0353,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1412,27 +1380,26 @@
           ]
         }
       ],
-      "mass_grains": 123.0,
-      "caliber_inches": 0.311,
-      "length_inches": 1.39,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.309
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "6.5 Grendel 123gr Lapua Scenar HPBT",
       "cartridge_keys": [
         "6.5_grendel"
       ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.263,
       "sigma_bc": 0.01,
+      "mass_kg": 0.007970266,
+      "caliber_m": 0.006706,
+      "length_m": 0.0346,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1724,28 +1691,26 @@
           ]
         }
       ],
-      "mass_grains": 123.0,
-      "caliber_inches": 0.264,
-      "length_inches": 1.362,
-      "preferred_drag_model": "G7",
-      "drag_model_index": 6,
-      "ballistic_coefficients": {
-        "G7": 0.263
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "6mm Creedmoor 109gr Berger LRHT",
       "cartridge_keys": [
         "6mm_creedmoor"
       ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.278,
       "sigma_bc": 0.01,
+      "mass_kg": 0.007063081,
+      "caliber_m": 0.006172,
+      "length_m": 0.0325,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1861,28 +1826,26 @@
           ]
         }
       ],
-      "mass_grains": 109.0,
-      "caliber_inches": 0.243,
-      "length_inches": 1.28,
-      "preferred_drag_model": "G7",
-      "drag_model_index": 6,
-      "ballistic_coefficients": {
-        "G7": 0.278
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "Hornady 6.5 Creedmoor 140gr ELD-M",
       "cartridge_keys": [
         "6.5_creedmoor"
       ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.326,
       "sigma_bc": 0.008,
+      "mass_kg": 0.009071847,
+      "caliber_m": 0.006706,
+      "length_m": 0.0354,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -1994,94 +1957,26 @@
           ]
         }
       ],
-      "mass_grains": 140.0,
-      "caliber_inches": 0.264,
-      "length_inches": 1.394,
-      "preferred_drag_model": "G7",
-      "drag_model_index": 6,
-      "ballistic_coefficients": {
-        "G7": 0.326
-      },
-      "wind_drift_profile": [
-        {
-          "distance_m": 0.0,
-          "wind_drift_m": 0.0
-        },
-        {
-          "distance_m": 45.72,
-          "wind_drift_m": 0.003048
-        },
-        {
-          "distance_m": 91.44,
-          "wind_drift_m": 0.012192
-        },
-        {
-          "distance_m": 137.16,
-          "wind_drift_m": 0.02794
-        },
-        {
-          "distance_m": 182.88,
-          "wind_drift_m": 0.050546
-        },
-        {
-          "distance_m": 228.6,
-          "wind_drift_m": 0.079756
-        },
-        {
-          "distance_m": 274.32,
-          "wind_drift_m": 0.116332
-        },
-        {
-          "distance_m": 320.04,
-          "wind_drift_m": 0.160274
-        },
-        {
-          "distance_m": 365.76,
-          "wind_drift_m": 0.21209
-        },
-        {
-          "distance_m": 411.48,
-          "wind_drift_m": 0.272034
-        },
-        {
-          "distance_m": 457.2,
-          "wind_drift_m": 0.34036
-        },
-        {
-          "distance_m": 548.64,
-          "wind_drift_m": 0.503428
-        },
-        {
-          "distance_m": 640.08,
-          "wind_drift_m": 0.704342
-        },
-        {
-          "distance_m": 731.52,
-          "wind_drift_m": 0.94615
-        },
-        {
-          "distance_m": 822.96,
-          "wind_drift_m": 1.2319
-        },
-        {
-          "distance_m": 914.4,
-          "wind_drift_m": 1.564894
-        }
-      ],
       "environmental_conditions": {
-        "temperature_f": 70.0,
-        "pressure_inhg": 29.53,
-        "altitude_ft": 1000.0,
-        "humidity_pct": 0.45,
-        "standard": "Custom"
-      }
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
     },
     {
       "name": ".308 Win 168gr BTHP MatchKing Federal",
       "cartridge_keys": [
         "308_win"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.462,
       "sigma_bc": 0.012,
+      "mass_kg": 0.010886217,
+      "caliber_m": 0.007823,
+      "length_m": 0.02896,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2192,77 +2087,27 @@
             }
           ]
         }
-        ,
-        {
-          "zero_range_m": 91.44,
-          "trajectory_profile": [
-            {
-              "distance_m": 45.72,
-              "trajectory_m": -0.00254
-            },
-            {
-              "distance_m": 91.44,
-              "trajectory_m": 0.0
-            },
-            {
-              "distance_m": 182.88,
-              "trajectory_m": -0.10922
-            },
-            {
-              "distance_m": 274.32,
-              "trajectory_m": -0.38862
-            }
-          ]
-        }
       ],
-      "mass_grains": 168.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.14,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.462
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
-    ,
-      "wind_drift_profile": [
-        {
-          "distance_m": 0.0,
-          "wind_drift_m": 0.0
-        },
-        {
-          "distance_m": 91.44,
-          "wind_drift_m": 0.01778
-        },
-        {
-          "distance_m": 182.88,
-          "wind_drift_m": 0.07874
-        },
-        {
-          "distance_m": 274.32,
-          "wind_drift_m": 0.18796
-        },
-        {
-          "distance_m": 365.76,
-          "wind_drift_m": 0.34036
-        },
-        {
-          "distance_m": 457.2,
-          "wind_drift_m": 0.5588
-        }
-      ]
+      },
+      "ammo_temp": null
     },
     {
       "name": ".308 Win 175gr Federal Gold Medal SMK BTHP",
       "cartridge_keys": [
         "308_win"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.496,
       "sigma_bc": 0.01,
+      "mass_kg": 0.011339809,
+      "caliber_m": 0.007823,
+      "length_m": 0.0315,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2372,77 +2217,27 @@
             }
           ]
         }
-      ,
-        {
-          "zero_range_m": 91.44,
-          "trajectory_profile": [
-            {
-              "distance_m": 45.72,
-              "trajectory_m": -0.00254
-            },
-            {
-              "distance_m": 91.44,
-              "trajectory_m": 0.0
-            },
-            {
-              "distance_m": 182.88,
-              "trajectory_m": -0.11176
-            },
-            {
-              "distance_m": 274.32,
-              "trajectory_m": -0.39878
-            }
-          ]
-        }
       ],
-      "mass_grains": 175.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.24,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.496
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
-    ,
-      "wind_drift_profile": [
-        {
-          "distance_m": 0.0,
-          "wind_drift_m": 0.0
-        },
-        {
-          "distance_m": 91.44,
-          "wind_drift_m": 0.01524
-        },
-        {
-          "distance_m": 182.88,
-          "wind_drift_m": 0.07366
-        },
-        {
-          "distance_m": 274.32,
-          "wind_drift_m": 0.17526
-        },
-        {
-          "distance_m": 365.76,
-          "wind_drift_m": 0.3175
-        },
-        {
-          "distance_m": 457.2,
-          "wind_drift_m": 0.51562
-        }
-      ]
+      },
+      "ammo_temp": null
     },
     {
       "name": ".30-06 Springfield 168gr BTHP MatchKing",
       "cartridge_keys": [
         "30_06_sprg"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.462,
       "sigma_bc": 0.012,
+      "mass_kg": 0.010886217,
+      "caliber_m": 0.007823,
+      "length_m": 0.02896,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2554,27 +2349,26 @@
           ]
         }
       ],
-      "mass_grains": 168.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.14,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.462
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": ".30-06 Springfield 150gr FMJ",
       "cartridge_keys": [
         "30_06_sprg"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.338,
       "sigma_bc": 0.02,
+      "mass_kg": 0.009719836,
+      "caliber_m": 0.007823,
+      "length_m": 0.028,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2686,27 +2480,26 @@
           ]
         }
       ],
-      "mass_grains": 150.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.102,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.338
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
       "cartridge_keys": [
         "300_win_mag"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.533,
       "sigma_bc": 0.01,
+      "mass_kg": 0.012311793,
+      "caliber_m": 0.007823,
+      "length_m": 0.0353,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2747,27 +2540,26 @@
           "trajectory_profile": []
         }
       ],
-      "mass_grains": 190.0,
-      "caliber_inches": 0.308,
-      "length_inches": 1.39,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.533
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": ".338 Lapua Magnum 250gr Lapua Scenar HPBT",
       "cartridge_keys": [
         "338_lapua_mag"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.675,
       "sigma_bc": 0.008,
+      "mass_kg": 0.016199728,
+      "caliber_m": 0.008585,
+      "length_m": 0.0413,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2809,27 +2601,26 @@
           "trajectory_profile": []
         }
       ],
-      "mass_grains": 250.0,
-      "caliber_inches": 0.338,
-      "length_inches": 1.626,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 0.675
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     },
     {
       "name": ".50 BMG 750gr Hornady A-Max Match",
       "cartridge_keys": [
         "50_bmg"
       ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 1.05,
       "sigma_bc": 0.01,
+      "mass_kg": 0.048599182,
+      "caliber_m": 0.012954,
+      "length_m": 0.056,
       "velocity_profile": [
         {
           "distance_m": 0.0,
@@ -2871,20 +2662,14 @@
           "trajectory_profile": []
         }
       ],
-      "mass_grains": 750.0,
-      "caliber_inches": 0.51,
-      "length_inches": 2.205,
-      "preferred_drag_model": "G1",
-      "ballistic_coefficients": {
-        "G1": 1.05
-      },
       "environmental_conditions": {
         "temperature_f": 59.0,
-        "pressure_inhg": 29.921,
+        "pressure_pa": 101325.0,
         "altitude_ft": 0.0,
         "humidity_pct": 0.0,
         "standard": "ICAO"
-      }
+      },
+      "ammo_temp": null
     }
   ]
 }

@@ -124,6 +124,19 @@ struct SensorFrame {
     // Zoom Encoder — SRS §7.5
     float encoder_focal_length_mm;    // mm
     bool  encoder_valid;
+        // --- Shot event / timing integration (Section 5) ---
+        // If true, the engine will record a shot at `shot_timestamp_us` and
+        // apply the optional ambient temperature for chamber/barrel soak logic.
+        bool  shot_fired;
+        uint64_t shot_timestamp_us;
+        float shot_ambient_temp_c;
+
+        // Optional direct temperature sensor inputs (barrel / chamber).
+        // If *_valid is true the engine will use the provided temperature.
+        bool  barrel_temp_valid;
+        float barrel_temperature_c;
+        bool  chamber_temp_valid;
+        float chamber_temperature_c;
 };
 
 // ---------------------------------------------------------------------------
@@ -170,7 +183,17 @@ struct GunProfile {
     bool      free_floated;               // barrel is free-floated (no stock contact)
     bool      suppressor_attached;        // suppressor is attached
     bool      barrel_tuner_attached;      // barrel tuner is installed
+    // Chamber soak time (seconds) used by thermal model for chamber/throat heating
+    // 0.0 means unknown / not provided.
+    float     chamber_time_s;
 
+    // Optional per-barrel geometric profile used by thermal/mass/stiffness
+    // calculations. Fields set to 0 indicate that the value is not provided
+    // and callers should fall back to heuristic/default values.
+    struct BarrelProfile {
+        float wall_thickness_mm; // approximate wall thickness at muzzle (mm)
+        float taper;             // taper ratio (unitless). 0 = unspecified.
+    } barrel_profile;
     // Thermal calibration scalars
     float     heat_efficiency_scalar;     // energy absorbed per shot [0.5–1.5]; 0 = disabled
     float     mv_thermal_slope;           // fps per °C above ambient; 0 = auto from physics
@@ -188,6 +211,7 @@ using BulletProfile = GunProfile;
 #define DOPE_MAX_TABLE_POINTS 128
 #define DOPE_MAX_TRAJECTORY_FAMILIES 8
 #define DOPE_MAX_CALIBRATION_POINTS 32
+#define DOPE_MAX_BARREL_MV_POINTS 16
 
 struct DOPE_ProfilePoint {
     float range_m;
@@ -197,6 +221,11 @@ struct DOPE_ProfilePoint {
 struct DOPE_TrajectoryPoint {
     float range_m;
     float drop_m;
+};
+
+struct DOPE_BarrelMVPoint {
+    float barrel_length_in;
+    float muzzle_velocity_ms;
 };
 
 struct DOPE_TrajectoryFamily {
@@ -222,6 +251,8 @@ struct AmmoDatasetV2 {
     BaselineConvention baseline_convention;
     float baseline_barrel_length_in;
     float baseline_wind_speed_ms;
+    DOPE_BarrelMVPoint barrel_mv_by_length_in[DOPE_MAX_BARREL_MV_POINTS];
+    int num_barrel_mv_points;
 
     // Primary manufacturer channels.
     DOPE_TrajectoryFamily trajectories[DOPE_MAX_TRAJECTORY_FAMILIES];
@@ -334,7 +365,7 @@ struct ShotObservation {
 };
 
 struct ModuleCapabilities {
-    bool enable_solver_fallback;   // allow RK4 as emergency fallback when table data insufficient
+    bool enable_solver_fallback;   // legacy/non-v2: allow RK4 runtime fallback when table data is insufficient
     bool enable_shot_learning;
     bool enable_uncertainty_refine;
 };

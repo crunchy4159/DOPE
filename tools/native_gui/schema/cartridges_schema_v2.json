@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "dope_gui_cartridges_v2",
+  "type": "object",
+  "properties": {
+    "generated_from": {"type": "string"},
+    "count": {"type": "integer"},
+    "ammo_v2": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "cartridge_keys": {"type": "array"},
+          "drag_model": {"type": "string"},
+          "ballistic_coefficient": {"type": "number", "multipleOf": 0.001, "description": "BC (3 decimal places)"},
+          "mass_kg": {"type": "number", "multipleOf": 0.000001, "description": "Mass in kg (6 decimal places)"},
+          "caliber_m": {"type": "number", "multipleOf": 0.000001, "description": "Caliber in meters (6 decimal places)"},
+          "length_m": {"type": "number", "multipleOf": 0.0001, "description": "Overall cartridge length in meters (4 decimal places)"},
+          "sectional_density": {"type": ["number", "null"], "multipleOf": 0.0001, "description": "Optional sectional density in lb/in^2"},
+          "sectional_density_lb_in2": {"type": ["number", "null"], "multipleOf": 0.0001, "description": "Optional sectional density in lb/in^2 (alias)"},
+          "velocity_profile": {"type": "array"},
+          "reference_barrel_inches": {"type": "number", "multipleOf": 0.1, "description": "Reference barrel length in inches (1 decimal place)"},
+          "mv_adjustment_fps_per_in": {"type": "number", "multipleOf": 0.01, "description": "MV adjustment fps per inch (2 decimal places)"},
+          "environmental_conditions": {"type": "object"},
+          "ammo_temp": {"type": ["number", "null"], "multipleOf": 0.01, "description": "Default ammunition temperature in °C (2 decimal places)"}
+        }
+      }
+    }
+  }
+}

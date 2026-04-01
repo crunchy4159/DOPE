@@ -11,6 +11,7 @@
 // This file is only compiled for the esp32sim environment.
 
 #include "dope/dope_api.h"
+#include "dope/dope_types.h"
 #include "../lib/dope/src/solver/solver.h"
 #include "../lib/dope/src/atmo/atmosphere.h"
 #include <iostream>
@@ -54,6 +55,19 @@ int main(int argc, char* argv[]) {
     Atmosphere atmo;
     atmo.init();
     atmo.updateFromBaro(press, temp, hum);
+
+    // Optional: simulate a shot event and feed it to the DOPE engine.
+    if (cmdOptionExists(argv, argv + argc, "--simulate-shot")) {
+        DOPE_Init();
+        SensorFrame f = {};
+        f.timestamp_us = 1000000ULL; // example timestamp
+        f.shot_fired = true;
+        f.shot_timestamp_us = f.timestamp_us;
+        f.shot_ambient_temp_c = temp;
+        DOPE_Update(&f);
+        std::cout << "Simulated shot event sent to DOPE_Update()\n";
+        return 0;
+    }
 
     p.air_density = atmo.getAirDensity();
     p.speed_of_sound = atmo.getSpeedOfSound();

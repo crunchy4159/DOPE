@@ -1,1 +1,6 @@
 Ammo: Hornady 6.5 Creedmoor 140gr ELD-M Points: 16 First: 0@0 Last: 1.56489@914.4
+Ammo: .308 Win 168gr BTHP MatchKing Federal Points: 6 First: 0@0 Last: 0.5588@457.2
+Ammo: .308 Win 168gr BTHP MatchKing Federal Points: 6 First: 0@0 Last: 0.5588@457.2
+Ammo: .308 Win 175gr Federal Gold Medal SMK BTHP Points: 6 First: 0@0 Last: 0.51562@457.2
+Ammo: .308 Win 168gr BTHP MatchKing Federal Points: 6 First: 0@0 Last: 0.5588@457.2
+Ammo: .308 Win 168gr BTHP MatchKing Federal Points: 6 First: 0@0 Last: 0.5588@457.2

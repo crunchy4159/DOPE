@@ -22,6 +22,8 @@ For margin/error modeling, the engine outputs analytic uncertainty primitives (s
 
 Barrel modeling covers stiffness/CEP hierarchy, free-float vs contact, suppressor and tuner multipliers, and heat/stringing. Feed shot events via `DOPE_NotifyShotFired(timestamp_us, ambient_temp_c)` to let the barrel-side dispersion grow with cadence and cool over time.
 
+Note: The `GunProfile` now exposes `angular_sigma_moa` (1-σ mechanical angular dispersion in MOA). When provided the engine folds this angular component into the uncertainty model (see `MATH_REFERENCE.md §16.4`). A focused unit test `test_barrel_angular_sigma.cpp` verifies this behavior.
+
 It does not render graphics, process camera/LiDAR data, or select targets.
 
 ## Architecture

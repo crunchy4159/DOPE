@@ -948,13 +948,50 @@ These baselines precede any CEP-table scaling so axis ratios are preserved.
 
 Additional barrel-side dispersion adjustments applied after the §16.3 hierarchy and before CEP scaling. Implementation: [lib/dope/src/engine/dope_engine.cpp](lib/dope/src/engine/dope_engine.cpp).
 
-- **Free-float penalty:** If the barrel is not free-floated, radial dispersion becomes `rss(radial_moa, 0.75)`.
-- **Suppressor scaling:** With a suppressor attached, radial dispersion is scaled linearly by muzzle OD: 1.25× at ≤0.55", 1.05× at ≥1.00", interpolated between.
-- **Barrel tuner:** If present, radial dispersion is multiplied by 0.85.
-- **Material scaling:** Stiffness and thermal growth are scaled by barrel material: CMV (~0.95× stiffness factor, lower CTE), 416 stainless (baseline), carbon-wrapped (~1.30× stiffness factor, low CTE, lower density/higher heat capacity).
-- **Thermal growth:** For ΔT = T_barrel − T_ambient (kelvin), apply $$m_{heat} = \min\bigl(1.6,\; \max(1,\; \sqrt{1 + 0.01\,\Delta T})\bigr)$$ to the barrel-side radial term only.
+- **Mechanical angular sigma (MOA):** The engine prefers an explicit `angular_sigma_moa` supplied in the gun profile as the rifle's true mechanical angular dispersion (1-σ in MOA). When absent, the legacy `stiffness_moa` is used as a fallback; a conservative floor of 0.06 MOA is always enforced.
+  
+    API: set `GunProfile.angular_sigma_moa` via `DOPE_SetGunProfile()` to provide an explicit mechanical angular dispersion. See `test/test_barrel_angular_sigma.cpp` for a focused unit test that verifies the effect on computed uncertainty.
+- **Free-float penalty:** If the barrel is not free-floated, the computed gun radial sigma is multiplied by `1.45`.
+- **Suppressor scaling:** If a suppressor is attached, the gun radial sigma is multiplied by `1.25`.
+- **Barrel tuner:** If present, the gun radial sigma is multiplied by `0.90`.
+- **Material scaling:** The base gun radial sigma is scaled by a barrel-material stiffness factor returned by `getBarrelMaterialProps()` in the engine: CMV ~0.95, 416 stainless baseline 1.0, carbon-wrapped ~1.30 (higher -> increased radial dispersion).
+- **Thermal growth:** For ΔT = T_barrel − T_ambient (kelvin), apply
+$$m_{heat} = \min\bigl(1.6,\; \max(1,\; \sqrt{1 + 0.01\,\Delta T})\bigr)$$
+to the barrel-side radial term only (implemented by `barrelHeatMultiplier()` in the engine).
 - **Cooling:** Barrel temperature decays toward ambient via $$T_{b,new} = T_a + (T_b - T_a) e^{-\Delta t/\tau}$$ with τ interpolated from 70 s at 0.55" muzzle OD to 120 s at 1.0". Ambient tracks the latest baro temperature when available.
 - **Heating per shot:** Each shot deposits $$E_b = \text{clamp}\bigl(0.2 \cdot 0.5 m_b v^2,\; 400,\; 2000\bigr)$$ J into the barrel (m_b bullet mass, v muzzle velocity). The resulting rise $$\Delta T_{shot} = E_b / C_b$$ uses barrel heat capacity $C_b = m_{barrel} \cdot 500$ J/kgK; barrel mass is a clamped cylindrical estimate (defaults: 24" length, 0.7" muzzle OD, limits 0.5–4.0 kg).
+
+#### 16.4.1 MV Thermal Correction
+
+`[MATH §16.4.1]`
+
+Propellant powder deflagration efficiency and gas expansion both increase with propellant temperature, producing a measurable positive muzzle-velocity shift versus powder temperature. This is modeled as a linear correction applied in `buildSolverParams()`:
+
+$$v_{MV}' = v_{MV} + k_{mv} \cdot \Delta T_b$$
+
+where:
+- $k_{mv}$ = `GunProfile.mv_thermal_slope` (fps per °C above ambient). Set 0 to disable.
+- $\Delta T_b = T_{barrel} - T_{ambient}$ (kelvin / °C equivalent) — uses the **barrel** thermal state as a proxy for propellant temperature; a soak-time-weighted chamber temperature could be used if a finer model is desired in future.
+- The corrected velocity is floored at `kMinMvMs` (1 m/s) to prevent a degenerate solver input.
+
+Typical values for common rifle cartridges: **~1.5–2.5 fps/°C** (ANSI/SAAMI standard environmental tests show ~1.0–1.7 fps/°F ≈ 1.8–3.1 fps/°C for full-power rifle). Leave at 0 until field data is collected; the engine will use the unmodified barrel-length-adjusted MV.
+
+#### 16.4.2 POI Thermal Drift
+
+`[MATH §16.4.2]`
+
+Sustained firing causes the barrel to walk as it heats, shifting the point of impact (POI) in both elevation and windage. This is separate from the dispersion growth captured by `barrelHeatMultiplier()` — it is a **systematic bias**, not a stochastic spread. Applied in `computeSolution()` after all other hold corrections:
+
+$$\Delta_{elev} = k_y \cdot \Delta T_b \qquad \Delta_{wind} = k_x \cdot \Delta T_b$$
+
+where:
+- $k_y$ = `GunProfile.thermal_drift_y_moa_per_K` — positive values walk the POI **up** (elevation hold increases).
+- $k_x$ = `GunProfile.thermal_drift_x_moa_per_K` — positive values walk the POI **right** (windage hold increases).
+- $\Delta T_b = T_{barrel} - T_{ambient}$ (kelvin).
+
+Sign convention matches the standard hold convention: **positive elevation = up**, **positive windage = right**.
+
+These corrections are additive with calibration residuals and boresight offsets. Leave at 0 until established from shoot-out data; a heated barrel typically drifts toward the chamber-side of any remaining stock support, so free-floated barrels often have near-zero drift.
 
 ---
 

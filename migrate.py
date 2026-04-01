@@ -61,9 +61,10 @@ def migrate():
 
         # 5. Environmental conditions
         # Default to ICAO standard (15C, 1013.25hPa, 0% humidity, 0m altitude)
+        # Prefer explicit Pascals in migrated data
         env = {
             "temperature_f": 59.0,
-            "pressure_inhg": 29.921,
+            "pressure_pa": 101325.0,
             "altitude_ft": 0.0,
             "humidity_pct": 0.0,
             "standard": "ICAO"
@@ -71,9 +72,11 @@ def migrate():
 
         # Specific override for Hornady 6.5 Creedmoor if we recognize it
         if "Hornady 6.5 Creedmoor 140gr ELD-M" in name:
+            # Compute Pascal equivalent for provided inHg value and emit Pascals only
+            env_inhg = 29.53
             env = {
                 "temperature_f": 70.0,
-                "pressure_inhg": 29.53,
+                "pressure_pa": round(env_inhg * 3386.389, 3),
                 "altitude_ft": 1000.0,
                 "humidity_pct": 0.45,
                 "standard": "Custom"
