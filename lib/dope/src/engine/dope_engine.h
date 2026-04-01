@@ -29,6 +29,11 @@ public:
 
     // --- Manual inputs ---
     void setBulletProfile(const BulletProfile* profile);
+    void setAmmoDatasetV2(const AmmoDatasetV2* dataset);
+    void setBallisticContext(const BallisticContext* context);
+    void setRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile);
+    void setModuleCapabilities(const ModuleCapabilities* caps);
+    void recordShotObservation(const ShotObservation* obs);
     void setZeroConfig(const ZeroConfig* config);
     void setWindManual(float speed_ms, float heading_deg);
     void setLatitude(float latitude_deg);
@@ -93,6 +98,13 @@ private:
     // Bullet profile
     BulletProfile bullet_;
     bool has_bullet_ = false;
+    AmmoDatasetV2 dataset_v2_;
+    bool has_dataset_v2_ = false;
+    BallisticContext ballistic_context_;
+    bool has_ballistic_context_ = false;
+    RifleAmmoCalibrationProfile calibration_profile_;
+    bool has_calibration_profile_ = false;
+    ModuleCapabilities module_caps_ = {false, true, true};
 
     // Zero config
     ZeroConfig zero_;
@@ -148,6 +160,9 @@ private:
     float barrel_temp_K_ = 293.15f;        // current barrel temp (K)
     float barrel_ambient_K_ = 293.15f;     // last known ambient (K)
     uint64_t last_barrel_update_us_ = 0;   // last cooling integration timestamp
+    // Chamber / throat thermal state (models chamber soak and cold-bore behavior)
+    float chamber_temp_K_ = 293.15f;      // current chamber/throat temp (K)
+    uint64_t last_chamber_update_us_ = 0;  // last chamber cooling integration timestamp
     uint64_t last_shot_time_us_ = 0;       // last shot event timestamp
     int shots_in_string_ = 0;              // rolling shot count for stringing heuristics
 
@@ -159,14 +174,42 @@ private:
     bool defer_uncertainty_ = false;
     bool uncertainty_pending_ = false;
 
+    // Active ammo selector — centralize legacy vs v2 choice for migration
+    struct ActiveAmmo {
+        bool valid = false;           // true when any source is available
+        bool is_v2 = false;           // true when source is AmmoDatasetV2
+        float bc = 0.0f;
+        float muzzle_velocity_ms = 0.0f;
+        float mass_grains = 0.0f;
+        float length_mm = 0.0f;
+        float caliber_inches = 0.0f;
+        float twist_rate_inches = 0.0f;
+        float mv_adjustment_fps_per_in = 0.0f;
+        float baseline_barrel_length_in = 24.0f;
+        int num_barrel_mv_points = 0;
+        DOPE_BarrelMVPoint barrel_mv_by_length_in[DOPE_MAX_BARREL_MV_POINTS] = {};
+        DragModel drag_model = static_cast<DragModel>(0);
+        // Bitmask of supported drag models from the dataset (Bit0 => G1 ... Bit7 => G8)
+        uint8_t supported_drag_models_mask = 0;
+    };
+
+    ActiveAmmo selectActiveAmmo() const;
+
     // --- Internal methods ---
     void evaluateState(uint64_t now_us);
     void computeSolution();
     void computeUncertainty();
     void refreshDerivedSigmasFromProfiles();
+    float interpolateProfileValue(const DOPE_ProfilePoint* points, int count, float range_m) const;
+    bool computeTableFirstSolution(float slant_range_m, float horizontal_range_m, float target_elevation_m,
+                                   float pitch_rad, float roll_rad);
+    float getActiveAmmoCep50(float range_m) const;
     void recomputeZero();
     SolverParams buildSolverParams(float range_m) const;
+    bool hasUsableSolverInputs() const;
     void integrateBarrelCooling(uint64_t now_us);
     float estimateBarrelMassKg() const;
-    float barrelHeatMultiplier() const;
+    float barrelHeatMultiplier() const;   // sigma growth factor for uncertainty scaling
+    float thermalMvDeltaFps() const;      // MV shift in fps from barrel heat
+    void  thermalPoiDrift(float& drift_x_moa, float& drift_y_moa) const; // POI walk from thermal expansion
 };

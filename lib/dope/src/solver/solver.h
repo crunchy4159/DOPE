@@ -18,8 +18,10 @@
  * Solver input parameters — everything needed for one trajectory solution.
  */
 struct SolverParams {
-    float bc;                    // Ballistic coefficient (already atmosphere-corrected)
-    DragModel drag_model;        // G1–G8
+    DOPE_TrajectoryPoint trajectory_profile[DOPE_TRAJ_TABLE_SIZE];
+    int num_trajectory_points;
+    float bc;                    // Ballistic Coefficient
+    DragModel drag_model;        // G1..G8
     float muzzle_velocity_ms;    // m/s
     float bullet_mass_kg;        // kg (converted from grains by caller)
     float bullet_length_m;       // m (used for dynamic stability estimate)
@@ -68,6 +70,11 @@ struct SolverResult {
     float  spin_drift_moa;
 };
 
+struct SolverSeriesCache {
+    int idx;
+    float last_range_m;
+};
+
 class BallisticSolver {
 public:
     void init();
@@ -99,6 +106,14 @@ public:
      * @return Pointer to trajectory point, or nullptr if out of range
      */
     const TrajectoryPoint* getPointAt(int range_m) const;
+
+    /**
+     * O(1)-amortized interpolation for sparse monotonic range/value tables.
+     * cache->idx tracks the active segment to avoid repeated binary searches
+     * for temporally-local range queries.
+     */
+    static float interpolateSeries(const DOPE_TrajectoryPoint* points, int count, float range_m,
+                                   SolverSeriesCache* cache);
 
 private:
     TrajectoryPoint table_[DOPE_TRAJ_TABLE_SIZE];

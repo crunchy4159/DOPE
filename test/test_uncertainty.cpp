@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include "dope/dope_api.h"
 #include "dope/dope_config.h"
+#include "test_helpers_v2.h"
 #include <cmath>
 #include <cstring>
 
@@ -16,21 +17,13 @@ class UncertaintyTest : public ::testing::Test {
 protected:
     void SetUp() override {
         DOPE_Init();
+        EnableSolverFallback();
     }
 
     void configureStandard308() {
-        BulletProfile bullet = {};
-        bullet.bc = 0.505f;
-        bullet.drag_model = DragModel::G1;
-        bullet.muzzle_velocity_ms = 792.0f;
-        bullet.mass_grains = 175.0f;
-        bullet.length_mm = 31.2f;
-        bullet.caliber_inches = 0.308f;
-        bullet.twist_rate_inches = 10.0f;
-        bullet.barrel_length_in = 24.0f;
-        bullet.reference_barrel_length_in = 24.0f;
-        bullet.mv_adjustment_factor = 25.0f;
-        DOPE_SetBulletProfile(&bullet);
+        AmmoDatasetV2 ds = Make308V2(10.0f);
+        ds.mv_adjustment_fps_per_in = 25.0f;
+        DOPE_SetAmmoDatasetV2(&ds);
 
         ZeroConfig zero = {};
         zero.zero_range_m = 100.0f;
@@ -526,83 +519,42 @@ TEST_F(UncertaintyTest, LatitudeSigmaAffectsBothAxesWhenCoriolisActive) {
 
 TEST_F(UncertaintyTest, LatitudeSigmaIsIgnoredIfCoriolisInactive) {
     DOPE_Init();
-    // Configure standard bullet and zero, but omit DOPE_SetLatitude
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.length_mm = 31.2f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    bullet.barrel_length_in = 24.0f;
-    bullet.reference_barrel_length_in = 24.0f;
-    bullet.mv_adjustment_factor = 25.0f;
-    DOPE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
+    EnableSolverFallback();
+    // No DOPE_SetLatitude — Coriolis inactive
+    AmmoDatasetV2 ds = Make308V2();
+    ds.mv_adjustment_fps_per_in = 25.0f;
+    DOPE_SetAmmoDatasetV2(&ds);
+    ZeroConfig zero = {}; zero.zero_range_m = 100.0f; zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
-
     stabilizeAHRS();
     feedRange(1000.0f);
-
-    UncertaintyConfig uc = {};
-    uc.enabled = true;
-    uc.sigma_latitude_deg = 5.0f;
+    UncertaintyConfig uc = {}; uc.enabled = true; uc.sigma_latitude_deg = 5.0f;
     DOPE_SetUncertaintyConfig(&uc);
-
     SensorFrame f = makeDefaultFrame(10000 * 400);
-    f.lrf_range_m = 1000.0f;
-    f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_valid = true;
+    f.lrf_range_m = 1000.0f; f.lrf_timestamp_us = f.timestamp_us; f.lrf_valid = true;
     DOPE_Update(&f);
-
     FiringSolution sol = getSolution();
     EXPECT_TRUE(sol.uncertainty_valid);
-    // Should have exactly 0 contribution from latitude (index 10)
     EXPECT_EQ(sol.uc_var_elev[10], 0.0f);
     EXPECT_EQ(sol.uc_var_wind[10], 0.0f);
 }
 
 TEST_F(UncertaintyTest, StiffnessAndCepInjectBaseDispersion) {
-    // Use CEP + stiffness to force non-zero uncertainty even when sigmas are zero.
-    BulletProfile bullet = {};
-    bullet.bc = 0.505f;
-    bullet.drag_model = DragModel::G1;
-    bullet.muzzle_velocity_ms = 792.0f;
-    bullet.mass_grains = 175.0f;
-    bullet.length_mm = 31.2f;
-    bullet.caliber_inches = 0.308f;
-    bullet.twist_rate_inches = 10.0f;
-    bullet.barrel_length_in = 24.0f;
-    bullet.reference_barrel_length_in = 24.0f;
-    bullet.mv_adjustment_factor = 25.0f;
-    bullet.measured_cep50_moa = 0.8f;   // drives radial/vertical split
-    bullet.stiffness_moa = 1.25f;        // pencil-profile floor
-    DOPE_SetBulletProfile(&bullet);
-
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
+    AmmoDatasetV2 ds = Make308V2(); ds.mv_adjustment_fps_per_in = 25.0f;
+    DOPE_SetAmmoDatasetV2(&ds);
+    GunProfile gun = {};
+    gun.barrel_length_in = 24.0f; gun.reference_barrel_length_in = 24.0f;
+    gun.measured_cep50_moa = 0.8f; gun.stiffness_moa = 1.25f;
+    DOPE_SetGunProfile(&gun);
+    ZeroConfig zero = {}; zero.zero_range_m = 100.0f; zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
     DOPE_SetLatitude(37.0f);
-
-    stabilizeAHRS();
-    feedRange(100.0f);
-
-    UncertaintyConfig uc = {};
-    uc.enabled = true;
-    // Leave all sigmas at zero to isolate CEP/stiffness injection.
+    stabilizeAHRS(); feedRange(100.0f);
+    UncertaintyConfig uc = {}; uc.enabled = true;
     DOPE_SetUncertaintyConfig(&uc);
-
     SensorFrame f = makeDefaultFrame(10000 * 400);
-    f.lrf_range_m = 100.0f;
-    f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_valid = true;
+    f.lrf_range_m = 100.0f; f.lrf_timestamp_us = f.timestamp_us; f.lrf_valid = true;
     DOPE_Update(&f);
-
     FiringSolution sol = getSolution();
     ASSERT_TRUE(sol.uncertainty_valid);
     EXPECT_GT(sol.sigma_windage_moa, 1.0f);
@@ -611,43 +563,24 @@ TEST_F(UncertaintyTest, StiffnessAndCepInjectBaseDispersion) {
 
 TEST_F(UncertaintyTest, NonFreeFloatAddsRadialPenalty) {
     configureStandard308();
-    BulletProfile b = {};
-    b.bc = 0.505f;
-    b.drag_model = DragModel::G1;
-    b.muzzle_velocity_ms = 792.0f;
-    b.mass_grains = 175.0f;
-    b.length_mm = 31.2f;
-    b.caliber_inches = 0.308f;
-    b.twist_rate_inches = 10.0f;
-    b.barrel_length_in = 24.0f;
-    b.reference_barrel_length_in = 24.0f;
-    b.mv_adjustment_factor = 25.0f;
-    b.stiffness_moa = 0.6f;
-    b.free_floated = true;
-    DOPE_SetBulletProfile(&b);
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
+    GunProfile b = {};
+    b.barrel_length_in = 24.0f; b.reference_barrel_length_in = 24.0f;
+    b.stiffness_moa = 0.6f; b.free_floated = true;
+    DOPE_SetGunProfile(&b);
+    ZeroConfig zero = {}; zero.zero_range_m = 100.0f; zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
-    stabilizeAHRS();
-    feedRange(500.0f);
-    UncertaintyConfig uc = {};
-    uc.enabled = true;
-    DOPE_SetUncertaintyConfig(&uc);
+    stabilizeAHRS(); feedRange(500.0f);
+    UncertaintyConfig uc = {}; uc.enabled = true; DOPE_SetUncertaintyConfig(&uc);
     SensorFrame f = makeDefaultFrame(10000 * 400);
-    f.lrf_range_m = 500.0f;
-    f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_valid = true;
+    f.lrf_range_m = 500.0f; f.lrf_timestamp_us = f.timestamp_us; f.lrf_valid = true;
     DOPE_Update(&f);
     FiringSolution free_sol = getSolution();
     ASSERT_TRUE(free_sol.uncertainty_valid);
 
     b.free_floated = false;
-    DOPE_SetBulletProfile(&b);
+    DOPE_SetGunProfile(&b);
     SensorFrame f2 = makeDefaultFrame(10000 * 410);
-    f2.lrf_range_m = 500.0f;
-    f2.lrf_timestamp_us = f2.timestamp_us;
-    f2.lrf_valid = true;
+    f2.lrf_range_m = 500.0f; f2.lrf_timestamp_us = f2.timestamp_us; f2.lrf_valid = true;
     DOPE_Update(&f2);
     FiringSolution contact_sol = getSolution();
     ASSERT_TRUE(contact_sol.uncertainty_valid);
@@ -657,104 +590,60 @@ TEST_F(UncertaintyTest, NonFreeFloatAddsRadialPenalty) {
 
 TEST_F(UncertaintyTest, SuppressorScalingDependsOnMuzzleDiameter) {
     configureStandard308();
-    BulletProfile b = {};
-    b.bc = 0.505f;
-    b.drag_model = DragModel::G1;
-    b.muzzle_velocity_ms = 792.0f;
-    b.mass_grains = 175.0f;
-    b.length_mm = 31.2f;
-    b.caliber_inches = 0.308f;
-    b.twist_rate_inches = 10.0f;
-    b.barrel_length_in = 24.0f;
-    b.reference_barrel_length_in = 24.0f;
-    b.mv_adjustment_factor = 25.0f;
-    b.stiffness_moa = 0.6f;
-    b.free_floated = true;
-    b.suppressor_attached = false;
-    DOPE_SetBulletProfile(&b);
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
+    GunProfile b = {};
+    b.barrel_length_in = 24.0f; b.reference_barrel_length_in = 24.0f;
+    b.stiffness_moa = 0.6f; b.free_floated = true; b.suppressor_attached = false;
+    DOPE_SetGunProfile(&b);
+    ZeroConfig zero = {}; zero.zero_range_m = 100.0f; zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
-    stabilizeAHRS();
-    feedRange(500.0f);
-    UncertaintyConfig uc = {};
-    uc.enabled = true;
-    DOPE_SetUncertaintyConfig(&uc);
+    stabilizeAHRS(); feedRange(500.0f);
+    UncertaintyConfig uc = {}; uc.enabled = true; DOPE_SetUncertaintyConfig(&uc);
     SensorFrame f = makeDefaultFrame(10000 * 400);
-    f.lrf_range_m = 500.0f;
-    f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_valid = true;
+    f.lrf_range_m = 500.0f; f.lrf_timestamp_us = f.timestamp_us; f.lrf_valid = true;
     DOPE_Update(&f);
     FiringSolution baseline = getSolution();
 
-    b.suppressor_attached = true;
-    b.muzzle_diameter_in = 0.55f;
-    DOPE_SetBulletProfile(&b);
+    b.suppressor_attached = true; b.muzzle_diameter_in = 0.55f;
+    DOPE_SetGunProfile(&b);
     SensorFrame f2 = makeDefaultFrame(10000 * 410);
-    f2.lrf_range_m = 500.0f;
-    f2.lrf_timestamp_us = f2.timestamp_us;
-    f2.lrf_valid = true;
+    f2.lrf_range_m = 500.0f; f2.lrf_timestamp_us = f2.timestamp_us; f2.lrf_valid = true;
     DOPE_Update(&f2);
     FiringSolution thin = getSolution();
 
     b.muzzle_diameter_in = 1.0f;
-    DOPE_SetBulletProfile(&b);
+    DOPE_SetGunProfile(&b);
     SensorFrame f3 = makeDefaultFrame(10000 * 420);
-    f3.lrf_range_m = 500.0f;
-    f3.lrf_timestamp_us = f3.timestamp_us;
-    f3.lrf_valid = true;
+    f3.lrf_range_m = 500.0f; f3.lrf_timestamp_us = f3.timestamp_us; f3.lrf_valid = true;
     DOPE_Update(&f3);
     FiringSolution thick = getSolution();
 
     ASSERT_TRUE(baseline.uncertainty_valid);
     ASSERT_TRUE(thin.uncertainty_valid);
     ASSERT_TRUE(thick.uncertainty_valid);
-
     EXPECT_GT(thin.sigma_windage_moa, baseline.sigma_windage_moa * 1.2f);
     EXPECT_LT(thick.sigma_windage_moa, thin.sigma_windage_moa);
 }
 
 TEST_F(UncertaintyTest, BarrelTunerReducesBarrelDispersion) {
     configureStandard308();
-    BulletProfile b = {};
-    b.bc = 0.505f;
-    b.drag_model = DragModel::G1;
-    b.muzzle_velocity_ms = 792.0f;
-    b.mass_grains = 175.0f;
-    b.length_mm = 31.2f;
-    b.caliber_inches = 0.308f;
-    b.twist_rate_inches = 10.0f;
-    b.barrel_length_in = 24.0f;
-    b.reference_barrel_length_in = 24.0f;
-    b.mv_adjustment_factor = 25.0f;
-    b.stiffness_moa = 0.9f;
-    b.free_floated = true;
-    b.suppressor_attached = false;
-    b.barrel_tuner_attached = false;
-    DOPE_SetBulletProfile(&b);
-    ZeroConfig zero = {};
-    zero.zero_range_m = 100.0f;
-    zero.sight_height_mm = 38.1f;
+    GunProfile b = {};
+    b.barrel_length_in = 24.0f; b.reference_barrel_length_in = 24.0f;
+    b.stiffness_moa = 0.9f; b.free_floated = true;
+    b.suppressor_attached = false; b.barrel_tuner_attached = false;
+    DOPE_SetGunProfile(&b);
+    ZeroConfig zero = {}; zero.zero_range_m = 100.0f; zero.sight_height_mm = 38.1f;
     DOPE_SetZeroConfig(&zero);
-    stabilizeAHRS();
-    feedRange(500.0f);
-    UncertaintyConfig uc = {};
-    uc.enabled = true;
-    DOPE_SetUncertaintyConfig(&uc);
+    stabilizeAHRS(); feedRange(500.0f);
+    UncertaintyConfig uc = {}; uc.enabled = true; DOPE_SetUncertaintyConfig(&uc);
     SensorFrame f = makeDefaultFrame(10000 * 400);
-    f.lrf_range_m = 500.0f;
-    f.lrf_timestamp_us = f.timestamp_us;
-    f.lrf_valid = true;
+    f.lrf_range_m = 500.0f; f.lrf_timestamp_us = f.timestamp_us; f.lrf_valid = true;
     DOPE_Update(&f);
     FiringSolution base = getSolution();
 
     b.barrel_tuner_attached = true;
-    DOPE_SetBulletProfile(&b);
+    DOPE_SetGunProfile(&b);
     SensorFrame f2 = makeDefaultFrame(10000 * 410);
-    f2.lrf_range_m = 500.0f;
-    f2.lrf_timestamp_us = f2.timestamp_us;
-    f2.lrf_valid = true;
+    f2.lrf_range_m = 500.0f; f2.lrf_timestamp_us = f2.timestamp_us; f2.lrf_valid = true;
     DOPE_Update(&f2);
     FiringSolution tuned = getSolution();
 
@@ -764,22 +653,13 @@ TEST_F(UncertaintyTest, BarrelTunerReducesBarrelDispersion) {
     EXPECT_LT(tuned.sigma_elevation_moa, base.sigma_elevation_moa * 0.9f);
 }
 
+    // ...existing code...
 TEST_F(UncertaintyTest, ShotHeatIncreasesDispersionWithRapidCadence) {
     configureStandard308();
-    BulletProfile b = {};
-    b.bc = 0.505f;
-    b.drag_model = DragModel::G1;
-    b.muzzle_velocity_ms = 792.0f;
-    b.mass_grains = 175.0f;
-    b.length_mm = 31.2f;
-    b.caliber_inches = 0.308f;
-    b.twist_rate_inches = 10.0f;
-    b.barrel_length_in = 24.0f;
-    b.reference_barrel_length_in = 24.0f;
-    b.mv_adjustment_factor = 25.0f;
-    b.stiffness_moa = 0.8f;
-    b.free_floated = true;
-    DOPE_SetBulletProfile(&b);
+    GunProfile g = {};
+    g.stiffness_moa = 0.8f;
+    g.free_floated = true;
+    DOPE_SetGunProfile(&g);
     ZeroConfig zero = {};
     zero.zero_range_m = 100.0f;
     zero.sight_height_mm = 38.1f;

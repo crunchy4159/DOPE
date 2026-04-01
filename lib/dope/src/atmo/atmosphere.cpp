@@ -43,7 +43,7 @@ void Atmosphere::init() {
     last_bc_factor_         = 1.0f;
 
     recompute();
-    last_bc_factor_ = correctBC(1.0f);
+    last_bc_factor_ = calculateDensityRatio();
     zero_recompute_hint_ = false;
 }
 
@@ -207,7 +207,7 @@ void Atmosphere::recompute() {
     // Speed of sound (approximation for moist air)    [MATH §3.4]
     speed_of_sound_ = 20.05f * std::sqrt(T_virtual); // [MATH §3.4]
 
-    float current_bc_factor = correctBC(1.0f);
+    float current_bc_factor = calculateDensityRatio();
     if (std::fabs(current_bc_factor - prev_bc_factor) >= DOPE_ZERO_RECOMPUTE_BC_FACTOR_DELTA ||
         std::fabs(air_density_ - prev_density) >= DOPE_ZERO_RECOMPUTE_DENSITY_DELTA ||
         std::fabs(speed_of_sound_ - prev_sos) >= DOPE_ZERO_RECOMPUTE_SOS_DELTA) {
@@ -216,41 +216,17 @@ void Atmosphere::recompute() {
     last_bc_factor_ = current_bc_factor;
 }
 
+float Atmosphere::calculateDensityRatio() const {
+    // Density ratio = current density / ISA sea level density
+    return air_density_ / DOPE_STD_AIR_DENSITY;
+}
+
 float Atmosphere::correctBC(float bc_standard) const {
-    // Convert to imperial for reference formula compatibility
-    float alt_ft   = altitude_m_ * M_TO_FT;
-    float press_inhg = pressure_pa_ * PA_TO_INHG;
-    float temp_f   = temperature_c_ * C_TO_F_SCALE + C_TO_F_OFFSET;
-
-    // Standard reference values (Army Metro)
-    constexpr float std_press_inhg = 29.5300f; // ≈ 101325 Pa
-    constexpr float std_temp_f     = 59.0f;    // 15 °C
-
-    // FA — Altitude factor    [MATH §4.1]
-    // Litz: FA = 1 - 0.00003158 × altitude_ft
-    // (approximation for density reduction with altitude)
-    float FA = 1.0f - 3.158e-5f * alt_ft; // [MATH §4.1]
-    if (FA < 0.5f) FA = 0.5f; // clamp for extreme altitudes
-
-    // FT — Temperature factor    [MATH §4.2]
-    // FT = (temp_f - std_temp_f) / (std_temp_f + 460)
-    float FT = (temp_f - std_temp_f) / (std_temp_f + 460.0f); // [MATH §4.2]
-
-    // FP — Pressure factor    [MATH §4.3]
-    // FP = (std_press_inhg - press_inhg) / std_press_inhg
-    float FP = (std_press_inhg - press_inhg) / std_press_inhg; // [MATH §4.3]
-
-    // FR — Humidity factor    [MATH §4.4]
-    // Small effect: FR ≈ 1.0 + 0.00002 * (humidity_pct - 50)
-    // where humidity_pct = humidity_ * 100
-    float humidity_pct = humidity_ * 100.0f;
-    float FR = 1.0f + 0.00002f * (humidity_pct - 50.0f); // [MATH §4.4]
-
-    // Combined correction: BC_corrected = BC × FA × (1 + FT - FP) × FR    [MATH §4.5]
-    float bc_corrected = bc_standard * FA * (1.0f + FT - FP) * FR; // [MATH §4.5]
-
-    // Never let BC go below a minimum reasonable value
-    if (bc_corrected < 0.01f) bc_corrected = 0.01f;
-
-    return bc_corrected;
+    if (!std::isfinite(bc_standard) || bc_standard <= 0.0f)
+        return 0.0f;
+    const float rho_ratio = calculateDensityRatio();
+    if (!std::isfinite(rho_ratio) || rho_ratio <= 0.0f)
+        return bc_standard;
+    // Lower density implies a higher effective BC and vice-versa.
+    return bc_standard / rho_ratio;
 }

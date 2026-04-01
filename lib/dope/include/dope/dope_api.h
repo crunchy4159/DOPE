@@ -43,9 +43,19 @@ void DOPE_Update(const SensorFrame* frame);
 // ---------------------------------------------------------------------------
 
 /**
- * Set the bullet profile. Triggers zero recomputation.
+ * Set the gun hardware profile (barrel geometry, material, attachments, thermal scalars).
+ * Used for uncertainty modeling and barrel heat simulation.
+ * Ballistic parameters (BC, MV, mass, etc.) are set via DOPE_SetAmmoDatasetV2.
  */
-void DOPE_SetBulletProfile(const BulletProfile* profile);
+void DOPE_SetGunProfile(const GunProfile* profile);
+
+/** Deprecated alias — use DOPE_SetGunProfile instead. */
+void DOPE_SetBulletProfile(const GunProfile* profile);
+void DOPE_SetAmmoDatasetV2(const AmmoDatasetV2* dataset);
+void DOPE_SetBallisticContext(const BallisticContext* context);
+void DOPE_SetRifleAmmoCalibrationProfile(const RifleAmmoCalibrationProfile* profile);
+void DOPE_SetModuleCapabilities(const ModuleCapabilities* caps);
+void DOPE_RecordShotObservation(const ShotObservation* obs);
 
 /**
  * Set zero configuration (zero range + sight height). Triggers zero recomputation.

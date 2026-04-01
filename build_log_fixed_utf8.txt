@@ -1,0 +1,533 @@
+﻿Processing native_gui (platform: native; build_src_filter: +<../tools/native_gui/gui_main.cpp>, +<../tools/native_gui/imgui_all.cpp>, +<../tools/native_gui/imgui_impl_win32_wrap.cpp>, +<../tools/native_gui/imgui_impl_dx11_wrap.cpp>; build_flags: -std=c++17, -DDOPE_PLATFORM_NATIVE, -DDOPE_VERSION_MAJOR=1, -DDOPE_VERSION_MINOR=3, -Wall, -Wextra, -DUNICODE, -D_UNICODE, -Ithird_party/imgui, -Ithird_party, -Ithird_party/imgui/backends, -luser32, -lgdi32, -lcomdlg32, -lcomctl32, -limm32, -ld3d11, -ldxgi, -ld3dcompiler, -ldwmapi, -mwindows; lib_deps: ; lib_extra_dirs: lib)
+--------------------------------------------------------------------------------
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 2 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- dope @ 1.3.0 (License: Unknown, Path: C:\Users\jakek\Documents\GitHub\DOPE\lib\dope)
+Building in release mode
+g++ -o .pio\build\native_gui\tools\native_gui\gui_main.o -c -std=c++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DUNICODE -D_UNICODE -Isrc -Ilib\dope\include -Ilib\dope\src -Ithird_party\imgui -Ithird_party -Ithird_party\imgui\backends tools\native_gui\gui_main.cpp
+g++ -o .pio\build\native_gui\lib6e4\dope\atmo\atmosphere.o -c -std=c++17 -std=gnu++17 -Wall -Wextra -DPLATFORMIO=60119 -DDOPE_PLATFORM_NATIVE -DDOPE_VERSION_MAJOR=1 -DDOPE_VERSION_MINOR=3 -DUNICODE -D_UNICODE -Ilib\dope\include -Ilib\dope\src -Ithird_party\imgui -Ithird_party -Ithird_party\imgui\backends lib\dope\src\atmo\atmosphere.cpp
+python : 
+lib\dope\src\atmo\atmosphere.cpp: In 
+member function 'float 
+Atmosphere::calculateDensityRatio() 
+const':
+At line:1 char:1
++ python -m platformio run -e native_gui 
+--verbose > build_log_fixed.tx ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecifie 
+   d: (lib\dope\src\at...Ratio() const':  
+  :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeComma 
+   ndError
+ 
+lib\dope\src\atmo\atmosphere.cpp:220:10: 
+error: 'valid_' was not declared in this 
+scope
+  220 |     if (!valid_) {
+      |          ^~~~~~
+lib\dope\src\atmo\atmosphere.cpp:224:29: 
+error: 'calculateAirDensity' was not 
+declared in this scope
+  224 |     float current_density = 
+calculateAirDensity();
+      |                             
+^~~~~~~~~~~~~~~~~~~
+*** [.pio\build\native_gui\lib6e4\dope\atm
+o\atmosphere.o] Error 1
+tools\native_gui\gui_main.cpp: In 
+function 'bool {anonymous}::LoadCartridgeP
+resetsFromFile(const std::string&)':
+tools\native_gui\gui_main.cpp:775:15: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+  775 |             p.drag_model_index = 
+e.value("drag_model_index", 0);
+      |               ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::EnsureProfileDefaults()':
+tools\native_gui\gui_main.cpp:1141:18: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 1141 |         fallback.drag_model_index 
+= 0;
+      |                  ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void {anonymous}::SanitizeCartri
+dgePreset(CartridgePreset&)':
+tools\native_gui\gui_main.cpp:1345:12: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 1345 |     preset.drag_model_index =
+      |            ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:1346:63: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 1346 |         static_cast<int>(ClampValu
+e(static_cast<float>(preset.drag_model_ind
+ex), 0.0f, 7.0f));
+      |                                   
+                            
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function '{anonymous}::json {anonymous}::S
+erializeCartridgePreset(const 
+CartridgePreset&)':
+tools\native_gui\gui_main.cpp:1442:39: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 1442 |     item["drag_model_index"] = 
+preset.drag_model_index;
+      |                                   
+    ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'float {anonymous}::ComputeAutoDr
+agCoefficient(const BulletProfile&)':
+tools\native_gui\gui_main.cpp:1538:20: 
+error: 'const struct BulletProfile' has 
+no member named 'drag_model'
+ 1538 |     switch (bullet.drag_model) {
+      |                    ^~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::ResetStateDefaults()':
+tools\native_gui\gui_main.cpp:1657:13: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 1657 |     
+g_state.override_drag_coefficient = false;
+      |             
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:1658:20: 
+error: 'struct BulletProfile' has no 
+member named 'drag_model'
+ 1658 |     g_state.bullet.drag_model = 
+DragModel::G1;
+      |                    ^~~~~~~~~~
+tools\native_gui\gui_main.cpp:1707:13: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 1707 |     g_state.drag_model_index = 0;
+      |             ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::ApplyConfig()':
+tools\native_gui\gui_main.cpp:1742:20: 
+error: 'struct BulletProfile' has no 
+member named 'bc'
+ 1742 |     g_state.bullet.bc = 
+g_state.override_drag_coefficient
+      |                    ^~
+tools\native_gui\gui_main.cpp:1742:33: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 1742 |     g_state.bullet.bc = 
+g_state.override_drag_coefficient
+      |                                 
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:1743:50: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 1743 |                             ? Clam
+pValue(g_state.manual_drag_coefficient, 
+0.001f, 1.20f)
+      |                                   
+               ^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::RefreshOutput()':
+tools\native_gui\gui_main.cpp:1941:64: 
+error: 'struct BulletProfile' has no 
+member named 'bc'
+ 1941 |         ss << "Drag Coefficient 
+(G-model): " << g_state.bullet.bc;
+      |                                   
+                             ^~
+tools\native_gui\gui_main.cpp:1942:24: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 1942 |         ss << 
+(g_state.override_drag_coefficient ? " 
+[manual]" : " [auto]") << "\n";
+      |                        
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:1948:64: 
+error: 'struct BulletProfile' has no 
+member named 'bc'
+ 1948 |         ss << "Drag Coefficient 
+(G-model): " << g_state.bullet.bc;
+      |                                   
+                             ^~
+tools\native_gui\gui_main.cpp:1949:24: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 1949 |         ss << 
+(g_state.override_drag_coefficient ? " 
+[manual]" : " [auto]") << "\n";
+      |                        
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::ApplyCartridgePreset(const 
+CartridgePreset&)':
+tools\native_gui\gui_main.cpp:2167:13: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2167 |     
+g_state.override_drag_coefficient = true;
+      |             
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2168:13: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 2168 |     
+g_state.manual_drag_coefficient = 
+normalized.bc;
+      |             
+^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function '{anonymous}::CartridgePreset {an
+onymous}::CaptureCurrentCartridgePreset(co
+nst std::string&)':
+tools\native_gui\gui_main.cpp:2209:25: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2209 |     preset.bc = 
+g_state.override_drag_coefficient
+      |                         
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2210:42: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 2210 |                     ? ClampValue(g
+_state.manual_drag_coefficient, 0.001f, 
+1.20f)
+      |                                   
+       ^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2212:12: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 2212 |     preset.drag_model_index = 
+g_state.drag_model_index;
+      |            ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2212:39: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2212 |     preset.drag_model_index = 
+g_state.drag_model_index;
+      |                                   
+    ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void 
+{anonymous}::LoadProfileLibrary()':
+tools\native_gui\gui_main.cpp:2373:24: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 2373 |                 
+preset.drag_model_index = 
+item.value("drag_model_index", 0);
+      |                        
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2374:28: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 2374 |                 if 
+(preset.drag_model_index < 0 || 
+preset.drag_model_index >= 8) {
+      |                            
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2374:59: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 2374 |                 if 
+(preset.drag_model_index < 0 || 
+preset.drag_model_index >= 8) {
+      |                                   
+                        ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2375:28: 
+error: 'struct 
+{anonymous}::CartridgePreset' has no 
+member named 'drag_model_index'
+ 2375 |                     
+preset.drag_model_index = 0;
+      |                            
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void {anonymous}::SavePreset()':
+tools\native_gui\gui_main.cpp:2501:46: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2501 |     
+j["drag_coefficient_override"] = 
+g_state.override_drag_coefficient;
+      |                                   
+           ^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2502:37: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 2502 |     j["drag_coefficient"] = 
+g_state.manual_drag_coefficient;
+      |                                   
+  ^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2503:30: 
+error: 'struct BulletProfile' has no 
+member named 'bc'
+ 2503 |     j["bc"] = g_state.bullet.bc;
+      |                              ^~
+tools\native_gui\gui_main.cpp:2504:37: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2504 |     j["drag_model_index"] = 
+g_state.drag_model_index;
+      |                                   
+  ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'void {anonymous}::LoadPreset()':
+tools\native_gui\gui_main.cpp:2587:17: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2587 |         
+g_state.override_drag_coefficient = 
+j.value("drag_coefficient_override", 
+false);
+      |                 
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2588:17: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 2588 |         
+g_state.manual_drag_coefficient = 
+j.value("drag_coefficient", 0.0f);
+      |                 
+^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2592:28: 
+error: 'struct BulletProfile' has no 
+member named 'bc'
+ 2592 |             g_state.bullet.bc = 
+j["bc"];
+      |                            ^~
+tools\native_gui\gui_main.cpp:2595:25: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2595 |                 
+g_state.override_drag_coefficient = true;
+      |                         
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2600:17: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2600 |         g_state.drag_model_index 
+= j.value("drag_model_index", 0);
+      |                 ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2601:21: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2601 |         if 
+(g_state.drag_model_index < 0 || 
+g_state.drag_model_index >= 8) {
+      |                     
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2601:53: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2601 |         if 
+(g_state.drag_model_index < 0 || 
+g_state.drag_model_index >= 8) {
+      |                                   
+                  ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2602:21: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'drag_model_index'
+ 2602 |             
+g_state.drag_model_index = 0;
+      |                     
+^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2750:33: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 
+'override_drag_coefficient'
+ 2750 |         if (!has_bc && 
+!g_state.override_drag_coefficient) {
+      |                                 
+^~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:2751:21: 
+error: 'struct {anonymous}::GuiState' has 
+no member named 'manual_drag_coefficient'
+ 2751 |             
+g_state.manual_drag_coefficient = ComputeA
+utoDragCoefficient(g_state.bullet);
+      |                     
+^~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: In 
+function 'int WinMain(HINSTANCE, 
+HINSTANCE, LPSTR, int)':
+tools\native_gui\gui_main.cpp:4194:47: 
+error: 'struct FiringSolution' has no 
+member named 'look_angle_deg'; did you 
+mean 'cant_angle_deg'?
+ 4194 |         const float 
+look_angle_rad = side_sol.look_angle_deg 
+* (PI / 180.0f);
+      |                                   
+            ^~~~~~~~~~~~~~
+      |                                   
+            cant_angle_deg
+tools\native_gui\gui_main.cpp:4208:52: 
+error: 'struct FiringSolution' has no 
+member named 'launch_angle_rad'
+ 4208 |                 const float 
+total_pitch = side_sol.launch_angle_rad + 
+look_angle_rad;
+      |                                   
+                 ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4244:48: 
+error: 'struct FiringSolution' has no 
+member named 'launch_angle_rad'
+ 4244 |             const float 
+total_pitch = side_sol.launch_angle_rad + 
+look_angle_rad;
+      |                                   
+             ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4414:45: 
+error: 'struct FiringSolution' has no 
+member named 'look_angle_deg'; did you 
+mean 'cant_angle_deg'?
+ 4414 |             const float look_rad 
+= side_sol.look_angle_deg * (PI / 180.0f);
+      |                                   
+          ^~~~~~~~~~~~~~
+      |                                   
+          cant_angle_deg
+tools\native_gui\gui_main.cpp:4415:47: 
+error: 'struct FiringSolution' has no 
+member named 'launch_angle_rad'
+ 4415 |             const float 
+launch_rad = side_sol.launch_angle_rad;
+      |                                   
+            ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4478:41: 
+error: 'struct FiringSolution' has no 
+member named 'look_angle_deg'; did you 
+mean 'cant_angle_deg'?
+ 4478 |         const float look_rad = 
+side_sol.look_angle_deg * (3.14159265f / 
+180.0f);
+      |                                   
+      ^~~~~~~~~~~~~~
+      |                                   
+      cant_angle_deg
+tools\native_gui\gui_main.cpp:4479:43: 
+error: 'struct FiringSolution' has no 
+member named 'launch_angle_rad'
+ 4479 |         const float launch_rad = 
+side_sol.launch_angle_rad;
+      |                                   
+        ^~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4492:14: 
+error: conflicting declaration 'auto 
+map_x'
+ 4492 |         auto map_x = [&](float 
+x_w) {
+      |              ^~~~~
+tools\native_gui\gui_main.cpp:4323:14: 
+note: previous declaration as 
+'WinMain(HINSTANCE, HINSTANCE, LPSTR, 
+int)::<lambda(float)> map_x'
+ 4323 |         auto map_x = [&](float 
+x_m) -> float { return plot_left + (x_m / 
+side_range_scale_m) * plot_width; };
+      |              ^~~~~
+tools\native_gui\gui_main.cpp:4495:14: 
+error: conflicting declaration 'auto 
+map_y'
+ 4495 |         auto map_y = [&](float 
+y_w) {
+      |              ^~~~~
+tools\native_gui\gui_main.cpp:4324:14: 
+note: previous declaration as 
+'WinMain(HINSTANCE, HINSTANCE, LPSTR, 
+int)::<lambda(float)> map_y'
+ 4324 |         auto map_y = [&](float 
+y_m) -> float { const float t = (y_hi - 
+y_m) / y_span_m; return plot_top + t * 
+plot_height; };
+      |              ^~~~~
+tools\native_gui\gui_main.cpp:4501:19: 
+error: redeclaration of 'const int 
+sample_count'
+ 4501 |         const int sample_count = 
+100;
+      |                   ^~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4400:19: 
+note: 'const int sample_count' previously 
+declared here
+ 4400 |         const int sample_count = 
+64;
+      |                   ^~~~~~~~~~~~
+tools\native_gui\gui_main.cpp:4502:16: 
+error: redeclaration of 'ImVec2 
+arc_points [65]'
+ 4502 |         ImVec2 
+arc_points[sample_count + 1];
+      |                ^~~~~~~~~~
+tools\native_gui\gui_main.cpp:4401:16: 
+note: 'ImVec2 arc_points [65]' previously 
+declared here
+ 4401 |         ImVec2 
+arc_points[sample_count + 1];
+      |                ^~~~~~~~~~
+tools\native_gui\gui_main.cpp:4196:21: 
+warning: unused variable 
+'target_height_from_incline_m' 
+[-Wunused-variable]
+ 4196 |         const float 
+target_height_from_incline_m = 
+target_range_m * std::sin(look_angle_rad);
+      |                     
+^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tools\native_gui\gui_main.cpp: At global 
+scope:
+tools\native_gui\gui_main.cpp:927:13: 
+warning: '{anonymous}::kDragModelLabels' 
+defined but not used [-Wunused-variable]
+  927 | const char* kDragModelLabels[8] = 
+{"G1", "G2", "G3", "G4", "G5", "G6", 
+"G7", "G8"};
+      |             ^~~~~~~~~~~~~~~~
+*** [.pio\build\native_gui\tools\native_gu
+i\gui_main.o] Error 1
+========================== [FAILED] Took 
+2.62 seconds ==========================
+
+Environment       Status    Duration
+----------------  --------  ------------
+esp32sim          IGNORED
+native            IGNORED
+native_gui        FAILED    00:00:02.619
+native_gui_linux  IGNORED
+==================== 1 failed, 0 
+succeeded in 00:00:02.619 
+====================

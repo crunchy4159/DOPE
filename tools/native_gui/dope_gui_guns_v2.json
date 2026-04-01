@@ -1,0 +1,817 @@
+[
+  {
+    "_comments": {
+      "purpose": "Gun presets consumed by the GUI; extra fields are ignored by loader.",
+      "fields": {
+        "name": "Display label for the preset.",
+        "caliber_inches": "Bore diameter in inches; keep to 3 decimals (UI uses %.3f).",
+        "barrel_length_in": "Overall barrel length in inches; keep to 1 decimal (UI uses %.1f).",
+        "muzzle_diameter_in": "Outside diameter at muzzle in inches; keep to 3 decimals (UI uses %.3f).",
+        "barrel_material": "Enum key: cmv | 416ss | carbon (see kBarrelMaterialPresets).",
+        "twist_rate_inches": "Twist in inches/turn; keep to 2 decimals (UI uses %.2f).",
+        "zero_range_m": "Zero distance in meters; keep to 2 decimals (UI uses %.2f).",
+        "sight_height_mm": "Sight height over bore in mm; keep to 2 decimals.",
+        "free_floated": "Boolean; true if barrel is free-floated.",
+        "suppressor_attached": "Boolean toggle.",
+        "barrel_tuner_attached": "Boolean toggle.",
+        "cold_bore_velocity_bias": "First-shot MV jump in fps; up to 2 decimals.",
+        "angular_sigma_moa": "Rifle's physical cone in MOA; default 0.4 unless specified.",
+        "chamber_time": "Time in seconds for chamber heating model (float). Leave null if unknown.",
+        "barrel_profile": "Object with 'wall_thickness_mm' (float) and 'taper' (float). Leave values null.",
+        "ammo_temp": "Default ammunition temperature in degrees Celsius (float). Leave null."
+      },
+      "changelog": [
+        "Cleaned float32 noise from caliber_inches on all original entries (e.g. 0.30799999833 -> 0.308).",
+        "ADDED M24 SWS (.308 Win, 24 in, 1:11.2 5R stainless).",
+        "ADDED Mk12 Mod1 SPR (5.56 NATO, 18 in, 1:7.7 stainless).",
+        "ADDED M4 Carbine (5.56 NATO, 14.5 in, 1:7 CMV).",
+        "ADDED AI AXMC (.338 Lapua, 27 in, 1:10 416ss).",
+        "ADDED Barrett M82A1 (.50 BMG, 29 in, 1:15 CMV).",
+        "ADDED 1911 Government (.45 ACP, 5 in, 1:16 CMV).",
+        "ADDED Remington 700 BDL (.30-06 Springfield, 22 in, 1:10 CMV). Default gun preset for 30_06_sprg cartridge key."
+      ]
+    },
+    "name": "PSA PA-10 (308 Win, 18\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "308_win"
+    ],
+    "barrel_length_in": 18.0,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.7,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "M24 SWS (.308 Win, 24\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "308_win"
+    ],
+    "muzzle_diameter_in": 0.9,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 11.2,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 7.5,
+    "angular_sigma_moa": 0.25,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Remington 700 BDL (.30-06, 22\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "30_06_sprg"
+    ],
+    "_source": "Remington 700 BDL standard configuration in .30-06 Springfield. 22-in barrel is the factory spec for .30-06 BDL (24-in available on some variants). 1:10 RH twist per Remington spec. Chrome-moly barrel; not free-floated in stock (standard BDL stock contact at fore-end tip). Standard scope rings place centerline ~38.1 mm above bore. barrel_finish_sigma_mv_fps 8.5 consistent with factory-grade CMV contour.",
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.625,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": ".223 20in Free-Float 416R Nitride 1:7",
+    "caliber_inches": 0.224,
+    "cartridge_keys": [
+      "223_rem",
+      "5.56_nato"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 7.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": ".223 16in Nitride",
+    "caliber_inches": 0.224,
+    "cartridge_keys": [
+      "223_rem",
+      "5.56_nato"
+    ],
+    "barrel_length_in": 16.0,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Mk12 Mod1 SPR (5.56 NATO, 18\")",
+    "caliber_inches": 0.224,
+    "cartridge_keys": [
+      "5.56_nato",
+      "223_rem"
+    ],
+    "barrel_length_in": 18.0,
+    "muzzle_diameter_in": 0.92,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 7.7,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 7.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "M4 Carbine (5.56 NATO, 14.5\")",
+    "caliber_inches": 0.224,
+    "cartridge_keys": [
+      "5.56_nato",
+      "223_rem"
+    ],
+    "barrel_length_in": 14.5,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 7.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 10.0,
+    "angular_sigma_moa": 1.0,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (6.5 Creedmoor, 22\")",
+    "caliber_inches": 0.264,
+    "cartridge_keys": [
+      "6.5_creedmoor"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 7.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (308 Win, 22\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "308_win"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (243 Win, 22\")",
+    "caliber_inches": 0.243,
+    "cartridge_keys": [
+      "243_win"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (7mm PRC, 22\")",
+    "caliber_inches": 0.284,
+    "cartridge_keys": [
+      "7mm_prc"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (300 Win Mag, 22\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "300_win_mag"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (6.5 Grendel, 22\")",
+    "caliber_inches": 0.264,
+    "cartridge_keys": [
+      "6.5_grendel"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.45,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Predator (30-06 Springfield, 22\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "30_06_sprg"
+    ],
+    "barrel_length_in": 22.0,
+    "muzzle_diameter_in": 0.755,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null,
+    "angular_sigma_moa": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (6.5 Creedmoor, 20\")",
+    "caliber_inches": 0.264,
+    "cartridge_keys": [
+      "6.5_creedmoor"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null,
+    "angular_sigma_moa": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (308 Win, 20\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "308_win"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (243 Win, 20\")",
+    "caliber_inches": 0.243,
+    "cartridge_keys": [
+      "243_win"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 9.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (7mm PRC, 20\")",
+    "caliber_inches": 0.284,
+    "cartridge_keys": [
+      "7mm_prc"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (300 Win Mag, 20\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "300_win_mag"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger American Rifle GenII (6.5 Grendel, 20\")",
+    "caliber_inches": 0.264,
+    "cartridge_keys": [
+      "6.5_grendel"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "30_06_sprg"
+    ],
+    "barrel_length_in": 20.0,
+    "muzzle_diameter_in": 0.66,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.35,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "6.5 Grendel 18in",
+    "cartridge_keys": [
+      "6.5_grendel"
+    ],
+    "barrel_length_in": 18.0,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 8.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": ".300 WM Bergara B-14 HMR (26\")",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "300_win_mag"
+    ],
+    "barrel_length_in": 26.0,
+    "muzzle_diameter_in": 0.846,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.3,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Barret MRAD (.338 Lapua, 26\")",
+    "caliber_inches": 0.338,
+    "cartridge_keys": [
+      "338_lapua_mag"
+    ],
+    "barrel_length_in": 26.0,
+    "muzzle_diameter_in": 0.92,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 9.45,
+    "sight_height_mm": 44.45,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 7.5,
+    "angular_sigma_moa": 0.25,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Suppressed .300 BLK 8.5in PSA JAKL",
+    "caliber_inches": 0.308,
+    "cartridge_keys": [
+      "300_blk"
+    ],
+    "barrel_length_in": 8.5,
+    "muzzle_diameter_in": 0.75,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 7.0,
+    "sight_height_mm": 38.1,
+    "free_floated": true,
+    "suppressor_attached": true,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.7,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "AK47 (16.3\")",
+    "caliber_inches": 0.311,
+    "cartridge_keys": [
+      "7.62x39"
+    ],
+    "barrel_length_in": 16.3,
+    "muzzle_diameter_in": 0.58,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 9.5,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 10.2,
+    "angular_sigma_moa": 1.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Barrett M82A1 (.50 BMG, 29\")",
+    "caliber_inches": 0.51,
+    "cartridge_keys": [
+      "50_bmg"
+    ],
+    "barrel_length_in": 29.0,
+    "muzzle_diameter_in": 1.15,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 15.0,
+    "sight_height_mm": 50.8,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 12.0,
+    "angular_sigma_moa": 1.0,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Marlin Model 60 (19\")",
+    "caliber_inches": 0.223,
+    "cartridge_keys": [
+      "22_lr"
+    ],
+    "barrel_length_in": 19.0,
+    "muzzle_diameter_in": 0.67,
+    "barrel_material": "416ss",
+    "twist_rate_inches": 16.0,
+    "sight_height_mm": 30.48,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.0,
+    "angular_sigma_moa": 1.0,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "Ruger 10/22 (18.5\")",
+    "caliber_inches": 0.223,
+    "cartridge_keys": [
+      "22_lr"
+    ],
+    "barrel_length_in": 18.5,
+    "muzzle_diameter_in": 0.7,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 16.0,
+    "sight_height_mm": 30.48,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.0,
+    "angular_sigma_moa": 1.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "AR-15 .22lr Upper (7\")",
+    "caliber_inches": 0.223,
+    "cartridge_keys": [
+      "22_lr"
+    ],
+    "barrel_length_in": 7.0,
+    "muzzle_diameter_in": 0.55,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 16.0,
+    "sight_height_mm": 30.48,
+    "free_floated": true,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.0,
+    "angular_sigma_moa": 1.5,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "AR-7 (16.125\")",
+    "caliber_inches": 0.223,
+    "cartridge_keys": [
+      "22_lr"
+    ],
+    "barrel_length_in": 16.1,
+    "muzzle_diameter_in": 0.475,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 16.0,
+    "sight_height_mm": 30.48,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.0,
+    "angular_sigma_moa": 2.4,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "AR-9 Carbine (8\")",
+    "caliber_inches": 0.355,
+    "cartridge_keys": [
+      "9x19"
+    ],
+    "barrel_length_in": 8.0,
+    "muzzle_diameter_in": 0.7,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 38.1,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.5,
+    "angular_sigma_moa": 0.8,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "FGC-9 (9mm, 4.49\")",
+    "caliber_inches": 0.355,
+    "cartridge_keys": [
+      "9x19"
+    ],
+    "barrel_length_in": 4.5,
+    "muzzle_diameter_in": 0.63,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 10.0,
+    "sight_height_mm": 22.86,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 9.0,
+    "angular_sigma_moa": 1.0,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  },
+  {
+    "name": "HK USC (.45 ACP, 16\")",
+    "caliber_inches": 0.451,
+    "cartridge_keys": [
+      "45_acp"
+    ],
+    "barrel_length_in": 16.0,
+    "muzzle_diameter_in": 0.63,
+    "barrel_material": "cmv",
+    "twist_rate_inches": 16.0,
+    "sight_height_mm": 25.4,
+    "free_floated": false,
+    "suppressor_attached": false,
+    "barrel_tuner_attached": false,
+    "cold_bore_velocity_bias": 8.0,
+    "angular_sigma_moa": 0.7,
+    "chamber_time": null,
+    "barrel_profile": {
+      "wall_thickness_mm": null,
+      "taper": null
+    },
+    "ammo_temp": null
+  }
+]

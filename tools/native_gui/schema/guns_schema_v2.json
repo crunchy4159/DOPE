@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "dope_gui_guns_v2",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string"},
+      "caliber_inches": {"type": "number", "multipleOf": 0.001, "description": "Bore diameter in inches (3 decimal places)"},
+      "cartridge_keys": {"type": "array"},
+      "barrel_length_in": {"type": "number", "multipleOf": 0.1, "description": "Barrel length in inches (1 decimal place)"},
+      "muzzle_diameter_in": {"type": "number", "multipleOf": 0.001, "description": "Muzzle OD in inches (3 decimal places)"},
+      "barrel_material": {"type": ["string", "null"]},
+      "twist_rate_inches": {"type": "number", "multipleOf": 0.01, "description": "Twist in inches/turn (2 decimal places)"},
+      "sight_height_mm": {"type": "number", "multipleOf": 0.01, "description": "Sight height in mm (2 decimal places)"},
+      "free_floated": {"type": ["boolean", "null"]},
+      "suppressor_attached": {"type": ["boolean", "null"]},
+      "barrel_tuner_attached": {"type": ["boolean", "null"]},
+      "cold_bore_velocity_bias": {"type": ["number", "null"], "multipleOf": 0.01, "description": "First-shot MV jump in fps (2 decimal places)"},
+      "angular_sigma_moa": {"type": ["number", "null"], "multipleOf": 0.01, "description": "Gun physical dispersion in MOA (2 decimal places)"},
+      "chamber_time": {"type": ["number", "null"], "multipleOf": 0.001, "description": "Time in seconds for chamber heating model (milliseconds precision)"},
+      "barrel_profile": {
+        "type": ["object", "null"],
+        "properties": {
+          "wall_thickness_mm": {"type": ["number", "null"], "multipleOf": 0.01, "description": "Wall thickness in mm (2 decimal places)"},
+          "taper": {"type": ["number", "null"], "multipleOf": 0.001, "description": "Taper ratio (3 decimal places)"}
+        }
+      },
+      "ammo_temp": {"type": ["number", "null"], "multipleOf": 0.01, "description": "Default ammunition temperature in °C (2 decimal places)"}
+    }
+  }
+}

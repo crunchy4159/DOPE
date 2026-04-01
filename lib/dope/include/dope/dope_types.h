@@ -30,6 +30,7 @@ namespace DOPE_Fault {
     constexpr uint32_t ZERO_UNSOLVABLE = (1u << 4);
     constexpr uint32_t AHRS_UNSTABLE   = (1u << 5);
     constexpr uint32_t SENSOR_INVALID  = (1u << 6);
+    constexpr uint32_t INVALID_AMMO    = (1u << 7); // invalid / inconsistent ammo dataset
 } // namespace DOPE_Fault
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ namespace DOPE_Diag {
     constexpr uint32_t DEFAULT_WIND       = (1u << 5);
     constexpr uint32_t MAG_SUPPRESSED     = (1u << 6);
     constexpr uint32_t LRF_STALE          = (1u << 7);
+    constexpr uint32_t LEGACY_IGNORED      = (1u << 8);
 } // namespace DOPE_Diag
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,14 @@ enum class DragModel : uint8_t {
     G6 = 6,
     G7 = 7,
     G8 = 8
+};
+
+// Baseline convention for manufacturer/environment data
+enum class BaselineConvention : uint8_t {
+    UNKNOWN = 0,
+    METRO,   // sea-level, 15°C, 78% RH (common "metro" convention)
+    ICAO,    // 0% RH, 15°C, 101325 Pa (ICAO standard)
+    CUSTOM   // explicit baseline fields used
 };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +124,19 @@ struct SensorFrame {
     // Zoom Encoder — SRS §7.5
     float encoder_focal_length_mm;    // mm
     bool  encoder_valid;
+        // --- Shot event / timing integration (Section 5) ---
+        // If true, the engine will record a shot at `shot_timestamp_us` and
+        // apply the optional ambient temperature for chamber/barrel soak logic.
+        bool  shot_fired;
+        uint64_t shot_timestamp_us;
+        float shot_ambient_temp_c;
+
+        // Optional direct temperature sensor inputs (barrel / chamber).
+        // If *_valid is true the engine will use the provided temperature.
+        bool  barrel_temp_valid;
+        float barrel_temperature_c;
+        bool  chamber_temp_valid;
+        float chamber_temperature_c;
 };
 
 // ---------------------------------------------------------------------------
@@ -141,31 +164,210 @@ struct DOPE_DefaultOverrides {
 };
 
 // ---------------------------------------------------------------------------
-// Bullet Profile — SRS §8
+// Gun Profile — hardware properties of the rifle/barrel for uncertainty
+// and thermal modeling. Ballistic parameters (BC, MV, mass, etc.) live in
+// AmmoDatasetV2. This struct covers only the physical gun characteristics.
 // ---------------------------------------------------------------------------
-struct BulletProfile {
-    float     bc;                     // Ballistic coefficient
-    DragModel drag_model;             // G1–G8
-    float     muzzle_velocity_ms;     // m/s at reference_barrel_length_in
-    float     barrel_length_in;       // actual barrel length, inches
-    float     reference_barrel_length_in; // SAAMI reference barrel (rifle=24", 9mm=4"); 0 → default 24"
-    float     mv_adjustment_factor;   // fps per inch deviation from reference barrel
-    float     muzzle_diameter_in;     // Muzzle outside diameter (inches) for stiffness classification
-    BarrelMaterial barrel_material;   // Material type (stiffness/thermal props)
-    float     cold_bore_velocity_bias; // First-shot MV jump in fps
-    float     angular_sigma_moa; // Rifle's physical cone in MOA
-    float     measured_cep50_moa;     // Measured CEP50 (MOA) from manufacturer/test barrel; 0 when absent
-    float     manufacturer_spec_moa;  // Manufacturer accuracy guarantee (MOA); 0 when absent
-    float     category_radial_moa;    // Category-based radial dispersion default (MOA); 0 when absent
-    float     category_vertical_moa;  // Category-based vertical dispersion default (MOA); 0 when absent
-    float     stiffness_moa;          // Derived stiffness modifier (MOA radial) from wall thickness; computed by caller
-    float     mass_grains;            // grains (converted internally)
-    float     length_mm;              // mm
-    float     caliber_inches;         // inches
-    float     twist_rate_inches;      // signed: positive = RH, negative = LH
-    bool      free_floated;           // True when barrel is free-floated (no stock contact)
-    bool      suppressor_attached;    // True when a suppressor is attached
-    bool      barrel_tuner_attached;  // True when a barrel tuner is installed
+struct GunProfile {
+    float     barrel_length_in;           // actual barrel length, inches
+    float     reference_barrel_length_in; // SAAMI reference barrel; 0 → default 24"
+    float     muzzle_diameter_in;         // muzzle OD (inches) for stiffness classification
+    BarrelMaterial barrel_material;       // material type (stiffness/thermal props)
+    float     cold_bore_velocity_bias;    // first-shot MV jump in fps (uncertainty floor)
+    float     angular_sigma_moa;          // rifle's physical cone in MOA
+    float     measured_cep50_moa;         // measured CEP50 (MOA) from test barrel; 0 = absent
+    float     manufacturer_spec_moa;      // manufacturer accuracy guarantee (MOA); 0 = absent
+    float     category_radial_moa;        // category-based radial dispersion default (MOA)
+    float     category_vertical_moa;      // category-based vertical dispersion default (MOA)
+    float     stiffness_moa;              // derived stiffness modifier (MOA radial); computed by caller
+    bool      free_floated;               // barrel is free-floated (no stock contact)
+    bool      suppressor_attached;        // suppressor is attached
+    bool      barrel_tuner_attached;      // barrel tuner is installed
+    // Chamber soak time (seconds) used by thermal model for chamber/throat heating
+    // 0.0 means unknown / not provided.
+    float     chamber_time_s;
+
+    // Optional per-barrel geometric profile used by thermal/mass/stiffness
+    // calculations. Fields set to 0 indicate that the value is not provided
+    // and callers should fall back to heuristic/default values.
+    struct BarrelProfile {
+        float wall_thickness_mm; // approximate wall thickness at muzzle (mm)
+        float taper;             // taper ratio (unitless). 0 = unspecified.
+    } barrel_profile;
+    // Thermal calibration scalars
+    float     heat_efficiency_scalar;     // energy absorbed per shot [0.5–1.5]; 0 = disabled
+    float     mv_thermal_slope;           // fps per °C above ambient; 0 = auto from physics
+    float     thermal_drift_x_moa_per_K; // POI horizontal walk per °C above ambient
+    float     thermal_drift_y_moa_per_K; // POI vertical walk per °C above ambient
+};
+
+// Deprecated alias — remove after all callers migrate to GunProfile.
+// Will be removed in a future cleanup pass.
+using BulletProfile = GunProfile;
+
+// ---------------------------------------------------------------------------
+// V2 Table-First Ammo Dataset
+// ---------------------------------------------------------------------------
+#define DOPE_MAX_TABLE_POINTS 128
+#define DOPE_MAX_TRAJECTORY_FAMILIES 8
+#define DOPE_MAX_CALIBRATION_POINTS 32
+#define DOPE_MAX_BARREL_MV_POINTS 16
+
+struct DOPE_ProfilePoint {
+    float range_m;
+    float value;
+};
+
+struct DOPE_TrajectoryPoint {
+    float range_m;
+    float drop_m;
+};
+
+struct DOPE_BarrelMVPoint {
+    float barrel_length_in;
+    float muzzle_velocity_ms;
+};
+
+struct DOPE_TrajectoryFamily {
+    float zero_range_m;
+    DOPE_TrajectoryPoint points[DOPE_MAX_TABLE_POINTS];
+    int num_points;
+    // Optional per-family cached trajectory table (preferred over dataset-level)
+    bool cached_table_present;
+    float cached_table_step_m; // meter step between cached points (e.g., 1.0f)
+    int cached_table_num_points;
+    DOPE_TrajectoryPoint cached_table[DOPE_MAX_TABLE_POINTS];
+    uint64_t cached_checksum; // optional checksum of source used to generate cache
+};
+
+struct AmmoDatasetV2 {
+    float source_confidence;          // 0..1 data confidence
+
+    // Baseline metadata for table correction.
+    float baseline_temperature_c;
+    float baseline_pressure_pa;
+    float baseline_humidity;
+    float baseline_altitude_m;
+    BaselineConvention baseline_convention;
+    float baseline_barrel_length_in;
+    float baseline_wind_speed_ms;
+    DOPE_BarrelMVPoint barrel_mv_by_length_in[DOPE_MAX_BARREL_MV_POINTS];
+    int num_barrel_mv_points;
+
+    // Primary manufacturer channels.
+    DOPE_TrajectoryFamily trajectories[DOPE_MAX_TRAJECTORY_FAMILIES];
+    int num_trajectories;
+    DOPE_ProfilePoint velocity_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_velocity_points;
+    DOPE_ProfilePoint wind_drift_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_wind_drift_points;
+    DOPE_ProfilePoint energy_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_energy_points;
+    DOPE_ProfilePoint cep50_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_cep50_points;
+    DOPE_ProfilePoint tof_by_range[DOPE_MAX_TABLE_POINTS]; // time-of-flight (seconds) per range
+    int num_tof_points;
+    DOPE_ProfilePoint d_drop_dbc_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_d_drop_dbc_points;
+
+    // Optional detailed 2D uncertainty per-range (sigma_x, sigma_y, rho)
+    struct UncertaintySigmaPoint {
+        float range_m;
+        float sigma_elev_moa; // 1-sigma elevation (MOA)
+        float sigma_wind_moa; // 1-sigma windage (MOA)
+        float rho;            // correlation coef ([-1,1]) elevation↔windage
+    };
+    UncertaintySigmaPoint uncertainty_sigma_by_range[DOPE_MAX_TABLE_POINTS];
+    int num_uncertainty_points;
+
+    // Optional cached trajectory summary generated at import time. This
+    // supports precomputing dense arcs once and using cheap lookups at
+    // runtime. Implementations MAY store a separate full-resolution cache
+    // externally; this field is a light-weight in-memory fallback for GUI
+    // and verification use.
+    bool cached_full_table_present;
+    float cached_full_table_step_m; // meter step between cached points (e.g., 1.0f)
+    int cached_full_table_num_points;
+    DOPE_TrajectoryPoint cached_full_trajectory[DOPE_MAX_TABLE_POINTS];
+    uint64_t cached_source_checksum; // optional checksum of source used to generate cache
+
+    // Sparse fallback params for solver paths.
+    float bc;
+    DragModel drag_model;
+    // Bitmask of supported drag models. Bit 0 -> G1, Bit 1 -> G2, ... Bit 7 -> G8.
+    // If zero, callers should treat this as "unspecified" and migrate from
+    // the single `drag_model` field (backward compatibility).
+    uint8_t supported_drag_models_mask;
+    float muzzle_velocity_ms;
+    float mass_grains;
+    float length_mm;
+    float caliber_inches;
+    float twist_rate_inches;
+    float mv_adjustment_fps_per_in;
+
+    // Thermal calibration scalars (mirrors BulletProfile; dataset-level override)
+    float heat_efficiency_scalar;    // 0 = disabled, default 1.0
+    float mv_thermal_slope;          // FPS per °C above ambient; 0 = auto
+    float thermal_drift_x_moa_per_K; // POI horizontal walk per °C above ambient
+    float thermal_drift_y_moa_per_K; // POI vertical walk per °C above ambient
+};
+
+struct BallisticContext {
+    bool use_runtime_atmosphere;
+    float temperature_c;
+    float pressure_pa;
+    float humidity;
+    float altitude_m;
+
+    bool use_runtime_wind;
+    float wind_speed_ms;
+    float wind_heading_deg;
+
+    bool use_range_override;
+    float range_m;
+    bool use_target_elevation_override;
+    float target_elevation_m;
+};
+
+struct RifleAmmoCalibrationProfile {
+    float muzzle_velocity_bias_ms;
+    float muzzle_velocity_scale;
+    float drop_bias_moa;
+    float wind_bias_moa;
+    DOPE_ProfilePoint drop_residual_by_range[DOPE_MAX_CALIBRATION_POINTS];
+    int num_drop_residual_points;
+    DOPE_ProfilePoint wind_residual_by_range[DOPE_MAX_CALIBRATION_POINTS];
+    int num_wind_residual_points;
+    float uncertainty_scale;
+    uint64_t updated_at_unix_s;
+    uint32_t revision;
+
+    float bc_scale;
+    float calibration_confidence;
+    uint8_t calibration_data_mask;
+    float calibrated_barrel_length_in;
+    float calibrated_temperature_c;
+    float calibrated_pressure_pa;
+    float calibrated_humidity;
+};
+
+struct ShotObservation {
+    uint64_t timestamp_us;
+    float range_m;
+    float impact_vertical_moa;
+    float impact_horizontal_moa;
+    float wind_speed_ms;
+    float wind_heading_deg;
+    float temperature_c;
+    float pressure_pa;
+    float humidity;
+    bool valid;
+};
+
+struct ModuleCapabilities {
+    bool enable_solver_fallback;   // legacy/non-v2: allow RK4 runtime fallback when table data is insufficient
+    bool enable_shot_learning;
+    bool enable_uncertainty_refine;
 };
 
 // ---------------------------------------------------------------------------
@@ -228,6 +430,7 @@ struct FiringSolution {
     float cant_windage_moa;           // Windage added by cant correction
 
     float cant_angle_deg;            // Current cant / roll angle
+    float look_angle_deg;            // Current look / incline angle
     float heading_deg_true;          // True heading from AHRS + mag
 
     float air_density_kgm3;          // Computed air density
@@ -243,10 +446,12 @@ struct FiringSolution {
     // Total var_e = sum of [i][0], total var_w = sum of [i][1].
     // Index: 0=MV, 1=Range, 2=WindSpeed, 3=WindHeading,
     //        4=Temperature, 5=Pressure, 6=Humidity, 7=SightHeight, 8=Cant,
-    //        9=Latitude, 10=Twist, 11=ZeroRange, 12=MVAdjustment
-    static const int kNumUncertaintyInputs = 13;
-    float uc_var_elev[13];            // per-input elevation variance (MOA²)
-    float uc_var_wind[13];            // per-input windage variance (MOA²)
+    //        9=Latitude, 10=Twist, 11=ZeroRange, 12=MVAdjustment,
+    //        13=GunAng (mechanical angular dispersion), 14=AmmoAng (intrinsic ammo dispersion)
+    static const int kNumUncertaintyInputs = 15;
+    float uc_var_elev[kNumUncertaintyInputs];            // per-input elevation variance (MOA²)
+    float uc_var_wind[kNumUncertaintyInputs];            // per-input windage variance (MOA²)
+    float launch_angle_rad;           // Bore pitch at launch
 };
 
 // ---------------------------------------------------------------------------
@@ -310,6 +515,11 @@ struct DOPE_CEPPoint {
     float cep50_moa; // CEP50 radius (MOA)
 };
 
+// Simple table reference for CEP50 breakpoints (range -> CEP50 MOA)
+struct DOPE_CEPTable {
+    const DOPE_CEPPoint* points;
+    int                  count;
+};
 
 // ---------------------------------------------------------------------------
 // Uncertainty / Error Propagation Config — SRS §14
@@ -357,6 +567,13 @@ struct UncertaintyConfig {
     float         pressure_calibration_temp_c;
 
     // Optional cartridge-specific dispersion model (CEP50 in MOA) to scale
+    // propagated uncertainty to match measured ammo dispersion.
+    // Scalar: interpolated CEP50 at current slant range (MOA).
+    float         ammo_cep50_moa;
+    // Optional per-cartridge CEP50 table (range_m -> cep50_moa)
+    DOPE_CEPTable cartridge_cep_table;
+    
+    // End of UncertaintyConfig
 };
 
 // ---------------------------------------------------------------------------

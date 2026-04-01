@@ -1,3 +1,6 @@
+# VSCode and agent handoff (local/editor only)
+.vscode/
+.agent_handoff/
 # PlatformIO build artifacts
 .pio/
 
@@ -24,3 +27,16 @@ sdkconfig.esp32sim
 diff.txt
 test_out.txt
 test_out_utf8.txt
+# Build logs and error files
+build_error_full.txt
+build_error_side_view.txt
+build_error_utf8.txt
+build_log_fixed.txt
+build_log_fixed_utf8.txt
+build_log_v2.txt
+build_log_v2_utf8.txt
+build_output.txt
+build_raw.txt
+
+# Agent handoff/merge notes (local only)
+.agent_handoff/

@@ -1,10 +1,10 @@
 # Software Requirements Specification
 
-# DOPE — Digital Optical Performance Engine
+# DOPE — Digital Open-Source Precise Extrapolator
 
 ## Version 2.0 — DRAFT
 
-**Date:** 2026-03-2  
+**Date:** 2026-03-25  
 **Language Target:** C++17  
 **Primary Platform:** ESP32-P4 @ 400MHz
 
@@ -14,7 +14,7 @@
 
 ## 1.1 Purpose
 
-This document defines the requirements for **DOPE** (Digital Optical Performance Engine), a C++ library targeting the ESP32-P4 microcontroller.
+This document defines the requirements for **DOPE** (Digital Open-Source Precise Extrapolator), a C++ library targeting the ESP32-P4 microcontroller.
 
 DOPE:
 
@@ -72,6 +72,13 @@ DOPE computes one firing solution at a time.
 
 For this repository, the production DOPE engine scope is `lib/dope/`; desktop GUI harness code (`tools/native_gui/gui_main.cpp`, `tools/native_gui/imgui_*`), test suites (`test/`), helper scripts, and third-party dependencies are verification/integration tooling and are not normative engine logic.
 
+Segmentation (DOPE vs DOPE-ASS):
+
+- DOPE (core engine) is a pure numeric engine that accepts sanitized, normalized numeric inputs (for example: orientation quaternions, scalar environment values, ranges, and calibration residuals) and deterministic metadata (dataset provenance). It performs ballistic math, table lookups, uncertainty propagation, and returns `FiringSolution` payloads. DOPE MUST NOT include hardware drivers, raw-sensor ingestion, protocol parsing (e.g., NMEA, UART framing), GNSS stack logic, or sensor-fusion algorithms. The engine's public API expects already-sanitized values supplied by the application.
+- DOPE-ASS (application / host) is responsible for all sensor drivers, raw-sensor ingestion, protocol handling, calibration, and sensor-processing tasks (AHRS, magnetometer calibration/dip inversion, GNSS resolution). DOPE-ASS converts raw sensors and driver outputs into the normalized `SensorFrame` (see Section 7) and passes only those sanitized values into DOPE. DOPE-ASS also handles dataset import/validation, offline precompute jobs, persistence, and UI.
+
+This strict separation ensures the engine remains lightweight, deterministic, and portable across targets; application-specific concerns (drivers, camera processing, data import, and GUI sensor presets) remain in DOPE-ASS where they can be platform-tailored.
+
 ---
 
 # 2. System Architecture
@@ -85,19 +92,22 @@ For this repository, the production DOPE engine scope is `lib/dope/`; desktop GU
 │  - Rendering                  │
 ├───────────────────────────────┤
 │   DOPE (Ballistic Engine)     │
-│  - AHRS                       │
 │  - Atmosphere                 │
 │  - Drag integration           │
 │  - Coriolis / Eötvös          │
 │  - Spin drift                 │
 │  - Cant correction            │
 ├───────────────────────────────┤
-│       Sensor Drivers          │
-│  - IMU                        │
-│  - Magnetometer               │
+│       Sensor Drivers /        │
+│       Sensor Processing       │
+│  - IMU (raw samples)          │
+│  - Magnetometer (raw samples) │
 │  - Barometer                  │
-│  - LRF                        │
+│  - LRF (raw driver/protocol)  │
 │  - Encoder                    │
+│  - AHRS / sensor fusion       |
+|    (produces sanitized        |
+| quaternion in `SensorFrame`)  │
 └───────────────────────────────┘
 ```
 
@@ -140,24 +150,18 @@ Imperial units are converted at the input boundary only when required by legacy 
 
 ## 5.1 Internal ISA Defaults
 
-If no overrides provided:
+If no overrides provided, the engine will use ISA fallback values as a safety net **only**. These fallbacks are intended for bench-testing, GUI demos, or partial sensor setups and are not a substitute for live sensor inputs in production use. When a fallback is used the engine sets diagnostic flags in `defaults_active` so the application can surface a warning; applications MAY treat fallback usage as a hard FAULT if they require strict sensor validity.
+
+Fallback values (used only when no runtime sensor/override is present):
 
 - Altitude: 0 m
-    
 - Pressure: 101325 Pa
-    
 - Temperature: 15 °C
-    
 - Humidity: 0.5
-    
 - Wind: 0 m/s
-    
 - Latitude: unset (GPS/GNSS used if fed by application; magnetometer-derived used if available; Coriolis disabled otherwise)
-    
 
-These values are ISA-consistent.
-
-Defaults never trigger FAULT.
+These values follow the International Standard Atmosphere (ISA) conventions and are purely fallbacks; production applications shall provide live sensor data or explicit `DOPE_SetDefaultOverrides()` values.
 
 ---
 
@@ -222,6 +226,54 @@ All inputs enter through:
 ```cpp
 void DOPE_Update(const SensorFrame* frame);
 ```
+
+SensorFrame (sanitized input schema expected by DOPE):
+
+```cpp
+// DOPE expects sanitized, application-provided sensor outputs only.
+// DOPE-ASS is responsible for raw drivers, protocol parsing, and
+// sensor-processing (AHRS, calibration, disturbance detection).
+struct SensorFrame {
+        uint64_t timestamp_us;
+        uint32_t flags; // bitmask: STALE, DISTURBED, FALLBACK_ACTIVE, etc.
+
+        // Orientation (application-provided quaternion, optional)
+        bool has_quaternion;
+        float quaternion[4]; // w, x, y, z
+
+        // Rangefinder (optional)
+        bool has_range;
+        float range_m;
+        uint32_t range_confidence; // 0..100
+        uint64_t range_timestamp_us;
+
+        // Environment (optional)
+        bool has_pressure;
+        float pressure_pa;
+        bool has_temperature_c;
+        float temperature_c;
+        bool has_humidity;
+        float humidity_fraction;
+
+        // Latitude (preferred single source supplied by DOPE-ASS)
+        bool has_latitude;
+        float latitude_deg;
+        uint8_t latitude_source; // 0=unset,1=GNSS,2=manual,3=magnetometer_est
+
+        // Optional calibration offsets supplied by DOPE-ASS
+        bool has_imu_bias;
+        float accel_bias[3];
+        float gyro_bias[3];
+};
+```
+
+Notes:
+- DOPE consumes the `SensorFrame` structure and performs deterministic ballistic
+    computation. All raw-sensor handling (UART framing, NMEA parsing, IMU/Mag
+    fusion such as Mahony/Madgwick, magnetometer dip inversion, LRF protocol
+    parsing, and disturbance detection) MUST be implemented in DOPE-ASS and
+    provided to DOPE via the fields above.
+
 
 ---
 
@@ -688,3 +740,109 @@ Selecting a hardware preset locks the manual σ field, identical to the LRF and 
 
 End of Document  
 DOPE SRS v2.0
+
+---
+
+# 19. Runtime Solver Policy (Table‑First, Low‑Latency)
+
+DOPE shall prefer manufacturer- or calibration-provided trajectory tables at runtime ("table‑first") and use lightweight augmentation for environmental and barrel-state differences. The adaptive RK4 integrator is retained as a deterministic fallback and as an offline/verification tool, but is not required on the real-time fast path when the following conditions are met:
+
+- A valid `AmmoDatasetV2` (see §20) is active and contains either a `cached_full_trajectory` or dense per-range table covering the requested range.
+- The dataset provides required channels for the engagement: drop, velocity (or energy), and wind drift (or a means to compute it from a supplied baseline). If any required channel is missing, the solver fallback may be used when `module_caps_.enable_solver_fallback` is set and `hasUsableSolverInputs()` is true.
+
+Runtime behavior:
+
+- Primary path: lookup table → apply scalars (density/MV/barrel-heat) → apply calibration residuals → return solution.
+- Fallback path: when table data insufficient and solver fallback enabled → run `BallisticSolver` to compute missing values and (optionally) fill runtime cache.
+- Uncertainty refinement may be deferred off the critical path (`defer_uncertainty_`) and executed asynchronously or at a lower cadence.
+
+Performance targets (see §14) assume table-first lookups; solver fallback is budgeted per-target (1000 m < 8 ms on ESP32‑P4). Removing the RK4 fallback on lower-powered hardware (regular ESP32) is acceptable only if `AmmoDatasetV2` coverage is guaranteed for all operational ranges and corrections.
+
+# 20. AmmoDatasetV2 Schema and Precompute Requirements
+
+DOPE accepts `AmmoDatasetV2` as the preferred runtime ammo representation. Each dataset shall include explicit baseline metadata and optional dense/cached tables to enable table-first operation.
+
+Required metadata (at minimum):
+
+- `baseline_temperature_c`, `baseline_pressure_pa`, `baseline_humidity` — baseline environment used by the table.
+- `baseline_convention` — one of `METRO`, `ICAO`, or `CUSTOM` to indicate the convention used by the dataset.
+
+Recommended channels (provided by manufacturer or generated during import):
+
+- `drop_by_range` (drop_m) — per-range drop values, or sparse points with interpolation.
+- `velocity_by_range` or `energy_by_range` — used for TOF/energy; if absent, solver fallback or radar assist supplies velocity.
+- `wind_drift_by_range` — baseline wind drift at a reference wind; runtime scales applied per actual wind.
+- `cep50_by_range` and/or `uncertainty_sigma_by_range` — empirical uncertainty overrides per-range (preferred when available).
+
+Precompute requirement:
+
+- Implementations shall offer an import-time precompute that generates a cached trajectory covering the operational range (preferred 1 m step). The cache MAY be stored externally to avoid inflating in-memory static structures. If a cached table is provided, DOPE shall use it directly on the fast path.
+
+Caching rules:
+
+- If `cached_full_table_present` is true and `cached_source_checksum` matches, use cached values as authoritative and only apply scalars/residuals at runtime.
+- If the dataset contains only sparse points, the importer must either (a) generate a dense cached table before first use (preferred), or (b) mark the dataset as sparse and allow solver fallback when queries fall in unsupported ranges.
+
+# 21. Calibration Procedure & Residuals
+
+Calibration samples are records of observed impact relative to the aim point at a known range and environmental state. A `calibration_sample` shall include: range, measured impact offsets (elevation and windage, MOA), timestamp, ambient temperature, barometric pressure, humidity, measurement method (manual/camera/radar), and optional radar MV.
+
+Residuals are the per-range additive differences between measured mean impact (MOA) and the dataset-predicted impact (MOA). DOPE shall store residuals as a small per-range table (`drop_residual_by_range`, `wind_residual_by_range`) and apply them additively to the selected table-family at runtime.
+
+Minimum protocol (recommended):
+
+- Capture N ≥ 3 shots at each canonical calibration range (e.g., 100 m, 300 m, 600 m, 1000 m). Record mean and standard deviation per point.
+- Record ambient barometer/temperature/humidity at shot time to anchor baseline correction.
+- Compute and store residuals indexed by range; optionally fit a low-order spline to provide smooth interpolation.
+
+Application shall expose a simple UI to supply measured hits (manual entry) and trigger residual recomputation.
+
+# 22. Uncertainty Policy
+
+Primary representation: 2D Gaussian (σ_elev, σ_wind, ρ). The engine will compute/propagate covariance internally for analytic propagation and expose both covariance and a circularized `uncertainty_radius_moa` (1‑sigma radial) for quick consumers.
+
+Empirical overrides: when datasets provide `cep50_by_range` or `uncertainty_sigma_by_range`, DOPE shall prefer these empirical values for uncertainty reporting at the corresponding ranges and fall back to propagated covariance otherwise. CEP50 conversion uses the canonical constant (~1.17741).
+
+Non-normality: engines that detect strong non-Gaussian residuals (sufficient sample size) may optionally store percentile tables per-range; clients may use those for visualization. The default engine contract remains Gaussian-based for simplicity and speed.
+
+# 23. Loader & Runtime Scalars
+
+At runtime DOPE shall apply the following inexpensive scalar adjustments to table values prior to returning a solution:
+
+- `density_scale = runtime_density / baseline_density` — scales aerodynamic drop/drag contributions.
+- `mv_scale` — scalar from radar or calibration applied to velocity/TOF/energy.
+- `barrel_heat_multiplier` — multiplicative MV modifier derived from shot history and ambient temperature.
+
+These scalars are O(1) arithmetic operations and are applied to the cached table entries or sparse interpolation outputs; they do not require re-integration.
+
+# 24. Removing RK4 from the Real‑Time Path
+
+Removing the RK4 integrator from the on-device real-time path is permissible under the following guarantees:
+
+- All operational ranges and corrections required by the application are present in `AmmoDatasetV2` (or cached table) including drop, wind drift, and velocity/energy.
+- A conservative uncertainty envelope is available for extrapolated ranges and outside validated data.
+- A verification path exists (off-device or developer device) to re-run RK4 for new datasets and to generate full cached tables.
+
+If these guarantees cannot be met, the RK4 fallback must remain available for correctness.
+
+---
+
+# 25. SRS Completion Checklist
+
+This checklist helps track progress toward implementing and verifying the requirements in this SRS. Use the task boxes to indicate status (unchecked = pending, checked = complete). The application or project lead should update this file as work progresses.
+
+- [ ] **DOPE-ASS Boundary Enforcement:** Implement `SensorFrame` builder in DOPE-ASS.
+- [ ] **DOPE-ASS Boundary Enforcement:** Move fusion algorithms (AHRS Mahony/Madgwick) to DOPE-ASS code.
+- [ ] **DOPE-ASS Boundary Enforcement:** Move raw sensor calibration flows (e.g., Mag hard/soft iron) into DOPE-ASS code.
+- [ ] **DOPE-ASS Boundary Enforcement:** Replace direct driver references in `lib/dope/` with setter APIs and `DOPE_Update` calls.
+- [ ] **GUI Refactor:** Review UI controls that expose hardware/protocol settings (LRF UART controls, GNSS options, magnetometer calibration flows).
+- [ ] **GUI Refactor:** Remove driver/protocol controls from the GUI and replace them with "Sanitized Input" configuration panels that accept preprocessed values.
+- [ ] **GUI Refactor:** Update hardware preset dialogs to reflect that presets are DOPE-ASS UI conveniences and not engine APIs.
+- [ ] **Integration Testing:** Add tests to verify the GUI produces correct `SensorFrame` shapes expected by DOPE (`DOPE_Update`).
+
+Notes:
+- Mark items as complete here after code, tests, and documentation satisfy the requirement.
+- Where applicable, link to implementation files, tests, or issues for traceability.
+
+
+---

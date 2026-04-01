@@ -1,0 +1,18 @@
+cartridge,.308 Win 168gr BTHP MatchKing Federal
+dataset_family_zero_range_m,182.88
+dataset_interp_drop_m,-1.3081
+solver_table_drop_m,-1.30666
+engine_reconstructed_drop_m,-1.56969
+final_hold_moa,11.373
+cartridge,.308 Win 168gr BTHP MatchKing Federal
+dataset_family_zero_range_m,182.88
+dataset_interp_drop_m,-1.3081
+solver_table_drop_m,-1.30666
+engine_reconstructed_drop_m,-1.56969
+final_hold_moa,11.373
+cartridge,.308 Win 168gr BTHP MatchKing Federal
+dataset_family_zero_range_m,182.88
+dataset_interp_drop_m,-1.3081
+solver_table_drop_m,-1.30666
+engine_reconstructed_drop_m,-1.56969
+final_hold_moa,11.373

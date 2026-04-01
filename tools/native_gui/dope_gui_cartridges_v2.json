@@ -1,0 +1,2675 @@
+{
+  "generated_from": "dope_gui_cartridges.json",
+  "count": 23,
+  "ammo_v2": [
+    {
+      "name": ".22 LR 40gr CCI Mini-Mag CPRN",
+      "cartridge_keys": [
+        "22_lr"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.13,
+      "mass_kg": 0.002591956,
+      "caliber_m": 0.005664,
+      "length_m": 0.0156,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 376.4
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 332.8
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 317.0
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 304.2
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 6.096,
+      "reference_barrel_inches": 18.5,
+      "mv_adjustment_fps_per_in": 10.0,
+      "_source": "CCI #0030 Mini-Mag 40gr Copper Plated Round Nose. G1 BC ~0.130 per precision testing (Target Sports USA ballistics data). MV 1235 fps (376.4 m/s) from 18.5-in Ruger 10/22 barrel per CCI published spec. Subsonic from pistols (~950-1085 fps). Bullet diameter 0.222 in; length ~15.60 mm. mv_adj 10 fps/in for barrels 16-22 in.",
+      "source_preset_index": 0,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 22.86,
+              "trajectory_m": 0.0381
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0737
+            },
+            {
+              "distance_m": 68.58,
+              "trajectory_m": 0.061
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": "Remington .22lr Subsonic 40gr CPHP",
+      "cartridge_keys": [
+        "22_lr"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.079,
+      "mass_kg": 0.002591956,
+      "caliber_m": 0.005664,
+      "length_m": 0.0156,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 320.0
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 282.6
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 256.3
+        },
+        {
+          "distance_m": 137.16,
+          "velocity_ms": 235.3
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 6.096,
+      "reference_barrel_inches": 18.5,
+      "mv_adjustment_fps_per_in": 10.0,
+      "source_preset_index": 1,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.1092
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.4166
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.1092
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.4166
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": "Federal American Eagle 9mm FMJ 124gr",
+      "cartridge_keys": [
+        "9x19"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.15,
+      "mass_kg": 0.008035065,
+      "caliber_m": 0.009017,
+      "length_m": 0.01458,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 350.5
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 333.8
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 319.7
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 307.8
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 297.8
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 5.486,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "source_preset_index": 2,
+      "zero_range_m": 22.86,
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": "CCI Blazer Brass 9mm FMJ 115gr",
+      "cartridge_keys": [
+        "9x19"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.155,
+      "mass_kg": 0.007451875,
+      "caliber_m": 0.009017,
+      "length_m": 0.01461,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 349.0
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 322.5
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 303.0
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 5.486,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "source_preset_index": 3,
+      "zero_range_m": 22.86,
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": "Winchester White Box 9mm 115gr FMJ",
+      "cartridge_keys": [
+        "9x19"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.139,
+      "mass_kg": 0.007451875,
+      "caliber_m": 0.009017,
+      "length_m": 0.01397,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 362.8
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 5.486,
+      "reference_barrel_inches": 4.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "source_preset_index": 4,
+      "zero_range_m": 22.86,
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": ".45 ACP 230gr FMJ American Eagle",
+      "cartridge_keys": [
+        "45_acp"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.192,
+      "mass_kg": 0.014903749,
+      "caliber_m": 0.011455,
+      "length_m": 0.0173,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 271.3
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 265.8
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 260.9
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 256.0
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 251.8
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 5.486,
+      "reference_barrel_inches": 5.0,
+      "mv_adjustment_fps_per_in": 12.0,
+      "_source": "M1911A1 mil-spec / Federal AE",
+      "source_preset_index": 5,
+      "zero_range_m": 22.86,
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 99992.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 78.0,
+        "standard": "Metro"
+      },
+      "trajectory_families": [],
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": ".300 BLK 208gr Subsonic Hornady Black A-MAX",
+      "cartridge_keys": [
+        "300_blk"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.648,
+      "mass_kg": 0.013478173,
+      "caliber_m": 0.007823,
+      "length_m": 0.0348,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 310.9
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 308.2
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 305.7
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 303.3
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 300.8
+        },
+        {
+          "distance_m": 114.3,
+          "velocity_ms": 298.4
+        },
+        {
+          "distance_m": 137.16,
+          "velocity_ms": 296.3
+        },
+        {
+          "distance_m": 160.02,
+          "velocity_ms": 294.1
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 292.3
+        },
+        {
+          "distance_m": 205.74,
+          "velocity_ms": 290.2
+        },
+        {
+          "distance_m": 228.6,
+          "velocity_ms": 288.0
+        },
+        {
+          "distance_m": 251.46,
+          "velocity_ms": 286.2
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 284.4
+        },
+        {
+          "distance_m": 297.18,
+          "velocity_ms": 282.5
+        },
+        {
+          "distance_m": 320.04,
+          "velocity_ms": 280.7
+        },
+        {
+          "distance_m": 342.9,
+          "velocity_ms": 278.9
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 277.1
+        },
+        {
+          "distance_m": 388.62,
+          "velocity_ms": 275.5
+        },
+        {
+          "distance_m": 411.48,
+          "velocity_ms": 273.7
+        },
+        {
+          "distance_m": 434.34,
+          "velocity_ms": 272.2
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 270.7
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 4.572,
+      "reference_barrel_inches": 16.0,
+      "mv_adjustment_fps_per_in": 10.0,
+      "source_preset_index": 6,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.8509
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.8509
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "sigma_bc": 0.03,
+      "ammo_temp": null
+    },
+    {
+      "name": ".300 BLK 120gr JHP Supersonic AAC Barnes",
+      "cartridge_keys": [
+        "300_blk"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.297,
+      "sigma_bc": 0.025,
+      "mass_kg": 0.008099864,
+      "caliber_m": 0.007823,
+      "length_m": 0.0267,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 640.1
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 619.7
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 600.2
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 580.9
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 562.1
+        },
+        {
+          "distance_m": 114.3,
+          "velocity_ms": 543.8
+        },
+        {
+          "distance_m": 137.16,
+          "velocity_ms": 525.8
+        },
+        {
+          "distance_m": 160.02,
+          "velocity_ms": 508.1
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 491.3
+        },
+        {
+          "distance_m": 205.74,
+          "velocity_ms": 474.9
+        },
+        {
+          "distance_m": 228.6,
+          "velocity_ms": 458.7
+        },
+        {
+          "distance_m": 251.46,
+          "velocity_ms": 443.5
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 428.5
+        },
+        {
+          "distance_m": 297.18,
+          "velocity_ms": 414.2
+        },
+        {
+          "distance_m": 320.04,
+          "velocity_ms": 400.8
+        },
+        {
+          "distance_m": 342.9,
+          "velocity_ms": 388.0
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 376.1
+        },
+        {
+          "distance_m": 388.62,
+          "velocity_ms": 365.2
+        },
+        {
+          "distance_m": 411.48,
+          "velocity_ms": 354.8
+        },
+        {
+          "distance_m": 434.34,
+          "velocity_ms": 345.3
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 337.1
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 4.572,
+      "reference_barrel_inches": 16.0,
+      "mv_adjustment_fps_per_in": 35.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.5
+        },
+        {
+          "range_m": 200.0,
+          "cep50_moa": 2.0
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 3.0
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 13,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 22.86,
+              "trajectory_m": -0.0076
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0102
+            },
+            {
+              "distance_m": 68.58,
+              "trajectory_m": 0.0127
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 114.3,
+              "trajectory_m": -0.0279
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.0737
+            },
+            {
+              "distance_m": 160.02,
+              "trajectory_m": -0.1397
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.2235
+            },
+            {
+              "distance_m": 205.74,
+              "trajectory_m": -0.3277
+            },
+            {
+              "distance_m": 228.6,
+              "trajectory_m": -0.4572
+            },
+            {
+              "distance_m": 251.46,
+              "trajectory_m": -0.6096
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.7874
+            },
+            {
+              "distance_m": 297.18,
+              "trajectory_m": -0.9957
+            },
+            {
+              "distance_m": 320.04,
+              "trajectory_m": -1.2319
+            },
+            {
+              "distance_m": 342.9,
+              "trajectory_m": -1.4986
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -1.8009
+            },
+            {
+              "distance_m": 388.62,
+              "trajectory_m": -2.1387
+            },
+            {
+              "distance_m": 411.48,
+              "trajectory_m": -2.5171
+            },
+            {
+              "distance_m": 434.34,
+              "trajectory_m": -2.9337
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -3.3934
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 22.86,
+              "trajectory_m": -0.0076
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0102
+            },
+            {
+              "distance_m": 68.58,
+              "trajectory_m": 0.0127
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 114.3,
+              "trajectory_m": -0.0279
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.0737
+            },
+            {
+              "distance_m": 160.02,
+              "trajectory_m": -0.1397
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.2235
+            },
+            {
+              "distance_m": 205.74,
+              "trajectory_m": -0.3277
+            },
+            {
+              "distance_m": 228.6,
+              "trajectory_m": -0.4572
+            },
+            {
+              "distance_m": 251.46,
+              "trajectory_m": -0.6096
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.7874
+            },
+            {
+              "distance_m": 297.18,
+              "trajectory_m": -0.9957
+            },
+            {
+              "distance_m": 320.04,
+              "trajectory_m": -1.2319
+            },
+            {
+              "distance_m": 342.9,
+              "trajectory_m": -1.4986
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -1.8009
+            },
+            {
+              "distance_m": 388.62,
+              "trajectory_m": -2.1387
+            },
+            {
+              "distance_m": 411.48,
+              "trajectory_m": -2.5171
+            },
+            {
+              "distance_m": 434.34,
+              "trajectory_m": -2.9337
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -3.3934
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "5.56 NATO 62gr M855 FMJ",
+      "cartridge_keys": [
+        "5.56_nato"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.307,
+      "sigma_bc": 0.03,
+      "mass_kg": 0.004017532,
+      "caliber_m": 0.00569,
+      "length_m": 0.0235,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 889.0
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 6.096,
+      "reference_barrel_inches": 16.0,
+      "mv_adjustment_fps_per_in": 28.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.5
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 2.0
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 2.8
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "US M855 / NATO SS109. BC 0.307 G1 per Litz Applied Ballistics. MV 2920 fps (889.0 m/s) from 16-in barrel.",
+      "source_preset_index": 7,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": []
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": []
+        }
+      ],
+      "wind_drift_profile": [
+        {
+          "distance_m": 0.0,
+          "wind_drift_m": 0.0
+        },
+        {
+          "distance_m": 91.44,
+          "wind_drift_m": 0.01524
+        },
+        {
+          "distance_m": 182.88,
+          "wind_drift_m": 0.06096
+        },
+        {
+          "distance_m": 274.32,
+          "wind_drift_m": 0.1397
+        },
+        {
+          "distance_m": 365.76,
+          "wind_drift_m": 0.25654
+        },
+        {
+          "distance_m": 457.2,
+          "wind_drift_m": 0.41656
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".223 Rem 55gr FMJ Winchester White Box",
+      "cartridge_keys": [
+        "223_rem"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.245,
+      "sigma_bc": 0.025,
+      "mass_kg": 0.00356394,
+      "caliber_m": 0.00569,
+      "length_m": 0.0191,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 987.8
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 876.2
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 773.2
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 677.4
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 588.7
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 507.9
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 4.572,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 1.2
+        },
+        {
+          "range_m": 700.0,
+          "cep50_moa": 1.6
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 8,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.0686
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2769
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6655
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.0686
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2769
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6655
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "Hornady .223 Rem 75gr BTHP Match",
+      "cartridge_keys": [
+        "223_rem"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.395,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.004859918,
+      "caliber_m": 0.00569,
+      "length_m": 0.0261,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 850.4
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 781.1
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 714.8
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 652.2
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 592.9
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 536.4
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.048,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.9
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 1.1
+        },
+        {
+          "range_m": 900.0,
+          "cep50_moa": 1.5
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 9,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0483
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2083
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6121
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.2522
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0483
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2083
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6121
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.2522
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "5.56 NATO 77gr OTM (Mk262 Mod1)",
+      "cartridge_keys": [
+        "5.56_nato"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.362,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.004989516,
+      "caliber_m": 0.00569,
+      "length_m": 0.0289,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 838.2
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 765.0
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 695.9
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 630.0
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 568.1
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 510.5
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.048,
+      "reference_barrel_inches": 18.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.9
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 1.1
+        },
+        {
+          "range_m": 900.0,
+          "cep50_moa": 1.5
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Black Hills",
+      "source_preset_index": 10,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0508
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.221
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6502
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.336
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0508
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.221
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6502
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.336
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "7.62x39mm FMJ 123gr Soviet",
+      "cartridge_keys": [
+        "7.62x39"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.309,
+      "sigma_bc": 0.025,
+      "mass_kg": 0.007970266,
+      "caliber_m": 0.007899,
+      "length_m": 0.0353,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 716.3
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 624.8
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 542.5
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 469.4
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 408.4
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 359.7
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 7.62,
+      "reference_barrel_inches": 16.3,
+      "mv_adjustment_fps_per_in": 15.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.5
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 4.3
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 11,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.1778
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.635
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -1.4732
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -2.8194
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.1778
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.635
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -1.4732
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -2.8194
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "6.5 Grendel 123gr Lapua Scenar HPBT",
+      "cartridge_keys": [
+        "6.5_grendel"
+      ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.263,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.007970266,
+      "caliber_m": 0.006706,
+      "length_m": 0.0346,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 755.9
+        },
+        {
+          "distance_m": 22.86,
+          "velocity_ms": 743.4
+        },
+        {
+          "distance_m": 45.72,
+          "velocity_ms": 730.9
+        },
+        {
+          "distance_m": 68.58,
+          "velocity_ms": 718.7
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 706.8
+        },
+        {
+          "distance_m": 114.3,
+          "velocity_ms": 694.6
+        },
+        {
+          "distance_m": 137.16,
+          "velocity_ms": 682.8
+        },
+        {
+          "distance_m": 160.02,
+          "velocity_ms": 671.2
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 659.6
+        },
+        {
+          "distance_m": 205.74,
+          "velocity_ms": 648.0
+        },
+        {
+          "distance_m": 228.6,
+          "velocity_ms": 636.7
+        },
+        {
+          "distance_m": 251.46,
+          "velocity_ms": 625.4
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 614.2
+        },
+        {
+          "distance_m": 297.18,
+          "velocity_ms": 603.2
+        },
+        {
+          "distance_m": 320.04,
+          "velocity_ms": 592.2
+        },
+        {
+          "distance_m": 342.9,
+          "velocity_ms": 581.6
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 570.9
+        },
+        {
+          "distance_m": 388.62,
+          "velocity_ms": 560.2
+        },
+        {
+          "distance_m": 411.48,
+          "velocity_ms": 549.9
+        },
+        {
+          "distance_m": 434.34,
+          "velocity_ms": 539.5
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 529.4
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 2.438,
+      "reference_barrel_inches": 18.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 1.3
+        },
+        {
+          "range_m": 800.0,
+          "cep50_moa": 1.8
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Lapua GB528 Scenar 123gr. G7 BC 0.263 per Lapua. MV 762 m/s (2500 fps) from 18-in barrel per community chrono data. G7 model (drag_model_index 6). Length 34.60 mm per Lapua datasheet.",
+      "source_preset_index": 12,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 22.86,
+              "trajectory_m": -0.0152
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 68.58,
+              "trajectory_m": 0.0051
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 114.3,
+              "trajectory_m": -0.0152
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.0406
+            },
+            {
+              "distance_m": 160.02,
+              "trajectory_m": -0.0787
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.127
+            },
+            {
+              "distance_m": 205.74,
+              "trajectory_m": -0.1854
+            },
+            {
+              "distance_m": 228.6,
+              "trajectory_m": -0.2591
+            },
+            {
+              "distance_m": 251.46,
+              "trajectory_m": -0.3429
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.442
+            },
+            {
+              "distance_m": 297.18,
+              "trajectory_m": -0.5537
+            },
+            {
+              "distance_m": 320.04,
+              "trajectory_m": -0.6782
+            },
+            {
+              "distance_m": 342.9,
+              "trajectory_m": -0.8179
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.9754
+            },
+            {
+              "distance_m": 388.62,
+              "trajectory_m": -1.1455
+            },
+            {
+              "distance_m": 411.48,
+              "trajectory_m": -1.3335
+            },
+            {
+              "distance_m": 434.34,
+              "trajectory_m": -1.5367
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.7602
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 22.86,
+              "trajectory_m": -0.0152
+            },
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 68.58,
+              "trajectory_m": 0.0051
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 114.3,
+              "trajectory_m": -0.0152
+            },
+            {
+              "distance_m": 137.16,
+              "trajectory_m": -0.0406
+            },
+            {
+              "distance_m": 160.02,
+              "trajectory_m": -0.0787
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": -0.127
+            },
+            {
+              "distance_m": 205.74,
+              "trajectory_m": -0.1854
+            },
+            {
+              "distance_m": 228.6,
+              "trajectory_m": -0.2591
+            },
+            {
+              "distance_m": 251.46,
+              "trajectory_m": -0.3429
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.442
+            },
+            {
+              "distance_m": 297.18,
+              "trajectory_m": -0.5537
+            },
+            {
+              "distance_m": 320.04,
+              "trajectory_m": -0.6782
+            },
+            {
+              "distance_m": 342.9,
+              "trajectory_m": -0.8179
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.9754
+            },
+            {
+              "distance_m": 388.62,
+              "trajectory_m": -1.1455
+            },
+            {
+              "distance_m": 411.48,
+              "trajectory_m": -1.3335
+            },
+            {
+              "distance_m": 434.34,
+              "trajectory_m": -1.5367
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.7602
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "6mm Creedmoor 109gr Berger LRHT",
+      "cartridge_keys": [
+        "6mm_creedmoor"
+      ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.278,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.007063081,
+      "caliber_m": 0.006172,
+      "length_m": 0.0325,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 899.2
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 849.5
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 801.0
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 754.4
+        },
+        {
+          "distance_m": 548.64,
+          "velocity_ms": 623.6
+        },
+        {
+          "distance_m": 731.52,
+          "velocity_ms": 543.8
+        },
+        {
+          "distance_m": 914.4,
+          "velocity_ms": 469.1
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 2.438,
+      "reference_barrel_inches": 26.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 900.0,
+          "cep50_moa": 1.3
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Berger 109gr Long Range Hybrid Target. G7 BC 0.278 per Berger. MV 2966 fps (904 m/s) from 26-in barrel per 2024 PRS survey data. 7% of top PRS shooters use this cartridge. mv_adj 25 fps/in.",
+      "source_preset_index": 14,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0378
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1656
+            },
+            {
+              "distance_m": 548.64,
+              "trajectory_m": -1.6076
+            },
+            {
+              "distance_m": 731.52,
+              "trajectory_m": -3.5888
+            },
+            {
+              "distance_m": 914.4,
+              "trajectory_m": -6.6876
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0378
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1656
+            },
+            {
+              "distance_m": 548.64,
+              "trajectory_m": -1.6076
+            },
+            {
+              "distance_m": 731.52,
+              "trajectory_m": -3.5888
+            },
+            {
+              "distance_m": 914.4,
+              "trajectory_m": -6.6876
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "Hornady 6.5 Creedmoor 140gr ELD-M",
+      "cartridge_keys": [
+        "6.5_creedmoor"
+      ],
+      "drag_model": "G7",
+      "ballistic_coefficient": 0.326,
+      "sigma_bc": 0.008,
+      "mass_kg": 0.009071847,
+      "caliber_m": 0.006706,
+      "length_m": 0.0354,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 826.0
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 781.5
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 738.2
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 696.5
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 655.9
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 616.6
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 2.743,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.7
+        },
+        {
+          "range_m": 500.0,
+          "cep50_moa": 0.9
+        },
+        {
+          "range_m": 1100.0,
+          "cep50_moa": 1.2
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Hornady #81500. G7 BC 0.326 per Hornady at Mach 2.25. 2710 fps from 24-in barrel. G7 model (drag_model_index 6).",
+      "source_preset_index": 15,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0483
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1981
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.5664
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.1278
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0483
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1981
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.5664
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.1278
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".308 Win 168gr BTHP MatchKing Federal",
+      "cartridge_keys": [
+        "308_win"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.462,
+      "sigma_bc": 0.012,
+      "mass_kg": 0.010886217,
+      "caliber_m": 0.007823,
+      "length_m": 0.02896,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 807.7
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 749.8
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 694.0
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 641.0
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 590.1
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 541.9
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.048,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 800.0,
+          "cep50_moa": 1.4
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Federal GM308M / Sierra #2200. BC 0.462 G1 (Sierra dominant velocity zone). MV 2650 fps (807.7 m/s) from 24-in barrel.",
+      "source_preset_index": 16,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 45.72,
+              "trajectory_m": -0.0254
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0533
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2261
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6477
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3081
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 45.72,
+              "trajectory_m": -0.0254
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0533
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2261
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6477
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3081
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".308 Win 175gr Federal Gold Medal SMK BTHP",
+      "cartridge_keys": [
+        "308_win"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.496,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.011339809,
+      "caliber_m": 0.007823,
+      "length_m": 0.0315,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 792.5
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 739.7
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 689.5
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 640.7
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 594.1
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 549.6
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.048,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 25.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 800.0,
+          "cep50_moa": 1.3
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 17,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0254
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0559
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2311
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6553
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3157
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 45.72,
+              "trajectory_m": 0.0254
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0559
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2311
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6553
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3157
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".30-06 Springfield 168gr BTHP MatchKing",
+      "cartridge_keys": [
+        "30_06_sprg"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.462,
+      "sigma_bc": 0.012,
+      "mass_kg": 0.010886217,
+      "caliber_m": 0.007823,
+      "length_m": 0.02896,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 823.0
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 762.5
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 703.8
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 647.5
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 594.3
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 544.7
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 4.572,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 20.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 800.0,
+          "cep50_moa": 1.4
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Federal Gold Medal GM3006M / Sierra #2200 168gr MatchKing. Same projectile as .308 Win 168gr SMK; larger .30-06 case delivers ~50 fps additional MV from equivalent barrel. G1 BC 0.462 (Sierra dominant velocity zone). MV 2700 fps (823.0 m/s) from 24-in barrel per Federal published data. mv_adj 20 fps/in (larger case, slightly different curve than .308 Win).",
+      "source_preset_index": 18,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0432
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1981
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.5867
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.1989
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0432
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.1981
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.5867
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.1989
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".30-06 Springfield 150gr FMJ",
+      "cartridge_keys": [
+        "30_06_sprg"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.338,
+      "sigma_bc": 0.02,
+      "mass_kg": 0.009719836,
+      "caliber_m": 0.007823,
+      "length_m": 0.028,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 887.0
+        },
+        {
+          "distance_m": 91.44,
+          "velocity_ms": 801.7
+        },
+        {
+          "distance_m": 182.88,
+          "velocity_ms": 720.2
+        },
+        {
+          "distance_m": 274.32,
+          "velocity_ms": 644.4
+        },
+        {
+          "distance_m": 365.76,
+          "velocity_ms": 576.0
+        },
+        {
+          "distance_m": 457.2,
+          "velocity_ms": 515.7
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 6.096,
+      "reference_barrel_inches": 24.0,
+      "mv_adjustment_fps_per_in": 20.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 1.5
+        },
+        {
+          "range_m": 300.0,
+          "cep50_moa": 2.0
+        },
+        {
+          "range_m": 600.0,
+          "cep50_moa": 2.8
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "M2 Ball equivalent / Federal AE, Remington UMC, Winchester USA. Generic 150gr .30 cal FMJ (flat base, mild steel core). G1 BC 0.338 per Sierra #2105 / Federal published trajectory data. MV 2910 fps (887.0 m/s) from 24-in barrel. mv_adj 20 fps/in. Bullet length ~28.00 mm typical for 150gr .308 FMJ.",
+      "source_preset_index": 19,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0356
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2159
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6553
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3792
+            }
+          ]
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": [
+            {
+              "distance_m": 0.0,
+              "trajectory_m": -0.0381
+            },
+            {
+              "distance_m": 91.44,
+              "trajectory_m": 0.0356
+            },
+            {
+              "distance_m": 182.88,
+              "trajectory_m": 0.0
+            },
+            {
+              "distance_m": 274.32,
+              "trajectory_m": -0.2159
+            },
+            {
+              "distance_m": 365.76,
+              "trajectory_m": -0.6553
+            },
+            {
+              "distance_m": 457.2,
+              "trajectory_m": -1.3792
+            }
+          ]
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": "Sierra .300 Win Mag 190gr HPBT MatchKing",
+      "cartridge_keys": [
+        "300_win_mag"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.533,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.012311793,
+      "caliber_m": 0.007823,
+      "length_m": 0.0353,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 884.0
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.658,
+      "reference_barrel_inches": 26.0,
+      "mv_adjustment_fps_per_in": 30.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.75
+        },
+        {
+          "range_m": 600.0,
+          "cep50_moa": 1.0
+        },
+        {
+          "range_m": 1200.0,
+          "cep50_moa": 1.4
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "source_preset_index": 20,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": []
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": []
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".338 Lapua Magnum 250gr Lapua Scenar HPBT",
+      "cartridge_keys": [
+        "338_lapua_mag"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 0.675,
+      "sigma_bc": 0.008,
+      "mass_kg": 0.016199728,
+      "caliber_m": 0.008585,
+      "length_m": 0.0413,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 905.3
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 2.438,
+      "reference_barrel_inches": 26.0,
+      "mv_adjustment_fps_per_in": 31.6,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.6
+        },
+        {
+          "range_m": 600.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 1500.0,
+          "cep50_moa": 1.1
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Lapua GB528. G1 BC 0.675. 2970 fps (905.3 m/s) from 26-in barrel. mv_adj 31.6 fps/in.",
+      "source_preset_index": 21,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": []
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": []
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    },
+    {
+      "name": ".50 BMG 750gr Hornady A-Max Match",
+      "cartridge_keys": [
+        "50_bmg"
+      ],
+      "drag_model": "G1",
+      "ballistic_coefficient": 1.05,
+      "sigma_bc": 0.01,
+      "mass_kg": 0.048599182,
+      "caliber_m": 0.012954,
+      "length_m": 0.056,
+      "velocity_profile": [
+        {
+          "distance_m": 0.0,
+          "velocity_ms": 812.2
+        }
+      ],
+      "sigma_muzzle_velocity_ms": 3.658,
+      "reference_barrel_inches": 29.0,
+      "mv_adjustment_fps_per_in": 22.0,
+      "cep_table_moa": [
+        {
+          "range_m": 100.0,
+          "cep50_moa": 0.8
+        },
+        {
+          "range_m": 600.0,
+          "cep50_moa": 0.9
+        },
+        {
+          "range_m": 1500.0,
+          "cep50_moa": 1.2
+        }
+      ],
+      "cep_scale_floor": 1.0,
+      "_source": "Hornady #8270. G1 BC 1.050. Ref 29-in Barrett barrel; Hornady test barrel is 36-in at 2820 fps; 812.2 m/s (2665 fps) estimated for 29-in. mv_adj 22.0 fps/in.",
+      "source_preset_index": 22,
+      "zero_range_m": 91.44,
+      "available_zero_ranges": [
+        91.44,
+        182.88
+      ],
+      "trajectory_families": [
+        {
+          "zero_range_m": 91.44,
+          "trajectory_profile": []
+        },
+        {
+          "zero_range_m": 182.88,
+          "trajectory_profile": []
+        }
+      ],
+      "environmental_conditions": {
+        "temperature_f": 59.0,
+        "pressure_pa": 101325.0,
+        "altitude_ft": 0.0,
+        "humidity_pct": 0.0,
+        "standard": "ICAO"
+      },
+      "ammo_temp": null
+    }
+  ]
+}
