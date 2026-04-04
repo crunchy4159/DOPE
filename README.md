@@ -290,4 +290,4 @@ All internal calculations are SI (meters, m/s, Pascals, Celsius/Kelvin, radians)
 
 ## License
 
-Proprietary. All rights reserved.
+GPL 3.0
